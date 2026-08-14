@@ -1,0 +1,21 @@
+# Store text files with LF in the repository regardless of the platform they were
+# written on. Without this, Windows checkouts commit CRLF and every file shows as
+# fully rewritten when someone on Linux or macOS touches it.
+* text=auto eol=lf
+
+# Windows-only scripts need CRLF to run.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Lockfile is generated — collapse it by default in GitHub diffs.
+package-lock.json linguist-generated=true
+
+# Never let git rewrite bytes in binaries.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

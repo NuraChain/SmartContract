@@ -1,0 +1,21 @@
+node_modules/
+artifacts/
+cache/
+types/
+coverage/
+coverage.json
+
+# Ignition keeps deployed addresses here; journals are safe to commit, but the
+# whole folder is ignored by default so nothing local leaks by accident.
+ignition/deployments/
+ignition/params.json
+
+# Never commit keys.
+.env
+.env.local
+*.key
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/

@@ -33,7 +33,7 @@ function probes(deployer: string) {
     // carries is most of it. Estimating the router against a factory address that is
     // not a contract yet is fine: the constructor only stores it.
     swap: [
-      { name: "WBNB", args: [] },
+      { name: "WNURA", args: [] },
       { name: "UniswapV2Factory", args: [deployer] },
       { name: "UniswapV2Router02", args: [deployer, deployer] },
       { name: "Multicall3", args: [] },

@@ -7,7 +7,7 @@ const { loadFixture } = networkHelpers;
 // The AMM math is UniswapV2's and is not retested here — it is vendored verbatim and
 // has a decade of production behind it. What is worth testing is everything this repo
 // could get wrong about it: the init code hash baked into UniswapV2Library by
-// scripts/write-init-code-hash.ts, the wiring between router, factory and WBNB, and
+// scripts/write-init-code-hash.ts, the wiring between router, factory and WNURA, and
 // that a swap actually clears end to end on our build with our compiler settings.
 
 const SUPPLY = ethers.parseEther("1000000");
@@ -15,11 +15,11 @@ const SUPPLY = ethers.parseEther("1000000");
 async function deploySwap() {
   const [deployer, alice] = await ethers.getSigners();
 
-  const wbnb = await ethers.deployContract("WBNB", deployer);
+  const wnura = await ethers.deployContract("WNURA", deployer);
   const factory = await ethers.deployContract("UniswapV2Factory", [deployer.address], deployer);
   const router = await ethers.deployContract(
     "UniswapV2Router02",
-    [await factory.getAddress(), await wbnb.getAddress()],
+    [await factory.getAddress(), await wnura.getAddress()],
     deployer,
   );
 
@@ -37,7 +37,7 @@ async function deploySwap() {
     await token.connect(alice).approve(await router.getAddress(), ethers.MaxUint256);
   }
 
-  return { wbnb, factory, router, tokenA, tokenB, deployer, alice };
+  return { wnura, factory, router, tokenA, tokenB, deployer, alice };
 }
 
 /** A pool of 100k of each token, so prices are round and slippage is small. */
@@ -79,11 +79,11 @@ async function predictPair(factory: string, tokenX: string, tokenY: string) {
 describe("Swap", () => {
   describe("deployment", () => {
     it("wires the router to the factory and the wrapped native coin", async () => {
-      const { router, factory, wbnb } = await loadFixture(deploySwap);
+      const { router, factory, wnura } = await loadFixture(deploySwap);
 
       expect(await router.factory()).to.equal(await factory.getAddress());
-      expect(await router.WETH()).to.equal(await wbnb.getAddress());
-      expect(await wbnb.symbol()).to.equal("WBNB");
+      expect(await router.WETH()).to.equal(await wnura.getAddress());
+      expect(await wnura.symbol()).to.equal("WNURA");
     });
 
     it("starts with the protocol fee off and feeToSetter holding the switch", async () => {
@@ -231,7 +231,7 @@ describe("Swap", () => {
 
   describe("native coin routing", () => {
     it("wraps on the way in and unwraps on the way out", async () => {
-      const { router, wbnb, factory, tokenA, deployer, alice } = await loadFixture(deploySwap);
+      const { router, wnura, factory, tokenA, deployer, alice } = await loadFixture(deploySwap);
       const a = await tokenA.getAddress();
 
       await router.addLiquidityETH(
@@ -244,14 +244,14 @@ describe("Swap", () => {
         { value: ethers.parseEther("100") },
       );
 
-      // The pool holds wrapped coin, not native — that is the whole job of WBNB here.
-      const pairAddress = await factory.getPair(a, await wbnb.getAddress());
-      expect(await wbnb.balanceOf(pairAddress)).to.equal(ethers.parseEther("100"));
+      // The pool holds wrapped coin, not native — that is the whole job of WNURA here.
+      const pairAddress = await factory.getPair(a, await wnura.getAddress());
+      expect(await wnura.balanceOf(pairAddress)).to.equal(ethers.parseEther("100"));
 
       const before = await tokenA.balanceOf(alice.address);
       await router
         .connect(alice)
-        .swapExactETHForTokens(0n, [await wbnb.getAddress(), a], alice.address, await deadline(), {
+        .swapExactETHForTokens(0n, [await wnura.getAddress(), a], alice.address, await deadline(), {
           value: ethers.parseEther("1"),
         });
 

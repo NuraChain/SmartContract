@@ -6,7 +6,7 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  *
  * Four contracts, and that is the whole AMM:
  *
- *   WBNB               wrapped native coin, so the router can route native <-> ERC20
+ *   WNURA              wrapped native coin, so the router can route native <-> ERC20
  *   UniswapV2Factory   creates pairs with CREATE2, one per token pair
  *   UniswapV2Router02  the contract wallets actually call: swaps, add/remove liquidity
  *   Multicall3         read batching; every UI and indexer expects it at some address
@@ -25,7 +25,7 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  * `feeToSetter` calls `setFeeTo`. Until then the full 0.30% stays with liquidity
  * providers, which is the usual way to launch.
  *
- * This module always deploys its own WBNB. If your chain already has a canonical
+ * This module always deploys its own WNURA. If Nurachain already has a canonical
  * wrapped-native contract, the router has to be pointed at that one instead — say so
  * and it becomes a parameter.
  *
@@ -36,10 +36,10 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 export default buildModule("swap", (m) => {
   const feeToSetter = m.getParameter("feeToSetter", m.getAccount(0));
 
-  const wbnb = m.contract("WBNB");
+  const wnura = m.contract("WNURA");
   const factory = m.contract("UniswapV2Factory", [feeToSetter]);
-  const router = m.contract("UniswapV2Router02", [factory, wbnb]);
+  const router = m.contract("UniswapV2Router02", [factory, wnura]);
   const multicall3 = m.contract("Multicall3");
 
-  return { wbnb, factory, router, multicall3 };
+  return { wnura, factory, router, multicall3 };
 });

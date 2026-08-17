@@ -8,14 +8,16 @@ tarballs with package imports rewritten to relative paths. The math is untouched
 | contracts/core/** | @uniswap/v2-core | 1.0.1 | GPL-3.0 |
 | contracts/periphery/** (except below) | @uniswap/v2-periphery | 1.1.0-beta.0 | GPL-3.0 |
 | contracts/periphery/libraries/TransferHelper.sol | @uniswap/lib | 4.0.1-alpha | GPL-3.0-or-later |
-| contracts/periphery/WBNB.sol | @uniswap/v2-periphery contracts/test/WETH9.sol (Dapphub WETH9) | 1.1.0-beta.0 | GPL-3.0-or-later |
+| contracts/periphery/WNURA.sol | @uniswap/v2-periphery contracts/test/WETH9.sol (Dapphub WETH9) | 1.1.0-beta.0 | GPL-3.0-or-later |
 | contracts/vendor/Multicall3.sol | github.com/mds1/multicall3 | main | MIT |
 
 Local modifications:
 
 - Package imports (`@uniswap/v2-core/...`, `@uniswap/lib/...`) rewritten to relative paths.
-- `WBNB.sol`: contract renamed WETH9 to WBNB, name/symbol strings changed to
-  "Wrapped BNB"/"WBNB". No functional change.
+- `WNURA.sol`: contract renamed WETH9 to WNURA, name/symbol strings changed to
+  "Wrapped NURA"/"WNURA". No functional change. Nothing imports this file — the router
+  reaches the wrapped coin through `IWETH` — so the rename touches only the deployed
+  contract's own bytecode, not the pair init code hash.
 - `periphery/libraries/UniswapV2Library.sol`: the hardcoded pair init code hash is
   regenerated from our compiled Pair bytecode by `scripts/write-init-code-hash.ts`.
   The optimizer settings and evmVersion in hardhat.config.ts are inputs to that

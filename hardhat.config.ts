@@ -49,9 +49,10 @@ const COMPILERS = [
         runs: 200,
       },
       // OpenZeppelin 5.6 uses `mcopy` in utils/Bytes.sol, which is Cancun-only, so
-      // this cannot be lowered to "paris" without downgrading the library. BNB Chain
-      // has supported the Cancun opcodes since the Pascal upgrade; check any other
-      // target chain before deploying there.
+      // this cannot be lowered to "paris" without downgrading the library. Whether
+      // Nurachain implements the Cancun opcodes is not something to take on trust:
+      // `npm run preflight:nurachain` estimates each constructor against the node,
+      // which executes it, so a chain missing them fails there rather than on-chain.
       evmVersion: "cancun",
     },
   },
@@ -60,8 +61,6 @@ const COMPILERS = [
 /** Native coin ticker per network. Only used to label the airdrop prompts. */
 const COIN: Record<string, string> = {
   nurachain: "NURA",
-  bsc: "BNB",
-  bscTestnet: "tBNB",
 };
 
 /** 10000000.0 is hard to read when it is the bill you are about to pay; 10,000,000 is not. */
@@ -310,10 +309,25 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
 // from configVariable() the way the lazy secrets below do. Nurachain is not in any
 // public chain registry, so put its id in .env rather than guessing it here. Leaving
 // it unset is fine — Hardhat then accepts whatever the RPC reports, it just loses the
-// safety check that stops you deploying to the wrong chain.
+// safety check that stops you deploying to the wrong chain, and the explorer entry
+// below, which has to be keyed by a known chain id.
 const nurachainChainId = process.env.NURACHAIN_CHAIN_ID
   ? Number(process.env.NURACHAIN_CHAIN_ID)
   : undefined;
+
+// Nurachain is not a chain hardhat-verify knows, so its explorer has to be described
+// here. It is filed under the `blockscout` slot for one reason: that is the provider
+// hardhat-verify drives without an API key, and explorer.nurachain.net has no key to
+// give. Its /api does answer in the Etherscan shape, but only the `account` module —
+// `contract/verifysourcecode` returns "unsupported module", so `--verify` cannot work
+// against it yet. This entry is here so the explorer is already pointed at correctly
+// when Nurachain ships verification; until then, verify by hand with
+// `npx hardhat flatten <file>`. See the verification note in README.md.
+const NURACHAIN_EXPLORER = {
+  name: "Nura Explorer",
+  url: "https://explorer.nurachain.net",
+  apiUrl: "https://explorer.nurachain.net/api",
+};
 
 export default defineConfig({
   plugins: [hardhatToolboxMochaEthers],
@@ -340,22 +354,6 @@ export default defineConfig({
       chainType: "l1",
     },
 
-    bscTestnet: {
-      type: "http",
-      chainType: "l1",
-      chainId: 97,
-      url: configVariable("BSC_TESTNET_RPC_URL"),
-      accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
-    },
-
-    bsc: {
-      type: "http",
-      chainType: "l1",
-      chainId: 56,
-      url: configVariable("BSC_RPC_URL"),
-      accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
-    },
-
     nurachain: {
       type: "http",
       chainType: "l1",
@@ -365,10 +363,23 @@ export default defineConfig({
     },
   },
 
+  // Empty when NURACHAIN_CHAIN_ID is unset — there is no id to key the entry by, and
+  // hardhat-verify would have nothing to match the connected network against anyway.
+  chainDescriptors:
+    nurachainChainId === undefined
+      ? {}
+      : {
+          [nurachainChainId]: {
+            name: "Nurachain",
+            blockExplorers: { blockscout: NURACHAIN_EXPLORER },
+          },
+        },
+
   verify: {
-    etherscan: {
-      // One Etherscan V2 key covers BscScan and the other supported explorers.
-      apiKey: configVariable("ETHERSCAN_API_KEY"),
-    },
+    // Etherscan is off outright: it does not index Nurachain, and leaving it enabled
+    // only produces a missing-API-key error on the way to a provider that could never
+    // have verified anything here.
+    etherscan: { enabled: false },
+    blockscout: { enabled: true },
   },
 });

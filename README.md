@@ -158,13 +158,10 @@ being asked, leave them out to answer at the prompt. Unlike `--reward`, `rewardA
 in this file is in **wei**, in Ignition's `"<digits>n"` spelling for bigints. `--max-claims`
 and `--reward` win over the file if you pass both.
 
-### Verify on BscScan
-
-```bash
-npx hardhat verify --network bsc <deployedAddress> <adminAddress>
-```
-
 ## Deploying to Nurachain
+
+Nurachain is the only network this repo targets. `hardhat.config.ts` defines
+`nurachain` and the in-process `hardhatMainnet` used by the tests, and nothing else.
 
 Nurachain is not in any public chain registry, so its RPC URL and chain ID have to
 come from Nurachain's own docs and go in your `.env`:
@@ -181,8 +178,10 @@ Then:
 # 1. Check the RPC, chain id, balance, and that the bytecode runs there
 npm run preflight:nurachain
 
-# 2. Deploy both tokens
-npm run deploy:nurachain
+# 2. Deploy one group at a time
+npm run deploy:nurachain:token
+npm run deploy:nurachain:airdrop
+npm run deploy:nurachain:swap
 ```
 
 Run the preflight first. It estimates deployment gas against the actual node, which
@@ -197,18 +196,28 @@ Ask and I'll do that downgrade.
 **Fund the deployer first** with Nurachain's native gas token — the deployer is
 whatever address `DEPLOYER_PRIVATE_KEY` corresponds to, and preflight prints it.
 
-**Verification** depends on what explorer Nurachain runs. If it is Blockscout, add
-this to `hardhat.config.ts` and run `npx hardhat verify --network nurachain <address> <admin>`:
+### Verification
 
-```ts
-verify: {
-  blockscout: { enabled: true },
-},
+Nurachain's explorer is [explorer.nurachain.net](https://explorer.nurachain.net) — its
+own software ("Nura Explorer", built on AzerothJS), not Blockscout and not an Etherscan
+clone. `hardhat.config.ts` describes it under `chainDescriptors`, keyed by
+`NURACHAIN_CHAIN_ID`, in the `blockscout` slot because that is the provider
+hardhat-verify drives without an API key — and this explorer has no key to give. That
+is also why `ETHERSCAN_API_KEY` is gone: nothing here uses it.
+
+**Automated verification does not work yet, and that is the explorer's side, not
+this repo's.** Its `/api` answers in the Etherscan shape but implements only the
+`account` module; `module=contract&action=verifysourcecode` comes back
+`Error! Missing or unsupported module`, so `npx hardhat verify --network nurachain`
+and `deploy --verify` have nothing to talk to. Verified against the live endpoint —
+recheck it if Nurachain announces verification support, at which point the config is
+already pointed at the right place.
+
+Until then, verify by hand — flatten the source and paste it into the explorer UI:
+
+```bash
+npx hardhat flatten contracts/token/BridgeUSDT.sol > flat.sol
 ```
-
-If it is an Etherscan-style explorer, it needs its own API key and URL entry instead.
-Many small chains support neither, in which case you verify by pasting the flattened
-source into their explorer UI — `npx hardhat flatten contracts/token/BridgeUSDT.sol > flat.sol`.
 
 ## The airdrop
 
@@ -305,7 +314,7 @@ other two groups.
 
 | Contract | What it is |
 | --- | --- |
-| `WBNB` | Wrapped native coin. The router needs an ERC20 to route native value through |
+| `WNURA` | Wrapped NURA. The router needs an ERC20 to route native value through |
 | `UniswapV2Factory` | Creates one pair contract per token pair, with CREATE2 |
 | `UniswapV2Router02` | What wallets call: swaps, add/remove liquidity, native paths |
 | `Multicall3` | Read batching at a known address; every UI and indexer expects it |
@@ -370,10 +379,12 @@ testnet furniture. Ask if you want a group that deploys them.
 - **EVM target is `cancun`** for the 0.8.28 contracts. OpenZeppelin 5.6 uses the `mcopy`
   opcode, so those cannot target `paris`. The vendored AMM is a separate matter: it is
   pinned to `istanbul` on purpose and must stay there.
-- **The AMM's wrapped-native contract is called `WBNB`.** That is the vendored file
-  name and symbol. On a chain whose native coin is NURA, users will see "WBNB" in their
-  wallet for wrapped NURA. Renaming it is a source change to the vendored tree and a new
-  init code hash — worth doing before launch, not after.
+- **The AMM's wrapped-native contract is `WNURA`.** Upstream ships it as WETH9 and the
+  BNB Chain forks rename it WBNB; here it is renamed once more so wallets show "WNURA"
+  for wrapped NURA. It is a name/symbol change to a vendored file and nothing imports
+  it — the router reaches it through `IWETH` — so the pair init code hash is unaffected.
+  Recorded in [`contracts/swap/VENDORED.md`](contracts/swap/VENDORED.md), as the GPL
+  requires for a modified file.
 - **UniswapV2 does not support fee-on-transfer or rebasing tokens** through the plain
   swap functions. The router has `...SupportingFeeOnTransferTokens` variants for the
   first case; rebasing tokens simply break pair accounting.
@@ -390,7 +401,7 @@ contracts/airdrop/
   Airdrop.sol                capped native-coin airdrop, EIP-712 signature gated
 contracts/swap/
   core/**                    vendored UniswapV2 core, solc 0.5.16
-  periphery/**               vendored UniswapV2 router + WBNB, solc 0.6.6
+  periphery/**               vendored UniswapV2 router + WNURA, solc 0.6.6
   tokens/**                  NuraToken and MockToken, dev-chain only
   vendor/Multicall3.sol      read batching for UIs and indexers
   VENDORED.md, LICENSE       upstream versions and the GPL-3.0 they come under

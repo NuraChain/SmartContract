@@ -10,9 +10,11 @@
     "typecheck": "tsc --noEmit",
     "clean": "hardhat clean",
     "preflight:nurachain": "hardhat run scripts/preflight.ts --network nurachain",
-    "deploy:testnet": "hardhat ignition deploy ignition/modules/BridgeTokens.ts --network bscTestnet",
-    "deploy:bsc": "hardhat ignition deploy ignition/modules/BridgeTokens.ts --network bsc",
-    "deploy:nurachain": "hardhat ignition deploy ignition/modules/BridgeTokens.ts --network nurachain"
+    "deploy:nurachain": "hardhat deploy --network nurachain",
+    "deploy:nurachain:token": "hardhat deploy --sc token --network nurachain",
+    "deploy:nurachain:airdrop": "hardhat deploy --sc airdrop --network nurachain",
+    "deploy:testnet": "hardhat deploy --network bscTestnet",
+    "deploy:bsc": "hardhat deploy --network bsc"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.7",

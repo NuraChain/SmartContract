@@ -62,26 +62,99 @@ npx hardhat keystore set DEPLOYER_PRIVATE_KEY
 
 ## Deploy
 
-Deployment uses Hardhat Ignition. The admin defaults to the deploying account:
+Contracts are grouped by folder under `contracts/`, and each folder has one Ignition
+module of the same name in `ignition/modules/`. You deploy one group at a time with
+`--sc`:
 
 ```bash
-npm run deploy:testnet    # BSC testnet (chain 97)
-npm run deploy:bsc        # BSC mainnet (chain 56)
+npx hardhat deploy --sc token   --network nurachain   # only contracts/token
+npx hardhat deploy --sc airdrop --network nurachain   # only contracts/airdrop
 ```
 
-To hand the roles to a multisig instead of the deployer, create
-`ignition/params.json`:
+Or through npm:
+
+```bash
+npm run deploy:nurachain:token
+npm run deploy:nurachain:airdrop
+
+# equivalent, passing the flag through npm — note the extra --
+npm run deploy:nurachain -- --sc token
+```
+
+> `npm run deploy:nurachain --sc token` (without the `--`) does **not** work. npm 11
+> parses `--sc` as an abbreviation of its own `--scope` config and drops it, so the
+> flag never reaches Hardhat. The `--` is what forwards it.
+
+Adding a new group is two steps: create `contracts/<name>/`, add
+`ignition/modules/<name>.ts`, then add `"<name>"` to the `DEPLOYABLE` list at the top
+of `hardhat.config.ts`. `--sc` validates against that list and errors with the valid
+choices if you mistype it.
+
+`--reset` wipes a module's previous deployment state before redeploying:
+
+```bash
+npx hardhat deploy --sc airdrop --network nurachain --reset
+```
+
+### The airdrop asks before it deploys
+
+`--sc airdrop` has two values it will not guess for you, and stops to ask:
+
+```
+contracts/airdrop needs a claim cap and a per-claim reward. The cap is immutable
+once deployed, so neither has a default — answer, or re-run with --max-claims
+and --reward.
+
+  Maximum number of claims: 50000
+  Reward per claim, in NURA: 200
+
+  Cap:    50,000 claims (immutable)
+  Reward: 200 NURA per claim
+  Pool:   10,000,000 NURA to cover every claim, sent to the
+          deployed address afterwards — this module does not fund it.
+```
+
+`maxClaims` is `immutable` in the contract — there is no setter, no upgrade, no second
+chance — and the two together decide how much coin you are committing to fund. That is
+why neither has a default: the wrong number here is not a number you get to change.
+
+Answer at the prompt, or supply them up front and skip the questions:
+
+```bash
+npx hardhat deploy --sc airdrop --network nurachain --max-claims 50000 --reward 200
+```
+
+`--reward` is in whole coin, not wei. Both are also read from the parameters file
+below, and anything found there is not asked about. A run with no terminal to ask on —
+CI, a piped shell — fails with that message rather than deploying a guess.
+
+### Deploy parameters
+
+Both modules default the admin to the deploying account. To override, create
+`ignition/params.json` (gitignored) keyed by module name:
 
 ```json
-{ "BridgeTokens": { "admin": "0xYourMultisigAddress" } }
+{
+  "token":   { "admin": "0xYourMultisig" },
+  "airdrop": {
+    "admin":  "0xYourMultisig",
+    "signer": "0xYourBackendSignerAddress",
+    "maxClaims": "50000n",
+    "rewardAmount": "200000000000000000000n"
+  }
+}
 ```
 
-then:
+then pass it:
 
 ```bash
-npx hardhat ignition deploy ignition/modules/BridgeTokens.ts \
-  --network bscTestnet --parameters ./ignition/params.json
+npx hardhat deploy --sc airdrop --network nurachain --parameters ./ignition/params.json
 ```
+
+`maxClaims` and `rewardAmount` there are optional — include them to deploy without
+being asked, leave them out to answer at the prompt. Unlike `--reward`, `rewardAmount`
+in this file is in **wei**, in Ignition's `"<digits>n"` spelling for bigints. `--max-claims`
+and `--reward` win over the file if you pass both.
 
 ### Verify on BscScan
 
@@ -135,6 +208,89 @@ If it is an Etherscan-style explorer, it needs its own API key and URL entry ins
 Many small chains support neither, in which case you verify by pasting the flattened
 source into their explorer UI — `npx hardhat flatten contracts/token/BridgeUSDT.sol > flat.sol`.
 
+## The airdrop
+
+`contracts/airdrop/Airdrop.sol` pays a fixed amount of native NURA to the first N
+eligible addresses that call `getReward`. One claim per address, ever. The amount and
+the cap are chosen at deploy time — see [the prompts above](#the-airdrop-asks-before-it-deploys);
+the worked examples below use 200 NURA and 50,000 claims.
+
+Eligibility is proven with an EIP-712 signature from a backend key holding
+`SIGNER_ROLE`. That is doing the real work: "one claim per address" on its own is
+worthless, because anyone can generate unlimited addresses and take every slot. The
+signature is what decides who is eligible; the on-chain checks only stop double claims
+and cap overruns.
+
+| Function | Who | What |
+| --- | --- | --- |
+| `getReward(deadline, signature)` | anyone with a valid signature | Claims `rewardAmount` once |
+| `fund()` / plain transfer | anyone | Adds to the payout pool |
+| `setRewardAmount(uint256)` | `DEFAULT_ADMIN_ROLE` | Changes the reward for *future* claims |
+| `withdraw(to, amount)` | `DEFAULT_ADMIN_ROLE` | Recovers leftover NURA |
+| `pause()` / `unpause()` | `PAUSER_ROLE` | Halts claiming |
+
+Views: `remainingClaims()`, `fundedClaims()`, `outstandingLiability()`, `hasClaimed(address)`,
+and `claimDigest(account, deadline)` for debugging signatures.
+
+### Funding it
+
+The contract pays from its own native balance, so **deploying is not enough**. Covering
+every claim needs `maxClaims * rewardAmount` sent to the deployed address — 10,000,000
+NURA at 50,000 x 200. The deploy prints that figure once you have answered. It pays out
+until the balance runs dry, then reverts with `InsufficientBalance` — so you can start
+partially funded and top up as you go.
+
+### Backend signing
+
+Your server signs an approval per eligible address. The signing key must hold
+`SIGNER_ROLE`:
+
+```ts
+import { Wallet } from "ethers";
+
+const signer = new Wallet(process.env.AIRDROP_SIGNER_KEY!);
+
+const domain = {
+  name: "Airdrop",
+  version: "1",
+  chainId: 1020,                  // Nurachain
+  verifyingContract: AIRDROP_ADDRESS,
+};
+
+const types = {
+  Claim: [
+    { name: "account", type: "address" },
+    { name: "deadline", type: "uint256" },
+  ],
+};
+
+// deadline is a unix timestamp; the signature is unusable after it
+const deadline = BigInt(Math.floor(Date.now() / 1000) + 24 * 3600);
+const signature = await signer.signTypedData(domain, types, { account, deadline });
+
+// hand { deadline, signature } to the frontend; the user calls:
+//   airdrop.getReward(deadline, signature)
+```
+
+The domain binds each signature to this contract on this chain, so one cannot be
+replayed against another deployment or a fork. Rotate the key any time with
+`grantRole(SIGNER_ROLE, newKey)` / `revokeRole(SIGNER_ROLE, oldKey)` — in-flight
+signatures from the old key stop working immediately.
+
+### Airdrop caveats
+
+- **The signer key is the whole security model.** Anyone who steals it can sign
+  themselves as many claims as the cap allows and drain the entire pool. Keep it off the
+  deployer machine, and prefer a separate key from `DEFAULT_ADMIN_ROLE`.
+- **`maxClaims` is immutable.** It is set once, in the constructor, from what you answer
+  at deploy time. Getting it wrong means redeploying and re-pointing everything at the
+  new address.
+- **`setRewardAmount` is not retroactive.** Lowering it after 10,000 people claimed
+  does not claw anything back.
+- **Claimers pay their own gas.** They need a small NURA balance before they can claim,
+  which is awkward if the airdrop is meant to be someone's first NURA. If you need
+  gasless claiming, that is a relayer/meta-transaction change — ask and I'll add it.
+
 ## Notes before you put real value behind this
 
 - **The tokens are only as good as the backing.** Nothing on-chain enforces that
@@ -161,9 +317,18 @@ contracts/token/
   BridgeToken.sol            shared base: roles, mint, burn, pause, permit, rescue
   BridgeUSDT.sol             Bridge USDT / USDT, 18 decimals
   BridgeBNB.sol              Bridge BNB / BNB, 18 decimals
+contracts/airdrop/
+  Airdrop.sol                capped native-coin airdrop, EIP-712 signature gated
 ignition/modules/
-  BridgeTokens.ts            deploys both tokens with one admin
+  token.ts                   deploys contracts/token   (--sc token)
+  airdrop.ts                 deploys contracts/airdrop (--sc airdrop)
+scripts/
+  preflight.ts               pre-deploy check: chain id, funding, real gas estimates
 test/
-  BridgeToken.test.ts        20 tests covering roles, mint, burn, pause, permit, rescue
-hardhat.config.ts            solc 0.8.28, optimizer on, BSC + BSC testnet networks
+  BridgeToken.test.ts        20 tests: roles, mint, burn, pause, permit, rescue
+  Airdrop.test.ts            21 tests: signatures, caps, double claims, funding, admin
+hardhat.config.ts            solc 0.8.28, networks, and the `deploy --sc` task
 ```
+
+Each `contracts/<folder>` maps to `ignition/modules/<folder>.ts` and is deployed
+independently with `--sc <folder>`.

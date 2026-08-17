@@ -1,17 +1,15 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
 /**
- * Deploys both bridged tokens with the same admin.
+ * Everything in contracts/token — deployed by `npm run deploy:nurachain:token`,
+ * or `npx hardhat deploy --sc token --network <network>`.
  *
  * The admin defaults to the deploying account. To hand the roles to a multisig
- * instead, pass it as a parameter:
+ * instead, put this in ignition/params.json and pass --parameters:
  *
- *   hardhat ignition deploy ignition/modules/BridgeTokens.ts \
- *     --network bscTestnet --parameters ./ignition/params.json
- *
- * where params.json is: { "BridgeTokens": { "admin": "0xYourMultisig" } }
+ *   { "token": { "admin": "0xYourMultisig" } }
  */
-export default buildModule("BridgeTokens", (m) => {
+export default buildModule("token", (m) => {
   const admin = m.getParameter("admin", m.getAccount(0));
 
   const bridgeUSDT = m.contract("BridgeUSDT", [admin]);

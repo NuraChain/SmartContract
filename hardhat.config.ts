@@ -12,7 +12,50 @@ import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-et
 // Each entry is a folder under contracts/ paired with the Ignition module that
 // deploys it. Adding a contracts/<name> folder means adding ignition/modules/<name>.ts
 // and one line here.
-const DEPLOYABLE = ["token", "airdrop"] as const;
+const DEPLOYABLE = ["token", "airdrop", "swap"] as const;
+
+// contracts/swap is vendored UniswapV2, pinned to the compilers it was audited and
+// deployed with, so the build needs four of them. Hardhat picks one per file from the
+// pragma; none of this is a free choice:
+//
+//   0.5.16  swap/core/**            pinned by the vendored source
+//   0.6.6   swap/periphery/**       pinned by the vendored source
+//   0.8.12  swap/vendor/Multicall3  pinned by the vendored source
+//   0.8.28  everything of ours, plus swap/tokens/** (^0.8.20)
+//
+// The 999999 runs and evmVersion istanbul on the first two are load-bearing: they are
+// inputs to the UniswapV2Pair init code hash that UniswapV2Library hardcodes. Changing
+// them — or moving the Pair source file, which changes the metadata solc appends —
+// changes that hash and every pair address the router computes. `npm run initcodehash`
+// regenerates the constant, and `npm run build` runs it for you.
+const COMPILERS = [
+  {
+    version: "0.5.16",
+    settings: { optimizer: { enabled: true, runs: 999999 }, evmVersion: "istanbul" },
+  },
+  {
+    version: "0.6.6",
+    settings: { optimizer: { enabled: true, runs: 999999 }, evmVersion: "istanbul" },
+  },
+  {
+    version: "0.8.12",
+    settings: { optimizer: { enabled: true, runs: 999999 } },
+  },
+  {
+    version: "0.8.28",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200,
+      },
+      // OpenZeppelin 5.6 uses `mcopy` in utils/Bytes.sol, which is Cancun-only, so
+      // this cannot be lowered to "paris" without downgrading the library. BNB Chain
+      // has supported the Cancun opcodes since the Pascal upgrade; check any other
+      // target chain before deploying there.
+      evmVersion: "cancun",
+    },
+  },
+];
 
 /** Native coin ticker per network. Only used to label the airdrop prompts. */
 const COIN: Record<string, string> = {
@@ -230,14 +273,14 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
 
     console.log(`Deploying contracts/${sc} via ignition/modules/${sc}.ts\n`);
 
-    const fileParameters = parameters === undefined ? {} : await readParametersFile(parameters);
-
     // Ignition's --parameters takes either a path or a literal JSON5 string. The airdrop
     // values are settled here rather than in the module, so they go on as a string with
-    // whatever the file already held merged underneath.
+    // whatever the file already held merged underneath. Every other group hands the path
+    // straight through, which is what keeps JSON5 files working for them.
     let resolvedParameters = parameters;
 
     if (sc === "airdrop") {
+      const fileParameters = parameters === undefined ? {} : await readParametersFile(parameters);
       const airdrop = await resolveAirdropParameters(
         fileParameters.airdrop ?? {},
         hre.globalOptions.network,
@@ -276,18 +319,18 @@ export default defineConfig({
   plugins: [hardhatToolboxMochaEthers],
   tasks: [deployTask],
 
+  // Spelled out per profile, not as a bare `compilers` list, and isolated on both.
+  // Hardhat builds its "production" profile by copying only the compiler *versions*
+  // out of your config and dropping your settings for its own, so a bare list rebuilds
+  // the Pair at 200 runs there while `hardhat test` uses 999999 — and two different
+  // Pairs are two different init code hashes. `isolated` is pinned for the same reason:
+  // production isolates by default, the default profile batches, and the batch is
+  // visible in the metadata solc appends. Ignition deploys with the production profile,
+  // so either difference is one that lands on-chain.
   solidity: {
-    version: "0.8.28",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200,
-      },
-      // OpenZeppelin 5.6 uses `mcopy` in utils/Bytes.sol, which is Cancun-only, so
-      // this cannot be lowered to "paris" without downgrading the library. BNB Chain
-      // has supported the Cancun opcodes since the Pascal upgrade; check any other
-      // target chain before deploying there.
-      evmVersion: "cancun",
+    profiles: {
+      default: { isolated: true, compilers: COMPILERS },
+      production: { isolated: true, compilers: COMPILERS },
     },
   },
 

@@ -53,22 +53,22 @@ npm test
 
 Requires Node 22+. Tested here on Node 24 / Windows.
 
-For a key that controls real value, use the encrypted keystore rather than a
-plaintext `.env`:
-
-```bash
-npx hardhat keystore set DEPLOYER_PRIVATE_KEY
-```
+`npm run build` is `compile`, then `node scripts/write-init-code-hash.ts`, then `compile`
+again. The second pass is not superstition: the AMM in `contracts/swap` hardcodes a hash
+of its own compiled pair bytecode, so the first compile is what the hash is computed
+from and the second is what picks it up. Use `npm run build` rather than
+`hardhat compile` after touching anything under `contracts/swap` — see
+[The swap](#the-swap).
 
 ## Deploy
 
 Contracts are grouped by folder under `contracts/`, and each folder has one Ignition
-module of the same name in `ignition/modules/`. You deploy one group at a time with
-`--sc`:
+module of the same name in `ignition/modules/`. You deploy one group at a time with `--sc`:
 
 ```bash
 npx hardhat deploy --sc token   --network nurachain   # only contracts/token
 npx hardhat deploy --sc airdrop --network nurachain   # only contracts/airdrop
+npx hardhat deploy --sc swap    --network nurachain   # only contracts/swap
 ```
 
 Or through npm:
@@ -76,6 +76,7 @@ Or through npm:
 ```bash
 npm run deploy:nurachain:token
 npm run deploy:nurachain:airdrop
+npm run deploy:nurachain:swap
 
 # equivalent, passing the flag through npm — note the extra --
 npm run deploy:nurachain -- --sc token
@@ -141,7 +142,8 @@ Both modules default the admin to the deploying account. To override, create
     "signer": "0xYourBackendSignerAddress",
     "maxClaims": "50000n",
     "rewardAmount": "200000000000000000000n"
-  }
+  },
+  "swap":    { "feeToSetter": "0xYourMultisig" }
 }
 ```
 
@@ -291,6 +293,65 @@ signatures from the old key stop working immediately.
   which is awkward if the airdrop is meant to be someone's first NURA. If you need
   gasless claiming, that is a relayer/meta-transaction change — ask and I'll add it.
 
+## The swap
+
+`contracts/swap` is UniswapV2, vendored verbatim from the published packages, plus
+Multicall3 and two dev-chain tokens. Provenance and the exact upstream versions are in
+[`contracts/swap/VENDORED.md`](contracts/swap/VENDORED.md); the vendored code is GPL-3.0
+and carries its own [`LICENSE`](contracts/swap/LICENSE), unlike the MIT contracts in the
+other two groups.
+
+`--sc swap` deploys four contracts:
+
+| Contract | What it is |
+| --- | --- |
+| `WBNB` | Wrapped native coin. The router needs an ERC20 to route native value through |
+| `UniswapV2Factory` | Creates one pair contract per token pair, with CREATE2 |
+| `UniswapV2Router02` | What wallets call: swaps, add/remove liquidity, native paths |
+| `Multicall3` | Read batching at a known address; every UI and indexer expects it |
+
+Pairs are not deployed here — the factory creates them on demand the first time someone
+adds liquidity for a pair. `feeToSetter` (deploy parameter, defaults to the deployer)
+holds the right to turn on the protocol's 1/6 cut of the 0.30% fee; until someone calls
+`setFeeTo`, the whole fee stays with liquidity providers.
+
+### The init code hash, and why the build compiles twice
+
+`UniswapV2Library.pairFor` works out a pair's address by doing the CREATE2 arithmetic
+itself instead of asking the factory — that is what makes the router cheap. The
+arithmetic needs the keccak256 of the pair's creation bytecode as a **compile-time
+constant**, and the value Uniswap ships is the hash of *their* build. Ours differs,
+because solc appends a metadata hash covering the source paths and compiler settings and
+this repo has its own of both.
+
+Get it wrong and there is no error message worth reading: the router computes an address
+with no contract at it, and every swap and every `addLiquidity` reverts somewhere inside
+`getReserves`. So the build regenerates the constant:
+
+```bash
+npm run build          # compile -> write-init-code-hash -> compile
+npm run initcodehash   # just the codegen, if you want to see what it changes
+```
+
+Two things in `hardhat.config.ts` are load-bearing for that hash, and both are
+commented there: the `999999` optimizer runs with `evmVersion: "istanbul"` on the
+0.5.16/0.6.6 compilers, and the fact that both build profiles are spelled out. Hardhat's
+`production` profile — the one Ignition deploys with — keeps only the compiler *versions*
+from a bare `compilers` list and substitutes its own settings, which would quietly build
+the pair at 200 runs on deploy while `npm test` used 999999. Same source, two hashes, and
+only the deployed one matters.
+
+`test/Swap.test.ts` is the guard. Four of its tests go through `pairFor` and fail loudly
+if the constant and the compiled pair have drifted apart, so `npm test` catches this
+before a deploy does.
+
+### The demo tokens
+
+`contracts/swap/tokens` holds `NuraToken` (fixed 100M supply) and `MockToken` (mUSDT,
+mUSDC, mDAI, mWBTC — with an optional public faucet). They compile and the tests use
+them, but the `swap` module does not deploy them: mock assets and an open faucet are
+testnet furniture. Ask if you want a group that deploys them.
+
 ## Notes before you put real value behind this
 
 - **The tokens are only as good as the backing.** Nothing on-chain enforces that
@@ -306,8 +367,16 @@ signatures from the old key stop working immediately.
   want that added.
 - **`BridgeUSDT` uses 18 decimals** to match USDT on BNB Chain. USDT on Ethereum and
   Tron uses 6 — bridging from either means the relayer must scale amounts by `1e12`.
-- **EVM target is `cancun`.** OpenZeppelin 5.6 uses the `mcopy` opcode, so the build
-  cannot target `paris`. BNB Chain supports Cancun; check any other target chain first.
+- **EVM target is `cancun`** for the 0.8.28 contracts. OpenZeppelin 5.6 uses the `mcopy`
+  opcode, so those cannot target `paris`. The vendored AMM is a separate matter: it is
+  pinned to `istanbul` on purpose and must stay there.
+- **The AMM's wrapped-native contract is called `WBNB`.** That is the vendored file
+  name and symbol. On a chain whose native coin is NURA, users will see "WBNB" in their
+  wallet for wrapped NURA. Renaming it is a source change to the vendored tree and a new
+  init code hash — worth doing before launch, not after.
+- **UniswapV2 does not support fee-on-transfer or rebasing tokens** through the plain
+  swap functions. The router has `...SupportingFeeOnTransferTokens` variants for the
+  first case; rebasing tokens simply break pair accounting.
 - **Not audited.**
 
 ## Layout
@@ -319,15 +388,24 @@ contracts/token/
   BridgeBNB.sol              Bridge BNB / BNB, 18 decimals
 contracts/airdrop/
   Airdrop.sol                capped native-coin airdrop, EIP-712 signature gated
+contracts/swap/
+  core/**                    vendored UniswapV2 core, solc 0.5.16
+  periphery/**               vendored UniswapV2 router + WBNB, solc 0.6.6
+  tokens/**                  NuraToken and MockToken, dev-chain only
+  vendor/Multicall3.sol      read batching for UIs and indexers
+  VENDORED.md, LICENSE       upstream versions and the GPL-3.0 they come under
 ignition/modules/
   token.ts                   deploys contracts/token   (--sc token)
   airdrop.ts                 deploys contracts/airdrop (--sc airdrop)
+  swap.ts                    deploys contracts/swap    (--sc swap)
 scripts/
   preflight.ts               pre-deploy check: chain id, funding, real gas estimates
+  write-init-code-hash.ts    regenerates the pair hash UniswapV2Library hardcodes
 test/
   BridgeToken.test.ts        20 tests: roles, mint, burn, pause, permit, rescue
   Airdrop.test.ts            21 tests: signatures, caps, double claims, funding, admin
-hardhat.config.ts            solc 0.8.28, networks, and the `deploy --sc` task
+  Swap.test.ts               11 tests: init code hash, liquidity, swaps, native paths
+hardhat.config.ts            four solc versions, networks, and the `deploy --sc` task
 ```
 
 Each `contracts/<folder>` maps to `ignition/modules/<folder>.ts` and is deployed

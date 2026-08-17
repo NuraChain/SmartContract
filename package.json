@@ -5,7 +5,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "hardhat compile",
+    "build": "hardhat compile && node scripts/write-init-code-hash.ts && hardhat compile",
+    "initcodehash": "node scripts/write-init-code-hash.ts",
     "test": "hardhat test",
     "typecheck": "tsc --noEmit",
     "clean": "hardhat clean",
@@ -13,6 +14,7 @@
     "deploy:nurachain": "hardhat deploy --network nurachain",
     "deploy:nurachain:token": "hardhat deploy --sc token --network nurachain",
     "deploy:nurachain:airdrop": "hardhat deploy --sc airdrop --network nurachain",
+    "deploy:nurachain:swap": "hardhat deploy --sc swap --network nurachain",
     "deploy:testnet": "hardhat deploy --network bscTestnet",
     "deploy:bsc": "hardhat deploy --network bsc"
   },

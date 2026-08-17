@@ -15,6 +15,10 @@ ignition/params.json
 .env.local
 *.key
 
+# Source archives dropped in the root to be unpacked (nuraswap-contracts.zip and
+# friends). The unpacked contracts are what belongs in git, not the tarball.
+*.zip
+
 # Editor / OS noise
 .DS_Store
 .idea/

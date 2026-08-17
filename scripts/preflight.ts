@@ -29,6 +29,15 @@ function probes(deployer: string) {
     airdrop: [
       { name: "Airdrop", args: [deployer, deployer, 50_000n, 200n * 10n ** 18n] },
     ],
+    // The AMM is the expensive group by a wide margin — the Pair bytecode the factory
+    // carries is most of it. Estimating the router against a factory address that is
+    // not a contract yet is fine: the constructor only stores it.
+    swap: [
+      { name: "WBNB", args: [] },
+      { name: "UniswapV2Factory", args: [deployer] },
+      { name: "UniswapV2Router02", args: [deployer, deployer] },
+      { name: "Multicall3", args: [] },
+    ],
   };
 }
 
@@ -71,7 +80,7 @@ async function main() {
       const tx = await factory.getDeployTransaction(...args);
       const gas = await ethers.provider.estimateGas({ ...tx, from: deployer.address });
       totalGas += gas;
-      console.log(`  ${name.padEnd(12)} ${gas} gas`);
+      console.log(`  ${name.padEnd(18)} ${gas} gas`);
     }
   }
 

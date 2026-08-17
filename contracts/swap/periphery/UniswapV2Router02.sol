@@ -319,6 +319,8 @@ contract UniswapV2Router02 is IUniswapV2Router02 {
     // **** SWAP (supporting fee-on-transfer tokens) ****
     // requires the initial amount to have already been sent to the first pair
     function _swapSupportingFeeOnTransferTokens(address[] memory path, address _to) internal virtual {
+        // Read once, outside the loop, so every hop of a route prices at one rate.
+        uint fee = UniswapV2Library.swapFee(factory);
         for (uint i; i < path.length - 1; i++) {
             (address input, address output) = (path[i], path[i + 1]);
             (address token0,) = UniswapV2Library.sortTokens(input, output);
@@ -329,7 +331,7 @@ contract UniswapV2Router02 is IUniswapV2Router02 {
             (uint reserve0, uint reserve1,) = pair.getReserves();
             (uint reserveInput, uint reserveOutput) = input == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
             amountInput = IERC20(input).balanceOf(address(pair)).sub(reserveInput);
-            amountOutput = UniswapV2Library.getAmountOut(amountInput, reserveInput, reserveOutput);
+            amountOutput = UniswapV2Library.getAmountOut(amountInput, reserveInput, reserveOutput, fee);
             }
             (uint amount0Out, uint amount1Out) = input == token0 ? (uint(0), amountOutput) : (amountOutput, uint(0));
             address to = i < path.length - 2 ? UniswapV2Library.pairFor(factory, output, path[i + 2]) : _to;
@@ -404,24 +406,26 @@ contract UniswapV2Router02 is IUniswapV2Router02 {
         return UniswapV2Library.quote(amountA, reserveA, reserveB);
     }
 
+    // `view`, not `pure` as upstream: the fee is storage on the factory now, so these
+    // have to read it. The selectors are unchanged, so callers keep working.
     function getAmountOut(uint amountIn, uint reserveIn, uint reserveOut)
         public
-        pure
+        view
         virtual
         override
         returns (uint amountOut)
     {
-        return UniswapV2Library.getAmountOut(amountIn, reserveIn, reserveOut);
+        return UniswapV2Library.getAmountOut(amountIn, reserveIn, reserveOut, UniswapV2Library.swapFee(factory));
     }
 
     function getAmountIn(uint amountOut, uint reserveIn, uint reserveOut)
         public
-        pure
+        view
         virtual
         override
         returns (uint amountIn)
     {
-        return UniswapV2Library.getAmountIn(amountOut, reserveIn, reserveOut);
+        return UniswapV2Library.getAmountIn(amountOut, reserveIn, reserveOut, UniswapV2Library.swapFee(factory));
     }
 
     function getAmountsOut(uint amountIn, address[] memory path)

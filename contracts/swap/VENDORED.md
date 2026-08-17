@@ -18,6 +18,30 @@ Local modifications:
   "Wrapped NURA"/"WNURA". No functional change. Nothing imports this file — the router
   reaches the wrapped coin through `IWETH` — so the rename touches only the deployed
   contract's own bytecode, not the pair init code hash.
+- **Swap fee lowered from 0.30% to 0.25%** (the rate PancakeSwap V2 uses) **and moved
+  from a compile-time constant into factory storage**, so it can be retuned after
+  launch. This is a change to the AMM's economics and to its trust model, not a rename.
+  It touches four files:
+
+  | File | Change |
+  | --- | --- |
+  | `core/UniswapV2Factory.sol` | `swapFee` (default 25 = 0.25%), `MAX_SWAP_FEE = 100` (1%, `constant`), `setSwapFee` gated on `feeToSetter`, `SwapFeeUpdated` event |
+  | `core/interfaces/IUniswapV2Factory.sol` | the three additions above |
+  | `core/UniswapV2Pair.sol` | the `UniswapV2: K` check reads `factory.swapFee()` instead of `997/1000` |
+  | `periphery/libraries/UniswapV2Library.sol` | `getAmountOut`/`getAmountIn` take the fee as an argument; `swapFee(factory)` reads it; `getAmountsOut`/`getAmountsIn` read it once per route |
+
+  The library quotes and the pair enforces, both from the same slot. If they ever
+  disagree, swaps either revert on K or give away value the pool never charged for —
+  `test/Swap.test.ts` has a test that changes the fee and then swaps at the exact quote,
+  which fails either way round.
+
+  Knock-on: `UniswapV2Router02.getAmountOut`/`getAmountIn` and their declarations in
+  `IUniswapV2Router01` are now `view` rather than `pure`, since they read that slot.
+  The selectors are unchanged.
+
+  The protocol's own cut, when `feeTo` is set, is still Uniswap's 1/6 of the fee
+  (`_mintFee` is unmodified) — PancakeSwap takes 8/25 there instead, which we did not
+  copy.
 - `periphery/libraries/UniswapV2Library.sol`: the hardcoded pair init code hash is
   regenerated from our compiled Pair bytecode by `scripts/write-init-code-hash.ts`.
   The optimizer settings and evmVersion in hardhat.config.ts are inputs to that

@@ -15,15 +15,18 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  * adds liquidity for a token pair, which is why the router can compute a pair address
  * before it exists — see the init code hash note in scripts/write-init-code-hash.ts.
  *
- * `feeToSetter` gets to switch on the protocol fee cut (1/6 of the 0.30% fee) and to
- * hand that right on. It defaults to the deployer; on anything real it should be a
- * multisig. Override it in ignition/params.json and pass --parameters:
+ * `feeToSetter` holds three powers, and on this fork that is more than upstream gives
+ * it: `setSwapFee` retunes the trading fee for every pair at once (capped at 1% by
+ * MAX_SWAP_FEE, which is constant and cannot be lifted without a new factory),
+ * `setFeeTo` switches on the protocol's 1/6 cut of that fee, and `setFeeToSetter`
+ * hands the lot to someone else. It defaults to the deployer; on anything real it
+ * should be a multisig. Override it in ignition/params.json and pass --parameters:
  *
  *   { "swap": { "feeToSetter": "0xYourMultisig" } }
  *
- * The protocol fee starts off — `feeTo` is the zero address until whoever holds
- * `feeToSetter` calls `setFeeTo`. Until then the full 0.30% stays with liquidity
- * providers, which is the usual way to launch.
+ * The trading fee starts at 0.25% and the protocol fee starts off — `feeTo` is the
+ * zero address until `setFeeTo` is called. Until then the full 0.25% stays with
+ * liquidity providers, which is the usual way to launch.
  *
  * This module always deploys its own WNURA. If Nurachain already has a canonical
  * wrapped-native contract, the router has to be pointed at that one instead — say so

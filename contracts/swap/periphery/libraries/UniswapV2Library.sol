@@ -1,6 +1,7 @@
 pragma solidity >=0.5.0;
 
 import '../../core/interfaces/IUniswapV2Pair.sol';
+import '../../core/interfaces/IUniswapV2Factory.sol';
 
 import "./SafeMath.sol";
 
@@ -21,7 +22,7 @@ library UniswapV2Library {
                 hex'ff',
                 factory,
                 keccak256(abi.encodePacked(token0, token1)),
-                hex'2d94b8c83a8402ce7305b055f5d2c8d5a6edfdfe95612db01759f1ebff533dcd' // init code hash
+                hex'eb2327179f1be839585a8698f717f96b9027cacbe0d66bbcf7d98f9f8c6bb2ef' // init code hash
             ))));
     }
 
@@ -39,44 +40,56 @@ library UniswapV2Library {
         amountB = amountA.mul(reserveB) / reserveA;
     }
 
+    // the live trading fee, in hundredths of a percent, that every pair of this factory
+    // charges. Read once per quote and passed down, so a multi-hop route cannot price
+    // two of its hops at different rates.
+    function swapFee(address factory) internal view returns (uint) {
+        return uint(IUniswapV2Factory(factory).swapFee());
+    }
+
     // given an input amount of an asset and pair reserves, returns the maximum output amount of the other asset
-    function getAmountOut(uint amountIn, uint reserveIn, uint reserveOut) internal pure returns (uint amountOut) {
+    function getAmountOut(uint amountIn, uint reserveIn, uint reserveOut, uint fee) internal pure returns (uint amountOut) {
         require(amountIn > 0, 'UniswapV2Library: INSUFFICIENT_INPUT_AMOUNT');
         require(reserveIn > 0 && reserveOut > 0, 'UniswapV2Library: INSUFFICIENT_LIQUIDITY');
-        uint amountInWithFee = amountIn.mul(997);
+        // Mirrors the K check in UniswapV2Pair.swap - see the note there. The factory
+        // caps the fee well below 10000, but sub() rather than - keeps a bad value a
+        // revert instead of an underflow that would quote an absurd payout.
+        uint amountInWithFee = amountIn.mul(uint(10000).sub(fee));
         uint numerator = amountInWithFee.mul(reserveOut);
-        uint denominator = reserveIn.mul(1000).add(amountInWithFee);
+        uint denominator = reserveIn.mul(10000).add(amountInWithFee);
         amountOut = numerator / denominator;
     }
 
     // given an output amount of an asset and pair reserves, returns a required input amount of the other asset
-    function getAmountIn(uint amountOut, uint reserveIn, uint reserveOut) internal pure returns (uint amountIn) {
+    function getAmountIn(uint amountOut, uint reserveIn, uint reserveOut, uint fee) internal pure returns (uint amountIn) {
         require(amountOut > 0, 'UniswapV2Library: INSUFFICIENT_OUTPUT_AMOUNT');
         require(reserveIn > 0 && reserveOut > 0, 'UniswapV2Library: INSUFFICIENT_LIQUIDITY');
-        uint numerator = reserveIn.mul(amountOut).mul(1000);
-        uint denominator = reserveOut.sub(amountOut).mul(997);
+        uint numerator = reserveIn.mul(amountOut).mul(10000);
+        uint denominator = reserveOut.sub(amountOut).mul(uint(10000).sub(fee));
         amountIn = (numerator / denominator).add(1);
     }
 
     // performs chained getAmountOut calculations on any number of pairs
     function getAmountsOut(address factory, uint amountIn, address[] memory path) internal view returns (uint[] memory amounts) {
         require(path.length >= 2, 'UniswapV2Library: INVALID_PATH');
+        uint fee = swapFee(factory);
         amounts = new uint[](path.length);
         amounts[0] = amountIn;
         for (uint i; i < path.length - 1; i++) {
             (uint reserveIn, uint reserveOut) = getReserves(factory, path[i], path[i + 1]);
-            amounts[i + 1] = getAmountOut(amounts[i], reserveIn, reserveOut);
+            amounts[i + 1] = getAmountOut(amounts[i], reserveIn, reserveOut, fee);
         }
     }
 
     // performs chained getAmountIn calculations on any number of pairs
     function getAmountsIn(address factory, uint amountOut, address[] memory path) internal view returns (uint[] memory amounts) {
         require(path.length >= 2, 'UniswapV2Library: INVALID_PATH');
+        uint fee = swapFee(factory);
         amounts = new uint[](path.length);
         amounts[amounts.length - 1] = amountOut;
         for (uint i = path.length - 1; i > 0; i--) {
             (uint reserveIn, uint reserveOut) = getReserves(factory, path[i - 1], path[i]);
-            amounts[i - 1] = getAmountIn(amounts[i], reserveIn, reserveOut);
+            amounts[i - 1] = getAmountIn(amounts[i], reserveIn, reserveOut, fee);
         }
     }
 }

@@ -320,9 +320,33 @@ other two groups.
 | `Multicall3` | Read batching at a known address; every UI and indexer expects it |
 
 Pairs are not deployed here — the factory creates them on demand the first time someone
-adds liquidity for a pair. `feeToSetter` (deploy parameter, defaults to the deployer)
-holds the right to turn on the protocol's 1/6 cut of the 0.30% fee; until someone calls
-`setFeeTo`, the whole fee stays with liquidity providers.
+adds liquidity for a pair.
+
+### The trading fee is adjustable
+
+Upstream UniswapV2 burns its 0.30% fee into the pair bytecode, where nothing can reach
+it. Here the fee is a slot on the factory, starting at **0.25%** (PancakeSwap V2's rate)
+and changeable afterwards:
+
+```solidity
+factory.swapFee();        // 25, i.e. 0.25%, in hundredths of a percent
+factory.MAX_SWAP_FEE();   // 100, i.e. 1.00%
+factory.setSwapFee(30);   // 0.30% — feeToSetter only
+```
+
+One number covers every pair, and a change lands on the very next swap. Raising it
+makes the pairs' K check stricter, so swaps already in the mempool at the old rate
+revert rather than underpay — irritating for those traders, never a loss to the pool.
+Lowering it only loosens the check, so nothing in flight breaks.
+
+`MAX_SWAP_FEE` is `constant`, baked into the bytecode, and **cannot itself be raised** —
+lifting the ceiling means deploying a new factory. It is what stops the fee key from
+being a switch that confiscates whole trades.
+
+`feeToSetter` (deploy parameter, defaults to the deployer) is the key for all of it:
+`setSwapFee`, `setFeeTo` — which turns on the protocol's 1/6 cut of the trading fee, off
+at launch so the whole fee goes to liquidity providers — and `setFeeToSetter`, which
+hands those rights to someone else.
 
 ### The init code hash, and why the build compiles twice
 
@@ -385,6 +409,13 @@ testnet furniture. Ask if you want a group that deploys them.
   it — the router reaches it through `IWETH` — so the pair init code hash is unaffected.
   Recorded in [`contracts/swap/VENDORED.md`](contracts/swap/VENDORED.md), as the GPL
   requires for a modified file.
+- **The AMM is no longer stock UniswapV2, and the fee key is a trust assumption.**
+  Whoever holds `feeToSetter` can move the trading fee on every pair at will, up to the
+  1% `MAX_SWAP_FEE` ceiling. Traders cannot opt out and get no notice beyond the
+  `SwapFeeUpdated` event. That is a real power to hand an EOA — put it behind a multisig,
+  and ideally a timelock, before the pools hold meaningful liquidity. The modifications
+  are listed in [`contracts/swap/VENDORED.md`](contracts/swap/VENDORED.md); they are
+  small and tested, but they are changes to code whose audits covered the original.
 - **UniswapV2 does not support fee-on-transfer or rebasing tokens** through the plain
   swap functions. The router has `...SupportingFeeOnTransferTokens` variants for the
   first case; rebasing tokens simply break pair accounting.

@@ -180,7 +180,7 @@ describe("Swap", () => {
       expect(await tokenB.balanceOf(alice.address)).to.equal(before + quoted[1]);
     });
 
-    it("takes the 0.30% fee, so a round trip comes back short", async () => {
+    it("takes the 0.25% fee, so a round trip comes back short", async () => {
       const { router, tokenA, tokenB, alice } = await loadFixture(deployWithLiquidity);
       const [a, b] = [await tokenA.getAddress(), await tokenB.getAddress()];
       const amountIn = ethers.parseEther("1000");
@@ -198,9 +198,11 @@ describe("Swap", () => {
 
       const after = await tokenA.balanceOf(alice.address);
       expect(after).to.be.lessThan(before);
-      // Two hops at 0.30% each, so ~0.6% of the trade is gone.
-      expect(before - after).to.be.greaterThan((amountIn * 5n) / 1000n);
-      expect(before - after).to.be.lessThan((amountIn * 7n) / 1000n);
+      // Two hops at 0.25% each: 1 - 0.9975^2, so ~0.4994% of the trade is gone.
+      // These bounds straddle 0.25% and exclude 0.30% (which would lose ~0.5991%),
+      // so this test fails if the pair and the library drift apart on the rate.
+      expect(before - after).to.be.greaterThan((amountIn * 4n) / 1000n);
+      expect(before - after).to.be.lessThan((amountIn * 55n) / 10000n);
     });
 
     it("refuses a swap whose deadline has passed", async () => {
@@ -256,6 +258,85 @@ describe("Swap", () => {
         });
 
       expect(await tokenA.balanceOf(alice.address)).to.be.greaterThan(before);
+    });
+  });
+
+  // Upstream UniswapV2 hardcodes the fee in the pair bytecode. Here it is a slot on the
+  // factory that feeToSetter can retune, which buys flexibility and costs a trust
+  // assumption — hence the cap, and hence these tests.
+  describe("the adjustable fee", () => {
+    it("starts at 0.25% and cannot be raised past 1%", async () => {
+      const { factory } = await loadFixture(deploySwap);
+
+      expect(await factory.swapFee()).to.equal(25n);
+      expect(await factory.MAX_SWAP_FEE()).to.equal(100n);
+    });
+
+    it("lets feeToSetter retune it and announces the change", async () => {
+      const { factory } = await loadFixture(deploySwap);
+
+      await expect(factory.setSwapFee(10)).to.emit(factory, "SwapFeeUpdated").withArgs(25, 10);
+      expect(await factory.swapFee()).to.equal(10n);
+    });
+
+    it("blocks anyone who is not feeToSetter", async () => {
+      const { factory, alice } = await loadFixture(deploySwap);
+
+      await expect(factory.connect(alice).setSwapFee(10)).to.be.revertedWith(
+        "UniswapV2: FORBIDDEN",
+      );
+      expect(await factory.swapFee()).to.equal(25n);
+    });
+
+    // The cap is the whole reason a mutable fee is not simply a rug: without it, the
+    // key holder could set 100% and take every trade in full.
+    it("refuses any fee above the cap", async () => {
+      const { factory } = await loadFixture(deploySwap);
+
+      await expect(factory.setSwapFee(101)).to.be.revertedWith("UniswapV2: SWAP_FEE_TOO_HIGH");
+      await expect(factory.setSwapFee(10000)).to.be.revertedWith("UniswapV2: SWAP_FEE_TOO_HIGH");
+      expect(await factory.swapFee()).to.equal(25n);
+    });
+
+    // The one that matters. The pair enforces the fee in its K check and the library
+    // quotes it, from the same slot. If a change moved only one of them, this either
+    // reverts on K or pays the stale rate.
+    it("charges the new rate on the next swap, pair and router in step", async () => {
+      const { router, factory, tokenA, tokenB, alice } = await loadFixture(deployWithLiquidity);
+      const path = [await tokenA.getAddress(), await tokenB.getAddress()];
+      const amountIn = ethers.parseEther("1000");
+
+      const at25 = (await router.getAmountsOut(amountIn, path))[1];
+
+      await factory.setSwapFee(5); // 0.05%
+      const at5 = (await router.getAmountsOut(amountIn, path))[1];
+      expect(at5).to.be.greaterThan(at25);
+
+      // amountOutMin is the exact quote, so the pair has to honour it to the wei.
+      const before = await tokenB.balanceOf(alice.address);
+      await router
+        .connect(alice)
+        .swapExactTokensForTokens(amountIn, at5, path, alice.address, await deadline());
+
+      expect(await tokenB.balanceOf(alice.address)).to.equal(before + at5);
+    });
+
+    it("still clears at the 1% ceiling and at no fee at all", async () => {
+      const { router, factory, tokenA, tokenB, alice } = await loadFixture(deployWithLiquidity);
+      const path = [await tokenA.getAddress(), await tokenB.getAddress()];
+      const amountIn = ethers.parseEther("1000");
+
+      for (const fee of [100n, 0n]) {
+        await factory.setSwapFee(fee);
+        const quoted = (await router.getAmountsOut(amountIn, path))[1];
+        const before = await tokenB.balanceOf(alice.address);
+
+        await router
+          .connect(alice)
+          .swapExactTokensForTokens(amountIn, quoted, path, alice.address, await deadline());
+
+        expect(await tokenB.balanceOf(alice.address)).to.equal(before + quoted);
+      }
     });
   });
 });

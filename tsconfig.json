@@ -10,7 +10,11 @@
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "noEmit": true
+    "noEmit": true,
+    // test/univ3/** imports its shared fixtures as "./helpers.ts". Hardhat 3 runs TypeScript
+    // through its own loader, where the explicit extension is what resolves at runtime —
+    // Node's ESM resolver does not add one. Safe with noEmit: nothing is written out.
+    "allowImportingTsExtensions": true
   },
   // "types" holds the TypeChain bindings that `hardhat compile` generates. Including
   // them is what makes `ethers.deployContract("BridgeUSDT", ...)` return a typed

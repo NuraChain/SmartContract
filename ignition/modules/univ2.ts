@@ -36,28 +36,6 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  * here: mUSDT and a public faucet are testnet furniture, not something to deploy by
  * reflex on a chain that matters.
  */
-/**
- * A note on what is already deployed on Nurachain.
- *
- * These four were deployed while this folder was called contracts/swap, and the
- * deployment records in ignition/deployments/chain-1020 have been remapped onto the
- * `univ2` module id, so `--sc univ2` there redeploys nothing:
- *
- *   WNURA              0xf0a4eC07916feBa4432121Ed5969887D9b939cD0
- *   UniswapV2Factory   0xa812c195c5B683C2FfCd3CCD0E57ee4EE19F85d6
- *   UniswapV2Router02  0xfE126FD0CEcec827112bFc5440d792b3698B3850
- *   Multicall3         0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24
- *
- * The rename moved the pair init code hash, because solc puts the source paths in the
- * metadata it appends (contracts/univ3 avoids this with bytecodeHash "none"; V2 uses
- * solc's default). So the router above carries 0xeb232717…bb2ef while this tree now
- * builds 0x206906a0…5859d9. Both are internally consistent; they are simply different
- * builds. A `--reset`, or a deploy to any other chain, stands up an AMM on the new hash
- * — and WNURA is the one contract to think twice about there, since the live UniswapV3
- * periphery is wired to the address above.
- *
- * See scripts/write-init-code-hash.ts for the full story.
- */
 export default buildModule("univ2", (m) => {
   const feeToSetter = m.getParameter("feeToSetter", m.getAccount(0));
 

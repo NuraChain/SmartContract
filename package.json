@@ -14,7 +14,8 @@
     "deploy:nurachain": "hardhat deploy --network nurachain",
     "deploy:nurachain:token": "hardhat deploy --sc token --network nurachain",
     "deploy:nurachain:airdrop": "hardhat deploy --sc airdrop --network nurachain",
-    "deploy:nurachain:univ2": "hardhat deploy --sc univ2 --network nurachain"
+    "deploy:nurachain:univ2": "hardhat deploy --sc univ2 --network nurachain",
+    "deploy:nurachain:univ3": "hardhat deploy --sc univ3 --network nurachain"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.7",

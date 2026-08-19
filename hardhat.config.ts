@@ -1,7 +1,8 @@
 import "dotenv/config";
 
+import { readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import { formatEther, parseEther } from "ethers";
@@ -12,22 +13,42 @@ import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-et
 // Each entry is a folder under contracts/ paired with the Ignition module that
 // deploys it. Adding a contracts/<name> folder means adding ignition/modules/<name>.ts
 // and one line here.
-const DEPLOYABLE = ["token", "airdrop", "univ2"] as const;
+const DEPLOYABLE = ["token", "airdrop", "univ2", "univ3"] as const;
 
-// contracts/univ2 is vendored UniswapV2, pinned to the compilers it was audited and
-// deployed with, so the build needs four of them. Hardhat picks one per file from the
-// pragma; none of this is a free choice:
+// contracts/univ2 and contracts/univ3 are vendored Uniswap, pinned to the compilers they were
+// audited and deployed with, so the build needs five of them. Hardhat picks one per file
+// from the pragma; none of this is a free choice:
 //
 //   0.5.16  univ2/core/**           pinned by the vendored source
 //   0.6.6   univ2/periphery/**      pinned by the vendored source
+//   0.7.6   univ3/**                pinned by the vendored source (=0.7.6 exactly)
 //   0.8.12  univ2/vendor/Multicall3 pinned by the vendored source
 //   0.8.28  everything of ours, plus univ2/tokens/** (^0.8.20)
 //
 // The 999999 runs and evmVersion istanbul on the first two are load-bearing: they are
 // inputs to the UniswapV2Pair init code hash that UniswapV2Library hardcodes. Changing
-// them â€” or moving the Pair source file, which changes the metadata solc appends â€”
+// them — or moving the Pair source file, which changes the metadata solc appends —
 // changes that hash and every pair address the router computes. `npm run initcodehash`
 // regenerates the constant, and `npm run build` runs it for you.
+//
+// 0.7.6 is UniswapV3's, and its settings are copied from upstream's own hardhat configs
+// rather than chosen. Two reasons, and the second is the hard one:
+//
+//   1. They are inputs to the pool init code hash, exactly as above — see V3_OVERRIDES.
+//   2. Nurachain enforces EIP-170 at exactly 24576 bytes (`eth_call` on a 24577-byte
+//      deploy returns "max code size exceeded"), and upstream's own builds land at
+//      24535 (UniswapV3Factory) and 24537 (NFTDescriptor). That is 41 and 39 bytes of
+//      headroom. `metadata.bytecodeHash: "none"` is worth ~40 of them on its own, so it
+//      is not a style preference — drop it and the factory no longer fits on the chain.
+//      test/univ3/Build.test.ts asserts every V3 contract against that limit.
+//
+// A pleasant side effect of bytecodeHash "none": solc then appends no source-path hash,
+// so V3 bytecode does not depend on where the files live or on how Hardhat batches them.
+const V3_SETTINGS = {
+  evmVersion: "istanbul",
+  metadata: { bytecodeHash: "none" },
+};
+
 const COMPILERS = [
   {
     version: "0.5.16",
@@ -36,6 +57,11 @@ const COMPILERS = [
   {
     version: "0.6.6",
     settings: { optimizer: { enabled: true, runs: 999999 }, evmVersion: "istanbul" },
+  },
+  {
+    // v3-core's setting. Also the fallback for every V3 file V3_OVERRIDES does not name.
+    version: "0.7.6",
+    settings: { optimizer: { enabled: true, runs: 800 }, ...V3_SETTINGS },
   },
   {
     version: "0.8.12",
@@ -58,6 +84,60 @@ const COMPILERS = [
   },
 ];
 
+// v3-core and v3-periphery ship different optimizer settings, and v3-periphery overrides
+// three of its own files again, so one number cannot cover contracts/univ3. Copied verbatim
+// from upstream's hardhat.config.ts files:
+//
+//   800        v3-core: UniswapV3Factory, UniswapV3Pool, all core libraries. This one
+//              lives in COMPILERS above, as the 0.7.6 default.
+//   1000000    v3-periphery's DEFAULT_COMPILER_SETTINGS
+//   2000       v3-periphery's LOW: NonfungiblePositionManager, which does not fit at
+//              1000000 (it lands 192 bytes under EIP-170 even at 2000)
+//   1000       v3-periphery's LOWEST: NonfungibleTokenPositionDescriptor and the
+//              NFTDescriptor library it links against — the string and SVG code is what
+//              pushes NFTDescriptor to 24537 bytes, 39 under the limit
+//
+// Every file under contracts/univ3 gets an entry, and the version pin is the reason why.
+// Only 19 of the 96 vendored files say `pragma solidity =0.7.6`; the rest are open
+// ranges (`>=0.5.0`, `>=0.6.0 <0.8.0`, ...) that 0.8.28 and 0.8.12 also satisfy, and
+// Hardhat resolves an open range to the newest compiler that fits. Left alone, the V3
+// libraries compile under 0.8.28 and fail on things that are legal in 0.7.6 and not in
+// 0.8 — `int24(type(uint8).max)`, `address(uint256(...))`, `chainid()` inside a `pure`
+// function. Pinning the whole folder is what keeps V3 on the compiler it was written for.
+//
+// Runs then follow upstream per file. Which runs value a *dependency* gets does not
+// matter — Hardhat compiles a root file together with its imports in one job, under the
+// root's settings — so vendor/** inherits from whatever periphery file pulls it in.
+const V3_RUNS: Record<string, number> = {
+  "contracts/univ3/periphery/NonfungiblePositionManager.sol": 2_000,
+  "contracts/univ3/periphery/NonfungibleTokenPositionDescriptor.sol": 1_000,
+  "contracts/univ3/periphery/libraries/NFTDescriptor.sol": 1_000,
+};
+
+function solidityFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true, recursive: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".sol"))
+    .map((entry) => `${entry.parentPath}/${entry.name}`.split(sep).join("/"));
+}
+
+const V3_OVERRIDES = Object.fromEntries(
+  solidityFiles("contracts/univ3").map((file) => [
+    file,
+    {
+      version: "0.7.6",
+      settings: {
+        optimizer: {
+          enabled: true,
+          // v3-periphery's DEFAULT is 1000000 and v3-core's is 800; anything vendored
+          // under univ3/vendor is only ever a dependency, so it rides on 800 harmlessly.
+          runs: V3_RUNS[file] ?? (file.startsWith("contracts/univ3/periphery/") ? 1_000_000 : 800),
+        },
+        ...V3_SETTINGS,
+      },
+    },
+  ]),
+);
+
 /** Native coin ticker per network. Only used to label the airdrop prompts. */
 const COIN: Record<string, string> = {
   nurachain: "NURA",
@@ -79,13 +159,13 @@ function parseClaims(answer: string): bigint {
     throw new Error(`"${answer.trim()}" is not a whole number of claims.`);
   }
   if (BigInt(digits) === 0n) {
-    throw new Error("The cap has to be at least 1 â€” the constructor rejects 0.");
+    throw new Error("The cap has to be at least 1 — the constructor rejects 0.");
   }
 
   return BigInt(digits);
 }
 
-/** A coin amount as a person would type it â€” 200, 0.5 â€” converted to wei. */
+/** A coin amount as a person would type it — 200, 0.5 — converted to wei. */
 function parseReward(answer: string): bigint {
   let wei: bigint;
 
@@ -97,7 +177,7 @@ function parseReward(answer: string): bigint {
 
   // parseEther happily returns a negative, which the uint256 constructor arg cannot hold.
   if (wei <= 0n) {
-    throw new Error("The reward has to be above 0 â€” the constructor rejects 0.");
+    throw new Error("The reward has to be above 0 — the constructor rejects 0.");
   }
 
   return wei;
@@ -152,7 +232,7 @@ function terminalReader() {
     async ask(question: string, parse: (answer: string) => bigint): Promise<bigint> {
       if (process.stdin.isTTY !== true) {
         throw new Error(
-          "Nothing to ask on â€” stdin is not a terminal. Pass --max-claims and --reward, " +
+          "Nothing to ask on — stdin is not a terminal. Pass --max-claims and --reward, " +
             'or set maxClaims and rewardAmount under "airdrop" in the --parameters file.',
         );
       }
@@ -177,7 +257,7 @@ function terminalReader() {
 /**
  * Settles the two airdrop values that must not be guessed on your behalf: the claim
  * cap, which is immutable once deployed, and the per-claim reward. They come from
- * --max-claims / --reward, or from the --parameters file, or â€” failing both â€” from a
+ * --max-claims / --reward, or from the --parameters file, or — failing both — from a
  * question at the terminal. There is deliberately no default: a cap typed by accident
  * is a cap you live with, and the pool it commits you to funding is real money.
  */
@@ -201,7 +281,7 @@ async function resolveAirdropParameters(
   if (maxClaims === undefined || rewardAmount === undefined) {
     console.log(
       "contracts/airdrop needs a claim cap and a per-claim reward. The cap is immutable\n" +
-        "once deployed, so neither has a default â€” answer, or re-run with --max-claims\n" +
+        "once deployed, so neither has a default — answer, or re-run with --max-claims\n" +
         "and --reward.\n",
     );
   }
@@ -218,7 +298,7 @@ async function resolveAirdropParameters(
     `\n  Cap:    ${maxClaims.toLocaleString("en-US")} claims (immutable)\n` +
       `  Reward: ${coinAmount(rewardAmount)} ${coin} per claim\n` +
       `  Pool:   ${coinAmount(maxClaims * rewardAmount)} ${coin} to cover every claim, sent to the\n` +
-      `          deployed address afterwards â€” this module does not fund it.\n`,
+      `          deployed address afterwards — this module does not fund it.\n`,
   );
 
   return { maxClaims, rewardAmount };
@@ -308,7 +388,7 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
 // Hardhat needs chainId as a literal number when the config loads, so it cannot come
 // from configVariable() the way the lazy secrets below do. Nurachain is not in any
 // public chain registry, so put its id in .env rather than guessing it here. Leaving
-// it unset is fine â€” Hardhat then accepts whatever the RPC reports, it just loses the
+// it unset is fine — Hardhat then accepts whatever the RPC reports, it just loses the
 // safety check that stops you deploying to the wrong chain, and the explorer entry
 // below, which has to be keyed by a known chain id.
 const nurachainChainId = process.env.NURACHAIN_CHAIN_ID
@@ -318,7 +398,7 @@ const nurachainChainId = process.env.NURACHAIN_CHAIN_ID
 // Nurachain is not a chain hardhat-verify knows, so its explorer has to be described
 // here. It is filed under the `blockscout` slot for one reason: that is the provider
 // hardhat-verify drives without an API key, and explorer.nurachain.net has no key to
-// give. Its /api does answer in the Etherscan shape, but only the `account` module â€”
+// give. Its /api does answer in the Etherscan shape, but only the `account` module —
 // `contract/verifysourcecode` returns "unsupported module", so `--verify` cannot work
 // against it yet. This entry is here so the explorer is already pointed at correctly
 // when Nurachain ships verification; until then, verify by hand with
@@ -336,15 +416,15 @@ export default defineConfig({
   // Spelled out per profile, not as a bare `compilers` list, and isolated on both.
   // Hardhat builds its "production" profile by copying only the compiler *versions*
   // out of your config and dropping your settings for its own, so a bare list rebuilds
-  // the Pair at 200 runs there while `hardhat test` uses 999999 â€” and two different
+  // the Pair at 200 runs there while `hardhat test` uses 999999 — and two different
   // Pairs are two different init code hashes. `isolated` is pinned for the same reason:
   // production isolates by default, the default profile batches, and the batch is
   // visible in the metadata solc appends. Ignition deploys with the production profile,
   // so either difference is one that lands on-chain.
   solidity: {
     profiles: {
-      default: { isolated: true, compilers: COMPILERS },
-      production: { isolated: true, compilers: COMPILERS },
+      default: { isolated: true, compilers: COMPILERS, overrides: V3_OVERRIDES },
+      production: { isolated: true, compilers: COMPILERS, overrides: V3_OVERRIDES },
     },
   },
 
@@ -363,7 +443,7 @@ export default defineConfig({
     },
   },
 
-  // Empty when NURACHAIN_CHAIN_ID is unset â€” there is no id to key the entry by, and
+  // Empty when NURACHAIN_CHAIN_ID is unset — there is no id to key the entry by, and
   // hardhat-verify would have nothing to match the connected network against anyway.
   chainDescriptors:
     nurachainChainId === undefined

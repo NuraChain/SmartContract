@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  review_status: true
+  review_details: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/artifacts/**"
+    - "!**/cache/**"
+    - "!**/coverage/**"
+    - "!**/*.lock"
+  path_instructions:
+    - path: "**/*.sol"
+      instructions: |
+        Review as production-grade security-critical Solidity.
+        - Check access control, ownership, roles, upgradeability, reentrancy, checks-effects-interactions, arithmetic/precision, token accounting, approvals, callbacks, and external calls.
+        - Check signature validation, nonce/replay protection, EIP-712 domain separation, permit flows, oracle assumptions, flash-loan interactions, and denial-of-service/griefing risks.
+        - For mint/burn/airdrop/bridge logic, verify authorization, supply invariants, replay resistance, recipient validation, and double-claim prevention.
+        - Flag unsafe assumptions about ERC20/ERC721/ERC1155 behavior and fee-on-transfer/rebasing tokens where relevant.
+        - Treat deployment addresses, chain IDs, roles, initialization, and upgrade admin configuration as security-critical.
+    - path: "**/*.{ts,js}"
+      instructions: |
+        Review deployment/test/scripts as security-sensitive blockchain tooling.
+        - Check network selection, chain ID validation, private-key handling, nonce management, transaction confirmation, gas configuration, and accidental mainnet/prod execution.
+        - Never log private keys, mnemonics, RPC credentials, or secrets.
+    - path: "test/**"
+      instructions: |
+        Require adversarial tests for access control, reentrancy, replay, invalid signatures, rounding, boundary values, unauthorized mint/burn, and failure/revert paths.
+    - path: "**/*.{md,mdx}"
+      instructions: |
+        Verify contract addresses, network IDs, deployment procedures, role assignments, token decimals, and security claims.

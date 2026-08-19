@@ -76,7 +76,7 @@ async function predictPair(factory: string, tokenX: string, tokenY: string) {
   );
 }
 
-describe("Swap", () => {
+describe("UniswapV2", () => {
   describe("deployment", () => {
     it("wires the router to the factory and the wrapped native coin", async () => {
       const { router, factory, wnura } = await loadFixture(deploySwap);

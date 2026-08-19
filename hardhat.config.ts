@@ -12,20 +12,20 @@ import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-et
 // Each entry is a folder under contracts/ paired with the Ignition module that
 // deploys it. Adding a contracts/<name> folder means adding ignition/modules/<name>.ts
 // and one line here.
-const DEPLOYABLE = ["token", "airdrop", "swap"] as const;
+const DEPLOYABLE = ["token", "airdrop", "univ2"] as const;
 
-// contracts/swap is vendored UniswapV2, pinned to the compilers it was audited and
+// contracts/univ2 is vendored UniswapV2, pinned to the compilers it was audited and
 // deployed with, so the build needs four of them. Hardhat picks one per file from the
 // pragma; none of this is a free choice:
 //
-//   0.5.16  swap/core/**            pinned by the vendored source
-//   0.6.6   swap/periphery/**       pinned by the vendored source
-//   0.8.12  swap/vendor/Multicall3  pinned by the vendored source
-//   0.8.28  everything of ours, plus swap/tokens/** (^0.8.20)
+//   0.5.16  univ2/core/**           pinned by the vendored source
+//   0.6.6   univ2/periphery/**      pinned by the vendored source
+//   0.8.12  univ2/vendor/Multicall3 pinned by the vendored source
+//   0.8.28  everything of ours, plus univ2/tokens/** (^0.8.20)
 //
 // The 999999 runs and evmVersion istanbul on the first two are load-bearing: they are
 // inputs to the UniswapV2Pair init code hash that UniswapV2Library hardcodes. Changing
-// them — or moving the Pair source file, which changes the metadata solc appends —
+// them â€” or moving the Pair source file, which changes the metadata solc appends â€”
 // changes that hash and every pair address the router computes. `npm run initcodehash`
 // regenerates the constant, and `npm run build` runs it for you.
 const COMPILERS = [
@@ -79,13 +79,13 @@ function parseClaims(answer: string): bigint {
     throw new Error(`"${answer.trim()}" is not a whole number of claims.`);
   }
   if (BigInt(digits) === 0n) {
-    throw new Error("The cap has to be at least 1 — the constructor rejects 0.");
+    throw new Error("The cap has to be at least 1 â€” the constructor rejects 0.");
   }
 
   return BigInt(digits);
 }
 
-/** A coin amount as a person would type it — 200, 0.5 — converted to wei. */
+/** A coin amount as a person would type it â€” 200, 0.5 â€” converted to wei. */
 function parseReward(answer: string): bigint {
   let wei: bigint;
 
@@ -97,7 +97,7 @@ function parseReward(answer: string): bigint {
 
   // parseEther happily returns a negative, which the uint256 constructor arg cannot hold.
   if (wei <= 0n) {
-    throw new Error("The reward has to be above 0 — the constructor rejects 0.");
+    throw new Error("The reward has to be above 0 â€” the constructor rejects 0.");
   }
 
   return wei;
@@ -152,7 +152,7 @@ function terminalReader() {
     async ask(question: string, parse: (answer: string) => bigint): Promise<bigint> {
       if (process.stdin.isTTY !== true) {
         throw new Error(
-          "Nothing to ask on — stdin is not a terminal. Pass --max-claims and --reward, " +
+          "Nothing to ask on â€” stdin is not a terminal. Pass --max-claims and --reward, " +
             'or set maxClaims and rewardAmount under "airdrop" in the --parameters file.',
         );
       }
@@ -177,7 +177,7 @@ function terminalReader() {
 /**
  * Settles the two airdrop values that must not be guessed on your behalf: the claim
  * cap, which is immutable once deployed, and the per-claim reward. They come from
- * --max-claims / --reward, or from the --parameters file, or — failing both — from a
+ * --max-claims / --reward, or from the --parameters file, or â€” failing both â€” from a
  * question at the terminal. There is deliberately no default: a cap typed by accident
  * is a cap you live with, and the pool it commits you to funding is real money.
  */
@@ -201,7 +201,7 @@ async function resolveAirdropParameters(
   if (maxClaims === undefined || rewardAmount === undefined) {
     console.log(
       "contracts/airdrop needs a claim cap and a per-claim reward. The cap is immutable\n" +
-        "once deployed, so neither has a default — answer, or re-run with --max-claims\n" +
+        "once deployed, so neither has a default â€” answer, or re-run with --max-claims\n" +
         "and --reward.\n",
     );
   }
@@ -218,7 +218,7 @@ async function resolveAirdropParameters(
     `\n  Cap:    ${maxClaims.toLocaleString("en-US")} claims (immutable)\n` +
       `  Reward: ${coinAmount(rewardAmount)} ${coin} per claim\n` +
       `  Pool:   ${coinAmount(maxClaims * rewardAmount)} ${coin} to cover every claim, sent to the\n` +
-      `          deployed address afterwards — this module does not fund it.\n`,
+      `          deployed address afterwards â€” this module does not fund it.\n`,
   );
 
   return { maxClaims, rewardAmount };
@@ -308,7 +308,7 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
 // Hardhat needs chainId as a literal number when the config loads, so it cannot come
 // from configVariable() the way the lazy secrets below do. Nurachain is not in any
 // public chain registry, so put its id in .env rather than guessing it here. Leaving
-// it unset is fine — Hardhat then accepts whatever the RPC reports, it just loses the
+// it unset is fine â€” Hardhat then accepts whatever the RPC reports, it just loses the
 // safety check that stops you deploying to the wrong chain, and the explorer entry
 // below, which has to be keyed by a known chain id.
 const nurachainChainId = process.env.NURACHAIN_CHAIN_ID
@@ -318,7 +318,7 @@ const nurachainChainId = process.env.NURACHAIN_CHAIN_ID
 // Nurachain is not a chain hardhat-verify knows, so its explorer has to be described
 // here. It is filed under the `blockscout` slot for one reason: that is the provider
 // hardhat-verify drives without an API key, and explorer.nurachain.net has no key to
-// give. Its /api does answer in the Etherscan shape, but only the `account` module —
+// give. Its /api does answer in the Etherscan shape, but only the `account` module â€”
 // `contract/verifysourcecode` returns "unsupported module", so `--verify` cannot work
 // against it yet. This entry is here so the explorer is already pointed at correctly
 // when Nurachain ships verification; until then, verify by hand with
@@ -336,7 +336,7 @@ export default defineConfig({
   // Spelled out per profile, not as a bare `compilers` list, and isolated on both.
   // Hardhat builds its "production" profile by copying only the compiler *versions*
   // out of your config and dropping your settings for its own, so a bare list rebuilds
-  // the Pair at 200 runs there while `hardhat test` uses 999999 — and two different
+  // the Pair at 200 runs there while `hardhat test` uses 999999 â€” and two different
   // Pairs are two different init code hashes. `isolated` is pinned for the same reason:
   // production isolates by default, the default profile batches, and the batch is
   // visible in the metadata solc appends. Ignition deploys with the production profile,
@@ -363,7 +363,7 @@ export default defineConfig({
     },
   },
 
-  // Empty when NURACHAIN_CHAIN_ID is unset — there is no id to key the entry by, and
+  // Empty when NURACHAIN_CHAIN_ID is unset â€” there is no id to key the entry by, and
   // hardhat-verify would have nothing to match the connected network against anyway.
   chainDescriptors:
     nurachainChainId === undefined

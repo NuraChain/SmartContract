@@ -11,21 +11,21 @@ import { keccak256 } from "ethers";
  * `UniswapV2Library.pairFor` computes a pair's address with CREATE2 arithmetic instead
  * of asking the factory, which takes the keccak256 of the Pair creation bytecode as a
  * constant. The value Uniswap publishes is the hash of *their* build of the Pair. Ours
- * differs — solc appends a metadata hash covering the source paths and compiler
- * settings, and this repo has its own — so the shipped constant would send every router
+ * differs â€” solc appends a metadata hash covering the source paths and compiler
+ * settings, and this repo has its own â€” so the shipped constant would send every router
  * call to an address with no contract on it. Every swap and every addLiquidity would
  * revert, and nothing about the failure points here.
  *
  * So: compile, hash our own Pair, patch the constant, compile again so the periphery
- * picks it up. `npm run build` does all three. test/Swap.test.ts proves the result
+ * picks it up. `npm run build` does all three. test/UniV2.test.ts proves the result
  * matches what the factory really deploys.
  */
 
 const artifactPath = fileURLToPath(
-  new URL("../artifacts/contracts/swap/core/UniswapV2Pair.sol/UniswapV2Pair.json", import.meta.url),
+  new URL("../artifacts/contracts/univ2/core/UniswapV2Pair.sol/UniswapV2Pair.json", import.meta.url),
 );
 const libraryPath = fileURLToPath(
-  new URL("../contracts/swap/periphery/libraries/UniswapV2Library.sol", import.meta.url),
+  new URL("../contracts/univ2/periphery/libraries/UniswapV2Library.sol", import.meta.url),
 );
 
 let artifact: { bytecode: string };
@@ -51,5 +51,5 @@ if (patched === source) {
 } else {
   writeFileSync(libraryPath, patched);
   console.log(`init code hash written: 0x${hash}`);
-  console.log(`recompile so contracts/swap/periphery picks it up`);
+  console.log(`recompile so contracts/univ2/periphery picks it up`);
 }

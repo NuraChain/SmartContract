@@ -6,12 +6,12 @@ import { network } from "hardhat";
  *   npx hardhat run scripts/preflight.ts --network nurachain
  *
  * Confirms the RPC answers, that the chain id is what you expect, that the deployer
- * is funded, and — via a real gas estimate against the node — that this bytecode can
+ * is funded, and â€” via a real gas estimate against the node â€” that this bytecode can
  * actually execute there. The gas estimate is the important one: it runs each
  * constructor on the node, so it fails loudly if the chain lacks the Cancun opcodes
  * this build targets, instead of you finding out by burning gas on a failed deploy.
  *
- * This checks every deployable group, not just the one you are about to deploy —
+ * This checks every deployable group, not just the one you are about to deploy â€”
  * a preflight is cheap and finding out about the second group later is not.
  */
 
@@ -29,10 +29,10 @@ function probes(deployer: string) {
     airdrop: [
       { name: "Airdrop", args: [deployer, deployer, 50_000n, 200n * 10n ** 18n] },
     ],
-    // The AMM is the expensive group by a wide margin — the Pair bytecode the factory
+    // The AMM is the expensive group by a wide margin â€” the Pair bytecode the factory
     // carries is most of it. Estimating the router against a factory address that is
     // not a contract yet is fine: the constructor only stores it.
-    swap: [
+    univ2: [
       { name: "WNURA", args: [] },
       { name: "UniswapV2Factory", args: [deployer] },
       { name: "UniswapV2Router02", args: [deployer, deployer] },
@@ -58,7 +58,7 @@ async function main() {
 
   const block = await ethers.provider.getBlock("latest");
   console.log(`Latest block:   ${block?.number}`);
-  // Chains that shipped EIP-4844 expose these. Only a hint about Cancun support —
+  // Chains that shipped EIP-4844 expose these. Only a hint about Cancun support â€”
   // the gas estimates below are the real test.
   const cancunHint = block !== null && "excessBlobGas" in block && block.excessBlobGas !== null;
   console.log(`Cancun hint:    ${cancunHint ? "blob fields present" : "no blob fields"}`);
@@ -94,7 +94,7 @@ async function main() {
   }
 
   // The airdrop pays out of its own balance, so deployment cost is not the real bill.
-  // The cap and reward are chosen at deploy time, so the pool is only known then —
+  // The cap and reward are chosen at deploy time, so the pool is only known then â€”
   // set AIRDROP_MAX_CLAIMS and AIRDROP_REWARD (in whole coin) to price one here.
   const maxClaims = process.env.AIRDROP_MAX_CLAIMS;
   const reward = process.env.AIRDROP_REWARD;
@@ -103,11 +103,11 @@ async function main() {
     const pool = BigInt(maxClaims) * ethers.parseEther(reward);
     const claims = BigInt(maxClaims).toLocaleString("en-US");
     console.log(`Airdrop pool:   ${ethers.formatEther(pool)} (native) to cover ${claims} claims at ${reward} each,`);
-    console.log(`                sent to the Airdrop address after deployment — not included above.`);
+    console.log(`                sent to the Airdrop address after deployment â€” not included above.`);
   } else {
     console.log(`Airdrop pool:   maxClaims * rewardAmount, both answered when you run`);
     console.log(`                \`hardhat deploy --sc airdrop\`, and sent to the Airdrop address`);
-    console.log(`                afterwards — not included above. Set AIRDROP_MAX_CLAIMS and`);
+    console.log(`                afterwards â€” not included above. Set AIRDROP_MAX_CLAIMS and`);
     console.log(`                AIRDROP_REWARD to price a cap here.`);
   }
 

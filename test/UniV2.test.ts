@@ -76,6 +76,20 @@ async function predictPair(factory: string, tokenX: string, tokenY: string) {
   );
 }
 
+/** Floor integer square root, matching the Babylonian method in UniswapV2's Math.sqrt. */
+function sqrt(value: bigint): bigint {
+  if (value < 2n) return value;
+
+  let x = value;
+  let y = (x + 1n) / 2n;
+  while (y < x) {
+    x = y;
+    y = (x + value / x) / 2n;
+  }
+
+  return x;
+}
+
 describe("UniswapV2", () => {
   describe("deployment", () => {
     it("wires the router to the factory and the wrapped native coin", async () => {
@@ -337,6 +351,392 @@ describe("UniswapV2", () => {
 
         expect(await tokenB.balanceOf(alice.address)).to.equal(before + quoted);
       }
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // The protocol fee is the 1/6 slice of trading fees the factory can switch on by
+  // setting feeTo. It is minted as LP tokens during liquidity events rather than taken
+  // per swap, so nothing about it shows up until someone mints or burns — which is
+  // exactly why it is worth pinning down.
+  // ---------------------------------------------------------------------------------
+  describe("the protocol fee", () => {
+    /** Pool with liquidity, plus a handle on the pair and a collector address. */
+    async function withPair() {
+      const ctx = await loadFixture(deployWithLiquidity);
+      const [, , collector] = await ethers.getSigners();
+
+      const pairAddress = await ctx.factory.getPair(
+        await ctx.tokenA.getAddress(),
+        await ctx.tokenB.getAddress(),
+      );
+      const pair = await ethers.getContractAt("UniswapV2Pair", pairAddress);
+
+      return { ...ctx, pair, pairAddress, collector };
+    }
+
+    /** Trades back and forth so K grows by accumulated fees. */
+    async function churn(ctx: Awaited<ReturnType<typeof withPair>>, rounds = 4) {
+      const a = await ctx.tokenA.getAddress();
+      const b = await ctx.tokenB.getAddress();
+      const size = ethers.parseEther("5000");
+
+      for (let i = 0; i < rounds; i++) {
+        await ctx.router
+          .connect(ctx.alice)
+          .swapExactTokensForTokens(size, 0n, [a, b], ctx.alice.address, await deadline());
+        await ctx.router
+          .connect(ctx.alice)
+          .swapExactTokensForTokens(size, 0n, [b, a], ctx.alice.address, await deadline());
+      }
+    }
+
+    /** Adds a little liquidity, which is what makes the pair settle the protocol fee. */
+    async function touchLiquidity(ctx: Awaited<ReturnType<typeof withPair>>) {
+      const amount = ethers.parseEther("100");
+
+      await ctx.router.addLiquidity(
+        await ctx.tokenA.getAddress(),
+        await ctx.tokenB.getAddress(),
+        amount,
+        amount,
+        0n,
+        0n,
+        ctx.deployer.address,
+        await deadline(),
+      );
+    }
+
+    it("mints nothing and tracks no kLast while feeTo is unset", async () => {
+      const ctx = await withPair();
+
+      expect(await ctx.factory.feeTo()).to.equal(ethers.ZeroAddress);
+      expect(await ctx.pair.kLast()).to.equal(0n);
+
+      // address(0) already holds MINIMUM_LIQUIDITY from the first mint — the permanent
+      // lock every pair burns, which is not the protocol fee. What matters is that it
+      // does not grow, since an unset feeTo is also address(0).
+      const locked = await ctx.pair.balanceOf(ethers.ZeroAddress);
+      expect(locked).to.equal(await ctx.pair.MINIMUM_LIQUIDITY());
+
+      await churn(ctx);
+      await touchLiquidity(ctx);
+
+      // Fees stayed with the liquidity providers: nothing was minted to anyone else.
+      expect(await ctx.pair.kLast()).to.equal(0n);
+      expect(await ctx.pair.balanceOf(ethers.ZeroAddress)).to.equal(locked);
+    });
+
+    it("starts tracking kLast as soon as feeTo is set", async () => {
+      const ctx = await withPair();
+
+      await ctx.factory.setFeeTo(ctx.collector.address);
+      expect(await ctx.pair.kLast()).to.equal(0n);
+
+      // kLast is written on the first liquidity event after the switch, not on the switch.
+      await touchLiquidity(ctx);
+
+      const [reserve0, reserve1] = await ctx.pair.getReserves();
+      expect(await ctx.pair.kLast()).to.equal(reserve0 * reserve1);
+    });
+
+    it("pays the collector LP tokens out of the growth in K", async () => {
+      const ctx = await withPair();
+
+      await ctx.factory.setFeeTo(ctx.collector.address);
+      await touchLiquidity(ctx);
+
+      expect(await ctx.pair.balanceOf(ctx.collector.address)).to.equal(0n);
+
+      await churn(ctx);
+      await touchLiquidity(ctx);
+
+      const minted = await ctx.pair.balanceOf(ctx.collector.address);
+      expect(minted).to.be.greaterThan(0n);
+
+      // The collector holds LP, not tokens: its claim is on the pool, like any other LP.
+      expect(await ctx.tokenA.balanceOf(ctx.collector.address)).to.equal(0n);
+      expect(await ctx.tokenB.balanceOf(ctx.collector.address)).to.equal(0n);
+    });
+
+    it("mints the 1/6 share the formula specifies", async () => {
+      const ctx = await withPair();
+
+      await ctx.factory.setFeeTo(ctx.collector.address);
+      await touchLiquidity(ctx);
+
+      const kLastBefore = await ctx.pair.kLast();
+      const supplyBefore = await ctx.pair.totalSupply();
+
+      await churn(ctx, 6);
+
+      // Recompute _mintFee's arithmetic from the state it will see, then trigger it.
+      const [reserve0, reserve1] = await ctx.pair.getReserves();
+      const rootK = sqrt(reserve0 * reserve1);
+      const rootKLast = sqrt(kLastBefore);
+      const expected = (supplyBefore * (rootK - rootKLast)) / (rootK * 5n + rootKLast);
+
+      await touchLiquidity(ctx);
+
+      expect(await ctx.pair.balanceOf(ctx.collector.address)).to.equal(expected);
+      expect(expected).to.be.greaterThan(0n);
+    });
+
+    it("lets the collector redeem its LP for real tokens", async () => {
+      const ctx = await withPair();
+
+      await ctx.factory.setFeeTo(ctx.collector.address);
+      await touchLiquidity(ctx);
+      await churn(ctx, 6);
+      await touchLiquidity(ctx);
+
+      const lp = await ctx.pair.balanceOf(ctx.collector.address);
+      expect(lp).to.be.greaterThan(0n);
+
+      await ctx.pair.connect(ctx.collector).approve(await ctx.router.getAddress(), lp);
+      await ctx.router
+        .connect(ctx.collector)
+        .removeLiquidity(
+          await ctx.tokenA.getAddress(),
+          await ctx.tokenB.getAddress(),
+          lp,
+          0n,
+          0n,
+          ctx.collector.address,
+          await deadline(),
+        );
+
+      expect(await ctx.tokenA.balanceOf(ctx.collector.address)).to.be.greaterThan(0n);
+      expect(await ctx.tokenB.balanceOf(ctx.collector.address)).to.be.greaterThan(0n);
+      expect(await ctx.pair.balanceOf(ctx.collector.address)).to.equal(0n);
+    });
+
+    it("clears kLast when the fee is switched back off", async () => {
+      const ctx = await withPair();
+
+      await ctx.factory.setFeeTo(ctx.collector.address);
+      await touchLiquidity(ctx);
+      expect(await ctx.pair.kLast()).to.be.greaterThan(0n);
+
+      await ctx.factory.setFeeTo(ethers.ZeroAddress);
+      await churn(ctx);
+      await touchLiquidity(ctx);
+
+      // Left set, a stale kLast would hand the next collector a share of growth that
+      // accrued while the fee was off.
+      expect(await ctx.pair.kLast()).to.equal(0n);
+    });
+
+    it("accrues nothing for the collector across a period with no trading", async () => {
+      const ctx = await withPair();
+
+      await ctx.factory.setFeeTo(ctx.collector.address);
+      await touchLiquidity(ctx);
+      await touchLiquidity(ctx);
+
+      // K only grows on fees, so liquidity events on their own owe the collector nothing.
+      expect(await ctx.pair.balanceOf(ctx.collector.address)).to.equal(0n);
+    });
+  });
+
+  describe("fee authority", () => {
+    it("blocks everyone but feeToSetter from setFeeTo and setFeeToSetter", async () => {
+      const { factory, alice } = await loadFixture(deploySwap);
+
+      await expect(factory.connect(alice).setFeeTo(alice.address)).to.be.revertedWith(
+        "UniswapV2: FORBIDDEN",
+      );
+      await expect(factory.connect(alice).setFeeToSetter(alice.address)).to.be.revertedWith(
+        "UniswapV2: FORBIDDEN",
+      );
+    });
+
+    it("hands all three powers over together and strips them from the old setter", async () => {
+      const { factory, deployer, alice } = await loadFixture(deploySwap);
+
+      await factory.setFeeToSetter(alice.address);
+      expect(await factory.feeToSetter()).to.equal(alice.address);
+
+      // The new setter holds every power the old one had.
+      await factory.connect(alice).setFeeTo(alice.address);
+      await factory.connect(alice).setSwapFee(30);
+      expect(await factory.feeTo()).to.equal(alice.address);
+      expect(await factory.swapFee()).to.equal(30n);
+
+      // And the old one has none of them left. These are thunks, not calls: an array of
+      // already-invoked promises leaves the later rejections unhandled until the loop
+      // reaches them, which Node intermittently reports as an unhandled rejection and
+      // kills the run over.
+      for (const call of [
+        () => factory.setFeeTo(deployer.address),
+        () => factory.setSwapFee(25),
+        () => factory.setFeeToSetter(deployer.address),
+      ]) {
+        await expect(call()).to.be.revertedWith("UniswapV2: FORBIDDEN");
+      }
+    });
+
+    it("keeps MAX_SWAP_FEE fixed at 1% with no way to raise it", async () => {
+      const { factory } = await loadFixture(deploySwap);
+
+      expect(await factory.MAX_SWAP_FEE()).to.equal(100n);
+
+      // A constant has no setter; the ABI is the proof that the ceiling cannot move.
+      expect(factory.interface.hasFunction("setMaxSwapFee")).to.equal(false);
+      await expect(factory.setSwapFee(101)).to.be.revertedWith("UniswapV2: SWAP_FEE_TOO_HIGH");
+      expect(await factory.swapFee()).to.equal(25n);
+    });
+
+    it("allows the exact ceiling and the exact floor", async () => {
+      const { factory } = await loadFixture(deploySwap);
+
+      await factory.setSwapFee(100);
+      expect(await factory.swapFee()).to.equal(100n);
+
+      await factory.setSwapFee(0);
+      expect(await factory.swapFee()).to.equal(0n);
+    });
+  });
+
+  describe("createPair validation", () => {
+    it("refuses identical tokens", async () => {
+      const { factory, tokenA } = await loadFixture(deploySwap);
+      const a = await tokenA.getAddress();
+
+      await expect(factory.createPair(a, a)).to.be.revertedWith("UniswapV2: IDENTICAL_ADDRESSES");
+    });
+
+    it("refuses the zero address on either side", async () => {
+      const { factory, tokenA } = await loadFixture(deploySwap);
+      const a = await tokenA.getAddress();
+
+      await expect(factory.createPair(ethers.ZeroAddress, a)).to.be.revertedWith(
+        "UniswapV2: ZERO_ADDRESS",
+      );
+      await expect(factory.createPair(a, ethers.ZeroAddress)).to.be.revertedWith(
+        "UniswapV2: ZERO_ADDRESS",
+      );
+    });
+
+    it("refuses a duplicate pair in either token order", async () => {
+      const { factory, tokenA, tokenB } = await loadFixture(deploySwap);
+      const a = await tokenA.getAddress();
+      const b = await tokenB.getAddress();
+
+      await factory.createPair(a, b);
+
+      await expect(factory.createPair(a, b)).to.be.revertedWith("UniswapV2: PAIR_EXISTS");
+      await expect(factory.createPair(b, a)).to.be.revertedWith("UniswapV2: PAIR_EXISTS");
+    });
+
+    it("registers the pair under both orderings and appends it to allPairs", async () => {
+      const { factory, tokenA, tokenB } = await loadFixture(deploySwap);
+      const a = await tokenA.getAddress();
+      const b = await tokenB.getAddress();
+
+      expect(await factory.allPairsLength()).to.equal(0n);
+
+      await expect(factory.createPair(a, b)).to.emit(factory, "PairCreated");
+
+      const pair = await factory.getPair(a, b);
+      expect(await factory.getPair(b, a)).to.equal(pair);
+      expect(await factory.allPairsLength()).to.equal(1n);
+      expect(await factory.allPairs(0)).to.equal(pair);
+    });
+
+    it("sorts token0 and token1 by address regardless of argument order", async () => {
+      const { factory, tokenA, tokenB } = await loadFixture(deploySwap);
+      const a = await tokenA.getAddress();
+      const b = await tokenB.getAddress();
+      const [expected0, expected1] = a.toLowerCase() < b.toLowerCase() ? [a, b] : [b, a];
+
+      await factory.createPair(b, a);
+      const pair = await ethers.getContractAt("UniswapV2Pair", await factory.getPair(a, b));
+
+      expect(await pair.token0()).to.equal(expected0);
+      expect(await pair.token1()).to.equal(expected1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // swap() calls out to `to` before its K check whenever data is non-empty. That is the
+  // flash-swap path, and the `lock` modifier is the only thing standing between it and a
+  // re-entrant drain.
+  // ---------------------------------------------------------------------------------
+  describe("flash swaps and the pair lock", () => {
+    async function withBorrower(name: string) {
+      const ctx = await loadFixture(deployWithLiquidity);
+      const pairAddress = await ctx.factory.getPair(
+        await ctx.tokenA.getAddress(),
+        await ctx.tokenB.getAddress(),
+      );
+      const pair = await ethers.getContractAt("UniswapV2Pair", pairAddress);
+      const borrower = await ethers.deployContract(name, ctx.deployer);
+
+      // Stake the borrower so it can cover the fee on repayment.
+      await ctx.tokenA.transfer(await borrower.getAddress(), ethers.parseEther("1000"));
+      await ctx.tokenB.transfer(await borrower.getAddress(), ethers.parseEther("1000"));
+
+      const token0 = await pair.token0();
+      const borrowAmount = ethers.parseEther("1000");
+      const [out0, out1] =
+        token0.toLowerCase() === (await ctx.tokenA.getAddress()).toLowerCase()
+          ? [borrowAmount, 0n]
+          : [0n, borrowAmount];
+
+      return { ...ctx, pair, pairAddress, borrower, out0, out1 };
+    }
+
+    it("lets an honest borrower take and repay a flash swap", async () => {
+      const ctx = await withBorrower("FlashBorrower");
+      const [r0Before, r1Before] = await ctx.pair.getReserves();
+
+      await ctx.borrower.flash(ctx.pairAddress, ctx.out0, ctx.out1);
+
+      expect(await ctx.borrower.called()).to.equal(true);
+
+      // The pool kept the fee, so both reserves are at least where they started.
+      const [r0After, r1After] = await ctx.pair.getReserves();
+      expect(r0After).to.be.greaterThanOrEqual(r0Before);
+      expect(r1After).to.be.greaterThanOrEqual(r1Before);
+    });
+
+    it("rejects a flash swap that repays too little to satisfy K", async () => {
+      const ctx = await withBorrower("FlashBorrower");
+
+      // 0 bps back means returning exactly what was borrowed, which leaves K short by
+      // the fee. The pair's invariant check is what catches it.
+      await ctx.borrower.setRepayMarginBps(0);
+
+      await expect(
+        ctx.borrower.flash(ctx.pairAddress, ctx.out0, ctx.out1),
+      ).to.be.revertedWith("UniswapV2: K");
+    });
+
+    it("blocks a swap re-entered from the flash callback", async () => {
+      const ctx = await withBorrower("ReentrantBorrower");
+
+      await ctx.borrower.flash(ctx.pairAddress, ctx.out0, ctx.out1);
+
+      expect(await ctx.borrower.called()).to.equal(true);
+      expect(await ctx.borrower.reentryReverted()).to.equal(true);
+    });
+
+    it("refuses a swap asking for more than the pool holds", async () => {
+      const ctx = await withBorrower("FlashBorrower");
+      const [r0] = await ctx.pair.getReserves();
+
+      await expect(
+        ctx.borrower.flash(ctx.pairAddress, r0, 0n),
+      ).to.be.revertedWith("UniswapV2: INSUFFICIENT_LIQUIDITY");
+    });
+
+    it("refuses a swap with no output at all", async () => {
+      const ctx = await withBorrower("FlashBorrower");
+
+      await expect(
+        ctx.borrower.flash(ctx.pairAddress, 0n, 0n),
+      ).to.be.revertedWith("UniswapV2: INSUFFICIENT_OUTPUT_AMOUNT");
     });
   });
 });

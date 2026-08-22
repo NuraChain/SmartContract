@@ -50,6 +50,14 @@ function probes(deployer: string) {
       { name: "QuoterV2", args: [deployer, deployer] },
       { name: "TickLens", args: [] },
     ],
+    // The backing token address is only stored, so the deployer's own address estimates the
+    // same gas the real deployment will. The real one comes from ignition/params.json.
+    vault: [
+      {
+        name: "CollateralizedNFT",
+        args: [deployer, deployer, 250n * 10n ** 18n, "Backed Position", "BPOS", ""],
+      },
+    ],
   };
 }
 

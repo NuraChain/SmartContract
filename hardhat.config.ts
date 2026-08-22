@@ -14,7 +14,7 @@ import { coinAmount, parseClaims, parseFromFile, parseReward } from "./scripts/l
 // Each entry is a folder under contracts/ paired with the Ignition module that
 // deploys it. Adding a contracts/<name> folder means adding ignition/modules/<name>.ts
 // and one line here.
-const DEPLOYABLE = ["token", "airdrop", "univ2", "univ3"] as const;
+const DEPLOYABLE = ["token", "airdrop", "univ2", "univ3", "vault"] as const;
 
 // contracts/univ2 and contracts/univ3 are vendored Uniswap, pinned to the compilers they were
 // audited and deployed with, so the build needs five of them. Hardhat picks one per file

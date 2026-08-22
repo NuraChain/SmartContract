@@ -8,6 +8,10 @@
     "build": "hardhat compile && node scripts/write-init-code-hash.ts && hardhat compile",
     "initcodehash": "node scripts/write-init-code-hash.ts",
     "test": "hardhat test",
+    "test:solidity": "hardhat test solidity",
+    "test:fuzz": "hardhat test solidity --grep testFuzz_",
+    "test:invariant": "hardhat test solidity --grep invariant_",
+    "coverage": "hardhat test mocha --coverage test/BridgeToken.test.ts test/Airdrop.test.ts test/Vault.test.ts test/scripts/params.test.ts",
     "typecheck": "tsc --noEmit",
     "clean": "hardhat clean",
     "preflight:nurachain": "hardhat run scripts/preflight.ts --network nurachain",
@@ -15,7 +19,9 @@
     "deploy:nurachain:token": "hardhat deploy --sc token --network nurachain",
     "deploy:nurachain:airdrop": "hardhat deploy --sc airdrop --network nurachain",
     "deploy:nurachain:univ2": "hardhat deploy --sc univ2 --network nurachain",
-    "deploy:nurachain:univ3": "hardhat deploy --sc univ3 --network nurachain"
+    "deploy:nurachain:univ3": "hardhat deploy --sc univ3 --network nurachain",
+    "deploy:nurachain:vault": "hardhat deploy --sc vault --network nurachain",
+    "setup:nurachain:vault": "hardhat run scripts/vault-setup.ts --network nurachain"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.7",

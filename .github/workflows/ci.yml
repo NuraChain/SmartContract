@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch cancels the first: these jobs compile five solc
+# versions and the queue is not worth paying for twice.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Hardhat 3 phones home unless told not to. CI is not a person, so its runs are noise.
+  HARDHAT_TELEMETRY_ENABLED: "false"
+
+jobs:
+  # Everything below runs against Hardhat's in-process chain. Nothing here needs a secret,
+  # an RPC endpoint or a funded key: the nurachain network in hardhat.config.ts reads its
+  # URL and key through configVariable(), which is lazy, so the config loads without them
+  # as long as no job selects that network. Do not add a job that does.
+  build:
+    name: Build and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The five pinned compilers are a large download and never change without a config
+      # change, so they are keyed on hardhat.config.ts.
+      - name: Cache solc compilers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/hardhat-nodejs
+          key: solc-${{ runner.os }}-${{ hashFiles('hardhat.config.ts') }}
+          restore-keys: solc-${{ runner.os }}-
+
+      - run: npm ci
+
+      - name: Compile
+        run: npx hardhat compile
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # The V2 pair hash is pinned because every pair address a router computes comes from
+      # it; the script exits non-zero if the compiled Pair no longer matches. The V3 hash is
+      # generated, so a drift shows up as a modified file rather than an exit code — hence
+      # both checks. See scripts/write-init-code-hash.ts.
+      - name: Verify the init code hashes have not drifted
+        run: |
+          npm run initcodehash
+          git diff --exit-code -- \
+            contracts/univ2/periphery/libraries/UniswapV2Library.sol \
+            contracts/univ3/periphery/libraries/PoolAddress.sol
+
+  mocha:
+    name: Mocha tests (unit, integration, security, deployment)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Cache solc compilers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/hardhat-nodejs
+          key: solc-${{ runner.os }}-${{ hashFiles('hardhat.config.ts') }}
+          restore-keys: solc-${{ runner.os }}-
+
+      - run: npm ci
+
+      - name: Run the Mocha suite
+        run: npm run test:mocha
+
+  solidity:
+    name: Solidity fuzz and invariant tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Cache solc compilers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/hardhat-nodejs
+          key: solc-${{ runner.os }}-${{ hashFiles('hardhat.config.ts') }}
+          restore-keys: solc-${{ runner.os }}-
+
+      - run: npm ci
+
+      # Property tests at 256 runs each, plus stateful invariant runs over the vault.
+      # Slower than the Mocha suite and worth its own job so a failure names itself.
+      - name: Run the Solidity suite
+        run: npm run test:solidity
+
+  coverage:
+    name: Coverage (first-party contracts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Cache solc compilers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/hardhat-nodejs
+          key: solc-${{ runner.os }}-${{ hashFiles('hardhat.config.ts') }}
+          restore-keys: solc-${{ runner.os }}-
+
+      - run: npm ci
+
+      # Scoped to the contracts this repo wrote. Coverage instruments the bytecode, which
+      # changes the UniswapV2Pair and UniswapV3Pool init code hashes that the routers
+      # hardcode — so every CREATE2-derived address moves and the vendored AMM suites fail
+      # under instrumentation. That is a property of the technique, not a broken test, and
+      # the AMM suites still run in full in the `mocha` job. See README.
+      - name: Run coverage
+        run: npm run coverage

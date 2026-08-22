@@ -5,10 +5,11 @@ import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 
-import { formatEther, parseEther } from "ethers";
 import { configVariable, defineConfig, task } from "hardhat/config";
 import { ArgumentType } from "hardhat/types/arguments";
 import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
+
+import { coinAmount, parseClaims, parseFromFile, parseReward } from "./scripts/lib/params.ts";
 
 // Each entry is a folder under contracts/ paired with the Ignition module that
 // deploys it. Adding a contracts/<name> folder means adding ignition/modules/<name>.ts
@@ -142,64 +143,6 @@ const V3_OVERRIDES = Object.fromEntries(
 const COIN: Record<string, string> = {
   nurachain: "NURA",
 };
-
-/** 10000000.0 is hard to read when it is the bill you are about to pay; 10,000,000 is not. */
-function coinAmount(wei: bigint): string {
-  const [whole, fraction] = formatEther(wei).split(".");
-  const grouped = BigInt(whole).toLocaleString("en-US");
-
-  return fraction === "0" ? grouped : `${grouped}.${fraction}`;
-}
-
-/** A whole number of claims, as a person would type it: 50000, 50_000, 50,000. */
-function parseClaims(answer: string): bigint {
-  const digits = answer.replace(/[_,\s]/g, "");
-
-  if (!/^\d+$/.test(digits)) {
-    throw new Error(`"${answer.trim()}" is not a whole number of claims.`);
-  }
-  if (BigInt(digits) === 0n) {
-    throw new Error("The cap has to be at least 1 — the constructor rejects 0.");
-  }
-
-  return BigInt(digits);
-}
-
-/** A coin amount as a person would type it — 200, 0.5 — converted to wei. */
-function parseReward(answer: string): bigint {
-  let wei: bigint;
-
-  try {
-    wei = parseEther(answer.replace(/[_,\s]/g, ""));
-  } catch {
-    throw new Error(`"${answer.trim()}" is not an amount.`);
-  }
-
-  // parseEther happily returns a negative, which the uint256 constructor arg cannot hold.
-  if (wei <= 0n) {
-    throw new Error("The reward has to be above 0 — the constructor rejects 0.");
-  }
-
-  return wei;
-}
-
-/** Reads one already-scaled value out of the --parameters file, in Ignition's own
- *  bigint spelling: a number, or a digit string optionally suffixed with "n". */
-function parseFromFile(value: unknown, name: string): bigint | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) {
-    return BigInt(value);
-  }
-  if (typeof value === "string" && /^[1-9]\d*n?$/.test(value)) {
-    return BigInt(value.replace(/n$/, ""));
-  }
-
-  throw new Error(
-    `"${name}" in the parameters file is not a positive whole number: ${JSON.stringify(value)}`,
-  );
-}
 
 async function readParametersFile(file: string): Promise<Record<string, Record<string, unknown>>> {
   const path = resolve(process.cwd(), file);

@@ -139,6 +139,30 @@ const V3_OVERRIDES = Object.fromEntries(
   ]),
 );
 
+// contracts/Forecast is vendored from the standalone AuctionHouse prediction-market
+// project and pins solc 0.8.24 with its own settings, copied verbatim from that
+// project's hardhat.config.ts:
+//
+//   - 0.8.24 exact pragma on every file; no other compiler satisfies it.
+//   - viaIR clears the stack-too-deep the FPMM loops and the struct-heavy
+//     createMarket would otherwise hit; runs favour markets that trade far more
+//     often than they deploy.
+//   - evmVersion cancun because OpenZeppelin 5.6 uses `mcopy` unconditionally
+//     (same constraint as our 0.8.28 profile above).
+const FORECAST_OVERRIDES = Object.fromEntries(
+  solidityFiles("contracts/Forecast").map((file) => [
+    file,
+    {
+      version: "0.8.24",
+      settings: {
+        viaIR: true,
+        optimizer: { enabled: true, runs: 400 },
+        evmVersion: "cancun",
+      },
+    },
+  ]),
+);
+
 /** Native coin ticker per network. Only used to label the airdrop prompts. */
 const COIN: Record<string, string> = {
   nurachain: "NURA",
@@ -366,8 +390,8 @@ export default defineConfig({
   // so either difference is one that lands on-chain.
   solidity: {
     profiles: {
-      default: { isolated: true, compilers: COMPILERS, overrides: V3_OVERRIDES },
-      production: { isolated: true, compilers: COMPILERS, overrides: V3_OVERRIDES },
+      default: { isolated: true, compilers: COMPILERS, overrides: { ...V3_OVERRIDES, ...FORECAST_OVERRIDES } },
+      production: { isolated: true, compilers: COMPILERS, overrides: { ...V3_OVERRIDES, ...FORECAST_OVERRIDES } },
     },
   },
 

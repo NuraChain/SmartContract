@@ -1,10 +1,8 @@
 {
-  "name": "bridge-tokens",
   "version": "1.0.0",
-  "description": "Bridged ERC20 representations of USDT and BNB with role-gated mint and burn",
   "type": "module",
-  "private": true,
   "scripts": {
+    "dev": "npm run dev --prefix web/application",
     "build": "hardhat compile && node scripts/write-init-code-hash.ts && hardhat compile",
     "initcodehash": "node scripts/write-init-code-hash.ts",
     "test": "hardhat test",

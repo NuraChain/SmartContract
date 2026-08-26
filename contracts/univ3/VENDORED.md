@@ -43,8 +43,8 @@ Everything else in `core/` and `periphery/` is GPL-2.0-or-later — see [`LICENS
 `vendor/openzeppelin` and `vendor/base64` are MIT; `vendor/uniswap-lib` is
 GPL-3.0-or-later. All upstream copyright notices and SPDX headers are preserved verbatim.
 
-Note this differs from `contracts/univ2`, which is GPL-**3**.0 (UniswapV2). The two trees
-are under different licenses and each carries its own.
+Note this differs from `contracts/testing/WNURA.sol` (Dapphub's WETH9, renamed), which is
+GPL-**3**.0. The two trees are under different licenses and each carries its own.
 
 ## Local modifications
 

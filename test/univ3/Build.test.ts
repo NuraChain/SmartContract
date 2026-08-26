@@ -19,7 +19,7 @@ const { ethers } = await network.getOrCreate();
  *      24535 and NFTDescriptor to 24541. That is 41 and 35 bytes of headroom, and
  *      `metadata.bytecodeHash: "none"` is worth about 40 of them by itself.
  *
- *   2. The init code hashes. Both AMMs derive pool addresses with CREATE2 arithmetic over
+ *   2. The init code hash. The AMM derives pool addresses with CREATE2 arithmetic over
  *      a hardcoded hash of the pool's creation bytecode.
  *
  * These run first because a wrong hash makes every other test in test/univ3 fail for one
@@ -60,27 +60,6 @@ const DEPLOYED = [
  */
 const CANONICAL_POOL_INIT_CODE_HASH =
   "0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54";
-
-/**
- * The V2 hash is a different kind of fact. Unlike V3, contracts/univ2 compiles with solc's
- * default `bytecodeHash: "ipfs"`, so the bytecode carries a metadata hash covering the
- * source paths and compiler settings — and the pair hash therefore moves for reasons that
- * have nothing to do with the AMM. This is where that shows up.
- *
- * It is deliberately NOT the value inside the UniswapV2Router02 deployed at
- * 0xfE126FD0CEcec827112bFc5440d792b3698B3850, which is
- * 0xeb2327179f1be839585a8698f717f96b9027cacbe0d66bbcf7d98f9f8c6bb2ef. That router was
- * built when this tree lived at contracts/swap; renaming the folder to contracts/univ2
- * changed the metadata. Both are internally consistent — a deployed factory and router
- * agree with each other forever — but they are two different V2 deployments. See the
- * note in scripts/write-init-code-hash.ts.
- */
-const V2_INIT_CODE_HASH =
-  "0x206906a00400e28bd97b729a655caa755d56148826639b4504155fa9085859d9";
-
-/** What the live router on Nurachain carries. Recorded so the difference stays visible. */
-const LIVE_ROUTER_INIT_CODE_HASH =
-  "0xeb2327179f1be839585a8698f717f96b9027cacbe0d66bbcf7d98f9f8c6bb2ef";
 
 describe("V3 build", () => {
   describe("contract size against Nurachain's EIP-170 limit", () => {
@@ -159,39 +138,6 @@ describe("V3 build", () => {
       );
 
       expect(await ctx.factory.getPool(a, b, FEE.MEDIUM)).to.equal(predicted);
-    });
-  });
-
-  describe("the V2 next door", () => {
-    it("compiles the UniswapV2Pair this tree's router expects", () => {
-      // Adding solc 0.7.6 for V3 must not change how the 0.5.16 Pair builds. If it did,
-      // every pair address a router built from this tree computes would be wrong, and
-      // nothing about that failure would point at contracts/univ3.
-      const compiled = ethers.keccak256(
-        artifact("univ2/core/UniswapV2Pair.sol/UniswapV2Pair.json").bytecode,
-      );
-
-      expect(compiled).to.equal(V2_INIT_CODE_HASH);
-    });
-
-    it("hardcodes that same hash in UniswapV2Library", () => {
-      const source = readFileSync(
-        fileURLToPath(
-          new URL("../../contracts/univ2/periphery/libraries/UniswapV2Library.sol", import.meta.url),
-        ),
-        "utf8",
-      );
-
-      expect(source).to.include(V2_INIT_CODE_HASH.slice(2));
-    });
-
-    it("is a different build from the router deployed on Nurachain, and says so", () => {
-      // Not a defect — a fact worth failing on if anyone quietly "fixes" it. The live
-      // router at 0xfE12…3850 was built at contracts/swap and carries the other hash;
-      // this tree is contracts/univ2 and carries its own. The deployment records already
-      // point the univ2 futures at those live addresses, so `--sc univ2` redeploys
-      // nothing; only a --reset or a fresh chain would build the hash above.
-      expect(V2_INIT_CODE_HASH).to.not.equal(LIVE_ROUTER_INIT_CODE_HASH);
     });
   });
 });

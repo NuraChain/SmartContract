@@ -3,7 +3,6 @@ import { network } from "hardhat";
 
 import airdropModule from "../../ignition/modules/airdrop.ts";
 import tokenModule from "../../ignition/modules/token.ts";
-import univ2Module from "../../ignition/modules/univ2.ts";
 import univ3Module from "../../ignition/modules/univ3.ts";
 import vaultModule from "../../ignition/modules/vault.ts";
 
@@ -111,38 +110,10 @@ describe("ignition modules", () => {
     });
   });
 
-  describe("univ2", () => {
-    it("wires the router to the factory and the wrapped native coin", async () => {
-      const [deployer] = await ethers.getSigners();
-      const { wnura, factory, router, multicall3 } = await ignition.deploy(univ2Module);
-
-      expect(await router.factory()).to.equal(await factory.getAddress());
-      expect(await router.WETH()).to.equal(await wnura.getAddress());
-      expect(await factory.feeToSetter()).to.equal(deployer.address);
-
-      // Launch defaults: LPs keep the whole fee until someone switches the protocol cut on.
-      expect(await factory.feeTo()).to.equal(ethers.ZeroAddress);
-      expect(await factory.swapFee()).to.equal(25n);
-      expect(await factory.MAX_SWAP_FEE()).to.equal(100n);
-      expect(await factory.allPairsLength()).to.equal(0n);
-
-      expect(await multicall3.getBasefee()).to.be.a("bigint");
-    });
-
-    it("routes feeToSetter through to the factory", async () => {
-      const [, other] = await ethers.getSigners();
-      const { factory } = await ignition.deploy(univ2Module, {
-        parameters: { univ2: { feeToSetter: other.address } },
-      });
-
-      expect(await factory.feeToSetter()).to.equal(other.address);
-    });
-  });
-
   describe("univ3", () => {
     it("deploys the whole periphery pointing at one factory and one WNURA", async () => {
       const [deployer] = await ethers.getSigners();
-      const { wnura } = await ignition.deploy(univ2Module);
+      const wnura = await ethers.deployContract("WNURA", deployer);
       const wnuraAddress = await wnura.getAddress();
 
       const { factory, positionManager, swapRouter, quoter, tickLens, descriptor } =

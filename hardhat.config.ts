@@ -14,23 +14,15 @@ import { coinAmount, parseClaims, parseFromFile, parseReward } from "./scripts/l
 // Each entry is a folder under contracts/ paired with the Ignition module that
 // deploys it. Adding a contracts/<name> folder means adding ignition/modules/<name>.ts
 // and one line here.
-const DEPLOYABLE = ["token", "airdrop", "univ2", "univ3", "vault", "forecast"] as const;
+const DEPLOYABLE = ["token", "airdrop", "univ3", "vault", "forecast"] as const;
 
-// contracts/univ2 and contracts/univ3 are vendored Uniswap, pinned to the compilers they were
-// audited and deployed with, so the build needs five of them. Hardhat picks one per file
-// from the pragma; none of this is a free choice:
+// contracts/univ3 is vendored Uniswap, pinned to the compiler it was audited and deployed
+// with, so the build needs three compilers. Hardhat picks one per file from the pragma;
+// none of this is a free choice:
 //
-//   0.5.16  univ2/core/**           pinned by the vendored source
-//   0.6.6   univ2/periphery/**      pinned by the vendored source
+//   0.6.6   testing/WNURA.sol       pinned by the vendored Dapphub WETH9 source
 //   0.7.6   univ3/**                pinned by the vendored source (=0.7.6 exactly)
-//   0.8.12  univ2/vendor/Multicall3 pinned by the vendored source
-//   0.8.28  everything of ours, plus univ2/tokens/** (^0.8.20)
-//
-// The 999999 runs and evmVersion istanbul on the first two are load-bearing: they are
-// inputs to the UniswapV2Pair init code hash that UniswapV2Library hardcodes. Changing
-// them — or moving the Pair source file, which changes the metadata solc appends —
-// changes that hash and every pair address the router computes. `npm run initcodehash`
-// regenerates the constant, and `npm run build` runs it for you.
+//   0.8.28  everything of ours, plus testing/MockToken.sol (^0.8.20)
 //
 // 0.7.6 is UniswapV3's, and its settings are copied from upstream's own hardhat configs
 // rather than chosen. Two reasons, and the second is the hard one:
@@ -52,10 +44,6 @@ const V3_SETTINGS = {
 
 const COMPILERS = [
   {
-    version: "0.5.16",
-    settings: { optimizer: { enabled: true, runs: 999999 }, evmVersion: "istanbul" },
-  },
-  {
     version: "0.6.6",
     settings: { optimizer: { enabled: true, runs: 999999 }, evmVersion: "istanbul" },
   },
@@ -63,10 +51,6 @@ const COMPILERS = [
     // v3-core's setting. Also the fallback for every V3 file V3_OVERRIDES does not name.
     version: "0.7.6",
     settings: { optimizer: { enabled: true, runs: 800 }, ...V3_SETTINGS },
-  },
-  {
-    version: "0.8.12",
-    settings: { optimizer: { enabled: true, runs: 999999 } },
   },
   {
     version: "0.8.28",
@@ -382,12 +366,12 @@ export default defineConfig({
 
   // Spelled out per profile, not as a bare `compilers` list, and isolated on both.
   // Hardhat builds its "production" profile by copying only the compiler *versions*
-  // out of your config and dropping your settings for its own, so a bare list rebuilds
-  // the Pair at 200 runs there while `hardhat test` uses 999999 — and two different
-  // Pairs are two different init code hashes. `isolated` is pinned for the same reason:
-  // production isolates by default, the default profile batches, and the batch is
-  // visible in the metadata solc appends. Ignition deploys with the production profile,
-  // so either difference is one that lands on-chain.
+  // out of your config and dropping your settings for its own, so a bare list would
+  // rebuild the V3 pool with different settings on deploy than under `hardhat test`
+  // — which is exactly how an init code hash drifts. `isolated` is pinned for the
+  // same reason: production isolates by default, the default profile batches, and
+  // the batch is visible in the metadata solc appends. Ignition deploys with the
+  // production profile, so either difference is one that lands on-chain.
   solidity: {
     profiles: {
       default: { isolated: true, compilers: COMPILERS, overrides: { ...V3_OVERRIDES, ...FORECAST_OVERRIDES } },

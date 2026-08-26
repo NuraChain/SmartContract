@@ -5,9 +5,8 @@ import { encodeBytes32String } from "ethers";
  * Everything in contracts/univ3 — deployed by `npm run deploy:nurachain:univ3`,
  * or `npx hardhat deploy --sc univ3 --network <network>`.
  *
- * UniswapV3 alongside the UniswapV2 in contracts/univ2, not replacing it. The two share
- * nothing but WNURA and the tokens they trade; V2's pairs, its router and its adjustable
- * fee are untouched by anything here.
+ * UniswapV3 — the only AMM this repo ships. It shares the WNURA already live on
+ * Nurachain with the router that used to be vendored here; nothing else carries over.
  *
  *   UniswapV3Factory                     creates one pool per (token pair, fee tier)
  *   NFTDescriptor                        library, linked into the descriptor below
@@ -22,10 +21,10 @@ import { encodeBytes32String } from "ethers";
  * ─── never pass --reset ──────────────────────────────────────────────────────────────
  *
  * Ignition keys a deployment by chain id, so this module writes into the same
- * ignition/deployments/chain-1020/ folder that already holds the LIVE V2 addresses.
- * `--reset` wipes that folder. The V2 contracts stay deployed, but the record of where
- * they are does not, and `ignition/deployments/` is gitignored. Back it up before
- * deploying if you value it.
+ * ignition/deployments/chain-1020/ folder that already holds the LIVE earlier
+ * deployments. `--reset` wipes that folder. Those contracts stay deployed, but the
+ * record of where they are does not, and `ignition/deployments/` is gitignored.
+ * Back it up before deploying if you value it.
  *
  * ─── after deploying ─────────────────────────────────────────────────────────────────
  *
@@ -36,12 +35,13 @@ import { encodeBytes32String } from "ethers";
  *
  *   factory.setOwner(multisig)
  *
- * The same argument applies to V2's `feeToSetter`, which is still the deployer EOA.
+ * The same argument applies to any earlier deployment's admin keys, which are still
+ * the deployer EOA.
  */
 export default buildModule("univ3", (m) => {
-  // Nurachain already has a wrapped native coin: the WNURA that contracts/univ2 deployed,
-  // which the live V2 router routes through. V3 periphery needs the same contract, not a
-  // second one — two wrapped NURAs would split every native pool in half. Verified
+  // Nurachain already has a wrapped native coin — WNURA, deployed when the V2 AMM that
+  // used to be vendored here went live. V3 periphery needs that contract, not a second
+  // one — two wrapped NURAs would split every native pool in half. Verified
   // IWETH9-compatible: deposit(), withdraw(), and the ERC20 surface are all present.
   //
   // Override for a different chain with --parameters:
@@ -88,8 +88,7 @@ export default buildModule("univ3", (m) => {
   //               periphery ships is a base contract the router and position manager
   //               inherit — it batches calls to themselves and is never deployed alone.
   //   Pools       created on demand by
-  //               positionManager.createAndInitializePoolIfNecessary(t0, t1, fee, sqrtPriceX96),
-  //               the same way V2 pairs appear on first addLiquidity.
+  //               positionManager.createAndInitializePoolIfNecessary(t0, t1, fee, sqrtPriceX96).
   //   V3Migrator  moves V2 LP into V3. The only V2 pair on this chain holds dust, so
   //               there is nothing to migrate. Add it if that changes.
   return { factory, nftDescriptor, descriptor, positionManager, swapRouter, quoter, tickLens };

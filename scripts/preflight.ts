@@ -29,18 +29,9 @@ function probes(deployer: string) {
     airdrop: [
       { name: "Airdrop", args: [deployer, deployer, 50_000n, 200n * 10n ** 18n] },
     ],
-    // The AMM is the expensive group by a wide margin — the Pair bytecode the factory
-    // carries is most of it. Estimating the router against a factory address that is
-    // not a contract yet is fine: the constructor only stores it.
-    univ2: [
-      { name: "WNURA", args: [] },
-      { name: "UniswapV2Factory", args: [deployer] },
-      { name: "UniswapV2Router02", args: [deployer, deployer] },
-      { name: "Multicall3", args: [] },
-    ],
-    // univ3 reuses the deployed WNURA and Multicall3, so neither is here. Every constructor
-    // below only stores its arguments, which is why passing the deployer's address for
-    // all of them estimates the same gas the real deployment will use.
+    // WNURA and Multicall3 are already live on Nurachain, so neither is probed here.
+    // Every constructor below only stores its arguments, which is why passing the
+    // deployer's address for all of them estimates the same gas the real deployment will use.
     univ3: [
       { name: "UniswapV3Factory", args: [] },
       { name: "NFTDescriptor", args: [] },

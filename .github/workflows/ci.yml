@@ -6,7 +6,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A second push to the same branch cancels the first: these jobs compile five solc
+# A second push to the same branch cancels the first: these jobs compile three solc
 # versions and the queue is not worth paying for twice.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,7 +33,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      # The five pinned compilers are a large download and never change without a config
+      # The three pinned compilers are a large download and never change without a config
       # change, so they are keyed on hardhat.config.ts.
       - name: Cache solc compilers
         uses: actions/cache@v4
@@ -50,16 +50,12 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # The V2 pair hash is pinned because every pair address a router computes comes from
-      # it; the script exits non-zero if the compiled Pair no longer matches. The V3 hash is
-      # generated, so a drift shows up as a modified file rather than an exit code — hence
-      # both checks. See scripts/write-init-code-hash.ts.
-      - name: Verify the init code hashes have not drifted
+      # The V3 pool hash is generated, so a drift shows up as a modified file rather than
+      # an exit code. See scripts/write-init-code-hash.ts.
+      - name: Verify the init code hash has not drifted
         run: |
           npm run initcodehash
-          git diff --exit-code -- \
-            contracts/univ2/periphery/libraries/UniswapV2Library.sol \
-            contracts/univ3/periphery/libraries/PoolAddress.sol
+          git diff --exit-code -- contracts/univ3/periphery/libraries/PoolAddress.sol
 
   mocha:
     name: Mocha tests (unit, integration, security, deployment)
@@ -133,9 +129,10 @@ jobs:
       - run: npm ci
 
       # Scoped to the contracts this repo wrote. Coverage instruments the bytecode, which
-      # changes the UniswapV2Pair and UniswapV3Pool init code hashes that the routers
-      # hardcode — so every CREATE2-derived address moves and the vendored AMM suites fail
-      # under instrumentation. That is a property of the technique, not a broken test, and
-      # the AMM suites still run in full in the `mocha` job. See README.
+      # changes the UniswapV3Pool init code hash that PoolAddress hardcodes — so every
+      # CREATE2-derived address moves and the router computes addresses with no contract at
+      # them, and the vendored AMM suites fail under instrumentation. That is a property of
+      # the technique, not a broken test: those suites still run in full in the `mocha` job.
+      # See README.
       - name: Run coverage
         run: npm run coverage

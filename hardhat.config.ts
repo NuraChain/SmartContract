@@ -139,7 +139,7 @@ const V3_OVERRIDES = Object.fromEntries(
   ]),
 );
 
-// contracts/Forecast is vendored from the standalone AuctionHouse prediction-market
+// contracts/forecast is vendored from the standalone AuctionHouse prediction-market
 // project and pins solc 0.8.24 with its own settings, copied verbatim from that
 // project's hardhat.config.ts:
 //
@@ -150,7 +150,7 @@ const V3_OVERRIDES = Object.fromEntries(
 //   - evmVersion cancun because OpenZeppelin 5.6 uses `mcopy` unconditionally
 //     (same constraint as our 0.8.28 profile above).
 const FORECAST_OVERRIDES = Object.fromEntries(
-  solidityFiles("contracts/Forecast").map((file) => [
+  solidityFiles("contracts/forecast").map((file) => [
     file,
     {
       version: "0.8.24",

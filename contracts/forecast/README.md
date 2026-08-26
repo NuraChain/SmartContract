@@ -312,7 +312,7 @@ no LPs to retain a cut for, so the entire fee goes to the treasury.
 ## 13. Source files
 
 ```
-contracts/Forecast/
+contracts/forecast/
 ├── PredictionFactory.sol        # Clone factory (createMarket + createMarket2), ADMIN_ROLE registry
 ├── PredictionMarket.sol         # CPMM market: ERC-1155 shares, trading, settlement
 ├── PredictionPool.sol           # Parimutuel market: bets, resolve-after-lock, pro-rata claims

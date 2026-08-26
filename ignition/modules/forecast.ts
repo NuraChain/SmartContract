@@ -1,7 +1,7 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
 /**
- * Everything in contracts/Forecast — deployed by `npm run deploy:nurachain:forecast`,
+ * Everything in contracts/forecast — deployed by `npm run deploy:nurachain:forecast`,
  * or `npx hardhat deploy --sc forecast --network <network>`.
  *
  * Four contracts:

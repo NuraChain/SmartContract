@@ -12,6 +12,14 @@ pragma solidity 0.8.24;
 error NotAdmin();
 /// @dev Caller is not the market's controller (the factory).
 error NotController();
+/// @dev Caller is not one of the resolution signers.
+error NotSigner();
+/// @dev Caller is not the factory owner.
+error NotOwner();
+/// @dev The signer list contained a duplicate address.
+error DuplicateSigner();
+/// @dev Required confirmations must be >= 1 and <= number of signers.
+error BadQuorum();
 /// @dev A zero address was supplied where a real address is required.
 error ZeroAddress();
 /// @dev A zero amount was supplied where a positive value is required.

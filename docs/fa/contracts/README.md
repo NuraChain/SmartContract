@@ -90,7 +90,7 @@ WNURA (مستقل)، MockToken ──▶ OZ ERC20 (تست)
 | توکن‌های پل | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | ضرب بدون پشتوانه، سوزاندن مصادره‌ای، pause سراسری، sweep |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | تخلیه، قیمت‌گذاری مجدد، توقف؛ signer تعیین صلاحیت |
 | Vault | DEFAULT_ADMIN/MINTER + کلید ضرب عمومی | اندازهٔ قفل آینده، باز کردن مسابقهٔ mint رایگان، برداشت **فقط بخش آزاد** |
-| کارخانهٔ Forecast | ADMIN_ROLE | ساخت بازار (کارمزد ≤ ۱۰٪)، حل/void همهٔ بازارها، تغییر خزانه‌ها |
+| کارخانهٔ Forecast | ADMIN_ROLE + مالک + امضاکننده‌های حل | ساخت بازار (کارمزد ≤ ۱۰٪)، void، تغییر خزانه‌ها؛ حل نیازمند حد نصاب N-از-M (مثلاً ۳ از ۵)؛ مالک می‌تواند مجموعه را عوض کند |
 | بازارها | به controller (کارخانه) اعتماد دارند | چرخهٔ حیات فقط از طریق رلهٔ کارخانه |
 | Treasury | مالک Ownable2Step | برداشت همهٔ کارمزدها، تغییر گیرنده |
 
@@ -104,7 +104,7 @@ WNURA (مستقل)، MockToken ──▶ OZ ERC20 (تست)
   buy{value}(i,minOut,deadline) ─▶ cut ─▶ Treasury ؛ پس از MarketResolved(w): redeem()
 
 شرط‌بندی در بازار استخر:
-  bet{value}(i) تا lockTime ─▶ resolve توسط ادمین ─▶ claim() تناسبی برندگان
+  bet{value}(i) تا lockTime ─▶ حد نصاب امضاکننده‌ها (مثلاً ۳ از ۵) confirmResolution می‌زند ─▶ claim() تناسبی برندگان
 
 پل ورود/خروج:
   رله روی ورود mint می‌کند؛ BURNER روی خروج می‌سوزاند

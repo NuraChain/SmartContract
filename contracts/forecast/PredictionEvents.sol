@@ -79,3 +79,18 @@ event TreasuryUpdated(address indexed treasury);
 
 /// @notice The factory's default fee configuration changed.
 event FeesUpdated(uint16 feeBps, uint16 protocolFeeShareBps);
+
+/// @notice A resolution signer voted `outcome` for market `marketId`; `count` is that
+///         outcome's tally after the vote (a changed vote removes it from the old one).
+event ResolutionConfirmed(
+    uint256 indexed marketId,
+    address indexed signer,
+    uint256 indexed outcome,
+    uint256 count
+);
+
+/// @notice A market reached the confirmation quorum and was resolved on-chain.
+event ResolutionExecuted(uint256 indexed marketId, uint256 indexed outcome, uint256 confirmations);
+
+/// @notice The owner replaced the resolution signer set and/or the required quorum.
+event ResolutionSignersUpdated(address[] signers, uint256 required);

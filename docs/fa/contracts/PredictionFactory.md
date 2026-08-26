@@ -121,9 +121,10 @@ MarketStatus:
 ### طبقه‌بندی
 
 - **مدیریتی:** ‏`createMarket`, `createMarket2`, `pauseMarket`, `unpauseMarket`,
-  `closeMarket`, `resolveMarket`, `voidMarket`, `setTreasury`, `repointTreasury`,
+  `closeMarket`, `voidMarket`, `setTreasury`, `repointTreasury`,
   `setDefaultFees`
-- **View:** ‏`marketCount`, `marketAt`, `marketAddress`, `marketKind`, `treasury`,
+- **مولتی‌سگ حل:** ‏confirmResolution (امضاکننده‌ها)، ‏setResolutionSigners (مالک)
+- **View:** ‏marketCount, marketAt, marketAddress, marketKind, 	reasury, esolutionSigners, equiredConfirmations, confirmationCount, confirmationOf, isResolutionSigner,
   `marketsPaged`, `marketsByStatus`, `activeMarkets`, `closedMarkets`,
   `resolvedMarkets`, `countByStatus`
 - **Private:** ‏`_setStatus`
@@ -171,13 +172,34 @@ function createMarket2(MarketParams calldata params)
 
 | تابع | فراخوانی کلون | گذار وضعیت |
 | --- | --- | --- |
-| `pauseMarket(id)` | `pause()` | Open ← Paused |
-| `unpauseMarket(id)` | `unpause()` | Paused ← Open |
-| `closeMarket(id)` | `close()` | ← Closed |
-| `resolveMarket(id, winningOutcome)` | `resolve(winningOutcome)` | ← Resolved |
-| `voidMarket(id)` | `voidMarket()` | ← Voided |
+| `pauseMarket(id)` *(ADMIN_ROLE)* | `pause()` | Open ← Paused |
+| `unpauseMarket(id)` *(ADMIN_ROLE)* | `unpause()` | Paused ← Open |
+| `closeMarket(id)` *(ADMIN_ROLE)* | `close()` | ← Closed |
+| `confirmResolution(id, winningOutcome)` *(امضاکننده)* | ثبت رای؛ در حد نصاب `resolve(winningOutcome)` را اجرا می‌کند | ← Resolved |
+| `voidMarket(id)` *(ADMIN_ROLE)* | `voidMarket()` | ← Voided |
 
 marketId خارج از محدوده panic اندیس آرایه می‌دهد.
+
+### مولتی‌سگ حل (N از M)
+
+حل بازار — تنها اقدامی که تعیین می‌کند چه کسی پول می‌گیرد — پشت مجموعهٔ امضاکنندهٔ منصوبِ
+مالک قرار گرفته، نه یک کلید ادمین واحد:
+
+- **راه‌اندازی:** سازنده ‏`initialSigners` (حداکثر ‏`MAX_SIGNERS = 10`، یکتا و غیرصفر) و
+  ‏`requiredConfirmations` ‏(‏`1 ≤ n ≤ تعداد امضاکننده‌ها`) می‌گیرد. شکل توصیه‌شده برای
+  production: **پنج امضاکننده با حد نصاب سه**. مالک هر دو را به‌صورت اتمیک با
+  `setResolutionSigners(signers, required)` عوض می‌کند.
+- **رأی دادن:** هر امضاکننده `confirmResolution(marketId, outcome)` می‌زند — در هر بازار
+  یک رأی باز برای هر امضاکننده؛ تغییر رأی قبل از حد نصاب، شمارنده را جابه‌جا می‌کند
+  (`ResolutionConfirmed` تعداد جاری را حمل می‌کند).
+- **اجرا:** لحظه‌ای که یک خروجی به `_required` رأی متمایز برسد، همان تراکنش `resolve`
+  کلون را اجرا می‌کند — کارمزد خانه برداشته و پرداخت برندگان باز می‌شود — رجیستری Resolved
+  شده و رویداد `ResolutionExecuted` صادر می‌گردد.
+- **گاردها:** غیرامضاکننده `NotSigner`؛ بازار پایان‌یافته `MarketAlreadyEnded`؛ خروجی ناموجود
+  `InvalidOutcome`. رأی‌ها پاک نمی‌شوند ولی بازار پایانی هرگز دوباره حل نمی‌شود.
+- **تعامل با موتورها:** کلون‌های استخر قبل از `lockTime` اجازهٔ حل ندارند (`LockNotReached`)
+  — پس در بازارهای استخر، حد نصاب فقط پس از بسته شدن شرط‌بندی می‌تواند اجرا شود؛ کلون‌های
+  CPMM چنین تأخیری ندارند.
 
 ---
 
@@ -217,15 +239,14 @@ marketId خارج از محدوده panic اندیس آرایه می‌دهد.
 | همهٔ توابع ساخت/چرخهٔ حیات/پیکربندی | `ADMIN_ROLE` | ادمین‌ها (مدیریت نقش با DEFAULT_ADMIN_ROLE) |
 | همهٔ viewها | ندارد | همه |
 
-**اختیارات CRITICAL:** ساخت بازار (با انتخاب کارمزد تا ۱۰٪)، حل *همهٔ* بازارها
-(اوراکل متمرکز — صحت پرداخت‌ها به این کلید وابسته است)، void کردن، تغییر خزانه.
+**اختیارات CRITICAL:** ساخت بازار (با انتخاب کارمزد تا ۱۰٪)، void کردن،`nتغییر خزانه و — فقط مالک — تعویض مجموعهٔ امضاکننده‌ها/حد نصاب حل.`nخودِ حل به حد نصاب N-از-M امضاکننده (مثلاً ۳ از ۵) نیاز دارد، نه یک کلید واحد؛`nتبانیِ یک حد نصاب همچنان فرض اعتماد است.
 
 ## جریان مالی
 
 ```text
 ADMIN ──createMarket{value}──▶ initialize روی کلون (seed = سهام LP برای creator)
 کاربران ──buy/sell/bet──▶ کلون ──سهم پروتکل/خانه──▶ Treasury
-ADMIN ──resolveMarket(id,outcome)──▶ resolve کلون ──کارمزد──▶ Treasury
+امضاکننده‌ها ×N ──confirmResolution(id,outcome)──▶ حد نصاب؟ ──▶ resolve کلون ──کارمزد──▶ Treasury
 برندگان ──redeem()/claim()──◀ موجودی کلون
 ```
 
@@ -235,7 +256,7 @@ ADMIN ──resolveMarket(id,outcome)──▶ resolve کلون ──کارمز
 
 - **مسابقهٔ مقداردهی:** وجود ندارد — clone + initialize اتمیک است؛ سازندهٔ پیاده‌سازی‌ها
   `_disableInitializers()` صدا می‌زند.
-- **تمرکز:** حل، اقدام مورد اعتماد ادمین است؛ بدون پنجرهٔ اختلاف یا اوراکل. فرض اعتمادِ
+- **تمرکز:** حل به حد نصاب N-از-M نیاز دارد نه یک کلید واحد؛ اما تبانی حد نصاب یا تعویض مجموعه توسط مالک همچنان فرض‌های اعتمادند؛ بدون پنجرهٔ اختلاف یا اوراکل. فرض اعتمادِ
   مستند.
 - **سازگاری رجیستری:** با ترتیب اجرا (اول state کلون، بعد `_setStatus`) تضمین می‌شود؛
   شکست رله هر دو را دست‌نخورده می‌گذارد.
@@ -257,7 +278,7 @@ ADMIN ──resolveMarket(id,outcome)──▶ resolve کلون ──کارمز
 
 خواندن: `activeMarkets`, `marketsPaged`, `marketAt`, `marketKind`.
 جریان ادمین (مثلاً از پنل ادمین وب): ‏`createMarket2` برای بازارهای استخر → کاربران روی
-کلون `bet` می‌زنند → بعد از lockTime ادمین `resolveMarket(id, outcome)` → برندگان `claim()`.
+کلون `bet` می‌زنند → بعد از lockTime امضاکننده‌ها `confirmResolution(id, outcome)` می‌زنند تا حد نصاب تأیید شود → برندگان `claim()`.
 گوش دهید به: `MarketCreated`.
 خطاهای رایج: نبود ADMIN_ROLE، خطای زمان‌بندی هنگام ساخت (`InvalidTiming`).
 
@@ -268,7 +289,9 @@ ADMIN ──resolveMarket(id,outcome)──▶ resolve کلون ──کارمز
 | `createMarket(params)` | external | payable | ADMIN_ROLE | کلون CPMM با seed |
 | `createMarket2(params)` | external | nonpayable | ADMIN_ROLE | کلون پاری‌موچل |
 | `pauseMarket/unpauseMarket/closeMarket/voidMarket(id)` | external | nonpayable | ADMIN_ROLE | رلهٔ چرخهٔ حیات |
-| `resolveMarket(id,outcome)` | external | nonpayable | ADMIN_ROLE | اعلام برنده از طریق کلون |
+| confirmResolution(id,outcome) | external | nonpayable | امضاکنندهٔ حل | رأی به برنده؛ در حد نصاب اجرا می‌شود |
+| setResolutionSigners(signers,n) | external | nonpayable | مالک کارخانه | تعویض مجموعهٔ امضاکننده‌ها + حد نصاب |
+| viewهای مولتی‌سگ | external | view | همه | وضعیت رأی‌ها و امضاکننده‌ها |
 | `setTreasury(t)` | external | nonpayable | ADMIN_ROLE | خزانهٔ بازارهای آینده |
 | `repointTreasury(id)` | external | nonpayable | ADMIN_ROLE | همگام‌سازی خزانهٔ یک کلون |
 | `setDefaultFees(f,s)` | external | nonpayable | ADMIN_ROLE | پیش‌فرض بازارهای feeBps=0 |

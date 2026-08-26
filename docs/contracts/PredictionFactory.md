@@ -124,9 +124,10 @@ Trade/lifecycle events are emitted by the clones themselves (shared declarations
 ### Classification
 
 - **Administrative:** `createMarket`, `createMarket2`, `pauseMarket`, `unpauseMarket`,
-  `closeMarket`, `resolveMarket`, `voidMarket`, `setTreasury`, `repointTreasury`,
+  `closeMarket`, `voidMarket`, `setTreasury`, `repointTreasury`,
   `setDefaultFees`
-- **View:** `marketCount`, `marketAt`, `marketAddress`, `marketKind`, `treasury`,
+- **Resolution multisig:** confirmResolution (signers), setResolutionSigners (owner)
+- **View:** marketCount, marketAt, marketAddress, marketKind, 	reasury, esolutionSigners, equiredConfirmations, confirmationCount, confirmationOf, isResolutionSigner,
   `marketsPaged`, `marketsByStatus`, `activeMarkets`, `closedMarkets`,
   `resolvedMarkets`, `countByStatus`
 - **Private:** `_setStatus`
@@ -180,16 +181,37 @@ Emits `MarketCreated(..., initialFunding = 0)`.
 Each is `external onlyRole(ADMIN_ROLE)`, calls the identically-named function on the
 clone, then updates the registry bucket via `_setStatus`. The clone reverts first if the
 transition is illegal, so registry and clone can never disagree:
-
-| Function | Clone call | Registry transition |
+| Function | Clone call / effect | Registry transition |
 | --- | --- | --- |
-| `pauseMarket(marketId)` | `pause()` | Open → Paused |
-| `unpauseMarket(marketId)` | `unpause()` | Paused → Open |
-| `closeMarket(marketId)` | `close()` | → Closed (from not-ended states) |
-| `resolveMarket(marketId, winningOutcome)` | `resolve(winningOutcome)` | → Resolved |
-| `voidMarket(marketId)` | `voidMarket()` | → Voided |
+| `pauseMarket(marketId)` *(ADMIN_ROLE)* | `pause()` | Open → Paused |
+| `unpauseMarket(marketId)` *(ADMIN_ROLE)* | `unpause()` | Paused → Open |
+| `closeMarket(marketId)` *(ADMIN_ROLE)* | `close()` | → Closed (from not-ended states) |
+| `confirmResolution(marketId, winningOutcome)` *(signer)* | records a vote; at quorum calls `resolve(winningOutcome)` | → Resolved |
+| `voidMarket(marketId)` *(ADMIN_ROLE)* | `voidMarket()` | → Voided |
 
 `marketId` out of range reverts with array-index panic.
+
+### Resolution multisig (N-of-M)
+
+Resolution — the one action that decides who gets paid — is gated behind an owner-appointed
+signer set instead of a single admin key:
+
+- **Setup:** constructor takes `initialSigners` (≤ `MAX_SIGNERS = 10`, unique, non-zero) and
+  `requiredConfirmations` (`1 ≤ n ≤ signers.length`). Recommended production shape:
+  **five signers, quorum three**. The owner can replace both atomically via
+  `setResolutionSigners(signers, required)`.
+- **Voting:** each signer calls `confirmResolution(marketId, outcome)` — one open vote per
+  signer per market; re-voting a different outcome moves the tally
+  (`ResolutionConfirmed` carries the running count).
+- **Execution:** the moment any single outcome reaches `_required` distinct votes, the same
+  transaction runs the clone's `resolve(winner)` — taking the house fee and unlocking
+  winner payouts — flips the registry to Resolved, and emits `ResolutionExecuted`.
+- **Guards:** non-signers revert `NotSigner`; ended markets revert `MarketAlreadyEnded`
+  before any vote lands; unknown outcomes revert `InvalidOutcome`. Votes are never cleared,
+  but a terminal market can never resolve twice.
+- **Engine interaction:** pool clones refuse resolution before their `lockTime`
+  (`LockNotReached`), so for pool markets the quorum can only execute after betting has
+  locked; CPMM clones impose no such delay.
 
 ---
 
@@ -241,9 +263,11 @@ Moves `marketId` between status buckets and writes the record's status. No-op wh
 | all create/lifecycle/config functions | `ADMIN_ROLE` | Admin(s); role granted/revoked by DEFAULT_ADMIN_ROLE holder |
 | all views | none | Anyone |
 
-**CRITICAL ADMIN POWERS:** market creation (incl. choosing fees up to 10%), resolution of
-every market (centralized oracle — integrity rests on this key), voiding, treasury
-re-pointing. See [PredictionPool](PredictionPool.md)/[PredictionMarket](PredictionMarket.md)
+**CRITICAL ADMIN POWERS:** market creation (incl. choosing fees up to 10%), voiding,
+treasury re-pointing, and — owner-only — replacing the resolution signer set/quorum.
+Resolution itself requires the N-of-M signer quorum (e.g. 3-of-5), not a single key; a
+colluding quorum is still a trusted assumption. See
+[PredictionPool](PredictionPool.md)/[PredictionMarket](PredictionMarket.md)
 for per-action consequences.
 
 ## Token / Financial Flow
@@ -251,7 +275,7 @@ for per-action consequences.
 ```text
 ADMIN ──createMarket{value}──▶ clone.initialize (seed = LP shares to creator)
 Users ──buy/sell/bet──▶ clone ──protocol cut──▶ Treasury
-ADMIN ──resolveMarket(id,outcome)──▶ clone.resolve ──fee──▶ Treasury
+Signers ×N ──confirmResolution(id,outcome)──▶ quorum? ──▶ clone.resolve ──fee──▶ Treasury
 Winners ──redeem()/claim()──◀ clone balance
 ```
 
@@ -268,7 +292,8 @@ The factory itself never holds funds beyond transiently forwarding `msg.value` i
 
 - **Initialization race:** none — `Clones.clone` + `initialize` are atomic in one tx;
   implementations call `_disableInitializers()` in their constructors.
-- **Centralization:** resolution is a trusted admin action; no dispute window or oracle
+- **Centralization:** resolution needs an N-of-M signer quorum (e.g. 3-of-5) rather than one
+  key, but a colluding quorum or the owner replacing the set remain trusted assumptions; no dispute window or oracle
   integration. Documented trust assumption.
 - **Registry consistency:** guaranteed by ordering (clone state change first, then
   `_setStatus`); a failing relay leaves both untouched (atomic).
@@ -292,7 +317,7 @@ controller (this factory).
 
 Reads: `activeMarkets`, `marketsPaged`, `marketAt`, `marketKind`.
 Admin flow (e.g. via the web admin panel): `createMarket2` for pool markets → users call
-`bet` on the clone → after `lockTime`, admin calls `resolveMarket(id, outcome)` → winners
+`bet` on the clone → after `lockTime`, signers call `confirmResolution(id, outcome)` until the quorum agrees → winners
 call `claim()` on the clone.
 Listen: `MarketCreated` (new listings), plus clone events per market.
 Common failures: `AccessControlUnauthorizedAccount` (not admin), timing validation on
@@ -305,7 +330,9 @@ creation (`InvalidTiming`).
 | `createMarket(params)` | external | payable | ADMIN_ROLE | Deploy CPMM clone with seed |
 | `createMarket2(params)` | external | nonpayable | ADMIN_ROLE | Deploy parimutuel clone |
 | `pauseMarket/unpauseMarket/closeMarket/voidMarket(id)` | external | nonpayable | ADMIN_ROLE | Relay lifecycle to clone |
-| `resolveMarket(id,outcome)` | external | nonpayable | ADMIN_ROLE | Declare winner via clone |
+| `confirmResolution(id,outcome)` | external | nonpayable | Resolution signer | Vote winner; executes at quorum |
+| `setResolutionSigners(signers,n)` | external | nonpayable | Factory owner | Replace signer set + quorum |
+| `resolutionSigners/isResolutionSigner/requiredConfirmations/confirmationCount/confirmationOf` | external | view | Anyone | Multisig state reads |
 | `setTreasury(t)` | external | nonpayable | ADMIN_ROLE | Treasury for future markets |
 | `repointTreasury(id)` | external | nonpayable | ADMIN_ROLE | Sync one clone's treasury |
 | `setDefaultFees(f,s)` | external | nonpayable | ADMIN_ROLE | Defaults for feeBps=0 markets |

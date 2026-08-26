@@ -131,7 +131,7 @@ Trade a CPMM market:
 
 Bet a pool market:
   user ──bet{value}(i)──▶ PredictionPool (until lockTime)
-  admin resolves after lock ─▶ winners claim() pro-rata net of house fee
+  signer quorum (e.g. 3-of-5) confirms after lock ─▶ winners claim() pro-rata net of house fee
 
 Bridge in/out:
   relayer mints on inbound proof ──▶ user; BURNER burns on exit
@@ -147,7 +147,7 @@ Airdrop:
 
 - Deploy groups via `npx hardhat deploy --sc <group> --network nurachain`.
 - Create markets: `createMarket{value}` / `createMarket2`; drive lifecycle via
-  `pauseMarket/unpauseMarket/closeMarket/resolveMarket/voidMarket`.
+  `pauseMarket/unpauseMarket/closeMarket/voidMarket`; resolution itself is an N-of-M multisig (`confirmResolution` by `resolutionSigners` until `requiredConfirmations` agree).
 - Fee policy: factory `setDefaultFees` (defaults for `feeBps=0` requests),
   treasury `setFeeRecipient`/`withdraw`.
 - Recovery paths: `rescueERC20` (tokens), `withdrawExcessTokens` (vault tail),

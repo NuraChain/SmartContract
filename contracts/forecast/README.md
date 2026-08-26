@@ -45,9 +45,11 @@ market is a ~45-byte proxy clone pointing at a single shared implementation.
 2. **Trade** — until `lockTime`, anyone can `buy()` shares of an outcome or `sell()` them
    back. Prices move continuously with demand (AMM, no order book).
 3. **Lock** — at `lockTime` trading stops automatically (checked on-chain, not by cron).
-4. **Resolve** — an admin calls `resolve(winner)` with the real-world result, or
-   `voidMarket()` if the outcome is invalid/ambiguous (everyone gets their money back
-   equally).
+ 4. **Resolve (multisig)** — resolution needs `requiredConfirmations` of the factory's
+    `resolutionSigners` to vote for the SAME outcome (`confirmResolution(marketId, outcome)`).
+    The last confirming vote executes `resolve(winner)` on-chain in that transaction —
+    which is what releases coins/shares to winners. `voidMarket()` stays a single-admin
+    action: it only refunds, it can never pay anyone extra.
 5. **Redeem** — winners call `redeem()`: their winning shares are **burned** and they receive
    1 native token unit per share. Losing shares become worthless by construction.
 
@@ -209,7 +211,9 @@ fees either stay in the pool (LP cut) or leave through the treasury (protocol cu
 | `redeem` | ✅ | — | Requires `Resolved` or `Voided` |
 | `createMarket` (payable) | — | ✅ | Clones + initializes + registers atomically |
 | `createMarket2` (pool) | — | ✅ | Same, minus seed liquidity — deliberately not payable |
-| `pause` / `unpause` / `close` / `resolve` / `voidMarket` | — | ✅ | Called through the factory, which relays to the clone and syncs its registry |
+| `pause` / `unpause` / `close` / `voidMarket` | — | ✅ | Called through the factory, which relays to the clone and syncs its registry |
+| `resolve` | — | ✅ N-of-M multisig | Needs `requiredConfirmations` of the owner-appointed `resolutionSigners` to vote the SAME outcome (`confirmResolution`); the last vote executes it |
+| `setResolutionSigners(signers, required)` | — | Factory **owner** | Replaces the signer set + quorum atomically |
 | `setDefaultFees`, `setTreasury`, `repointTreasury` | — | ✅ | `repointTreasury` is per-market so gas stays bounded |
 | Treasury `withdraw`, `setFeeRecipient` | — | Treasury owner | Two-step ownership handover |
 
@@ -256,11 +260,13 @@ initialized, never the implementation itself.
 
 Read these before relying on the system:
 
-- **Resolution is centralized.** A single admin key decides the winning outcome and can
-  `resolve` at any time — including *before* `lockTime` on CPMM markets (the contract does not
-  enforce that the event deadline has passed). Pool markets (`createMarket2`) are stricter:
-  resolution before `lockTime` reverts. Integrity of payouts rests entirely on the honesty of
-  the `ADMIN_ROLE` holder(s). There is no dispute window or oracle integration.
+- **Resolution is an N-of-M multisig, but still trusted.** An owner-appointed signer set
+  (`resolutionSigners`, e.g. five addresses) must reach `requiredConfirmations` (e.g. three)
+  distinct votes on ONE outcome before a market resolves — no single key can settle a market
+  alone. Residual trust: the owner can replace the whole set at any time; a colluding quorum
+  can resolve against reality; and on CPMM markets the quorum may still execute before
+  `lockTime` (pool markets revert until then). There is no dispute window or oracle
+  integration.
 - **Admin can pause/close at will**, stranding traders in `Closed` until an eventual
   resolve/void. Funds are never stealable — every path ends in pro-rata or winner-take-all
   payout — but trading can be halted indefinitely.
@@ -287,9 +293,11 @@ AMM, no shares, and no liquidity providers. How it works:
    backing option 0, 1, 2, ... Stakes accumulate per user per outcome; nothing is minted.
    Implied odds are viewable live via `impliedOdds(index)` (stake share of the pool, WAD).
 3. **Lock** — at `lockTime` betting stops automatically.
-4. **Resolve** — an admin declares the winner via the factory's `resolveMarket`. Unlike the
-   CPMM, resolving **before** `lockTime` is impossible (`LockNotReached`) — every late bet
-   would change everyone's payout, so the pool must close to new money first.
+4. **Resolve (multisig)** — the signers confirm the winner via the factory's
+   `confirmResolution(marketId, outcome)`; when `requiredConfirmations` of them agree, the
+   resolution executes and coins become distributable to winners. Unlike the CPMM,
+   resolving **before** `lockTime` is impossible (`LockNotReached`) — every late bet would
+   change everyone's payout, so the pool must close to new money first.
 5. **Fee, then split** — resolution takes the house fee off the whole pool once
    (`pool × feeBps / BPS`, floored) and forwards it to the treasury. What remains becomes the
    prize:

@@ -45,11 +45,33 @@ interface IPredictionFactory {
     function closeMarket(uint256 marketId) external;
 
     /**
-     * @notice Resolves a market to a winning outcome (admin only).
+     * @notice Casts a resolution signer's vote for a market's winning outcome. When any
+     *         outcome accumulates `requiredConfirmations()` distinct votes, the market is
+     *         resolved on-chain in the same transaction (admin multisig, N-of-M).
      * @param marketId Market to resolve.
-     * @param winningOutcome Winning outcome index.
+     * @param winningOutcome Outcome the signer is confirming.
      */
-    function resolveMarket(uint256 marketId, uint256 winningOutcome) external;
+    function confirmResolution(uint256 marketId, uint256 winningOutcome) external;
+
+    /// @notice Replaces the resolution signer set and quorum in one shot (owner only).
+    /// @param signers New signer addresses; unique and non-zero.
+    /// @param required New confirmation threshold; 1 <= required <= signers.length.
+    function setResolutionSigners(address[] calldata signers, uint256 required) external;
+
+    /// @notice The addresses allowed to confirm resolutions.
+    function resolutionSigners() external view returns (address[] memory);
+
+    /// @notice True when `account` is in the current signer set.
+    function isResolutionSigner(address account) external view returns (bool);
+
+    /// @notice Distinct votes needed on one outcome to resolve a market.
+    function requiredConfirmations() external view returns (uint256);
+
+    /// @notice Current tally for `outcome` on `marketId`.
+    function confirmationCount(uint256 marketId, uint256 outcome) external view returns (uint256);
+
+    /// @notice The outcome `signer` voted for on `marketId`, or type(uint256).max when none.
+    function confirmationOf(uint256 marketId, address signer) external view returns (uint256);
 
     /// @notice Voids a market for equal refunds (admin only).
     function voidMarket(uint256 marketId) external;

@@ -129,7 +129,7 @@ export const CONTRACTS: readonly ContractDef[] = [
     {
         id: 'prediction-factory',
         name: 'PredictionFactory',
-        description: 'Deploys prediction-market clones (CPMM and parimutuel) and keeps the registry. Admin controls fees, treasury and market lifecycle.',
+        description: 'Deploys prediction-market clones (CPMM and parimutuel) and keeps the registry. Admin controls fees, treasury and lifecycle; resolution itself needs an N-of-M signer quorum (e.g. 3-of-5).',
         category: 'prediction',
         chainId: NURA_CHAIN_ID,
         address: null,

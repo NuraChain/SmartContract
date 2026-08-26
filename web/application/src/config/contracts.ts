@@ -74,6 +74,13 @@ const BRIDGE_USDT = '0x4E0DB0B1Da408faF5637202CF48b0bc7733bE6dC' as Address;
 const BRIDGE_BNB = '0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc' as Address;
 const WNURA = '0xf0a4eC07916feBa4432121Ed5969887D9b939cD0' as Address;
 const MULTICALL3 = '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24' as Address;
+// Forecast (prediction market) – deployed 2026-08-26 via ignition/modules/forecast.ts
+// Batch #1: implementations + treasury, Batch #2: factory (clone deployer + registry).
+// See ignition/deployments/chain-1020/journal.jsonl and hardhat.config.ts:619 ignition fees.
+const PREDICTION_MARKET_IMPL = '0x4b94c8F32Ff506D31d79d21D94eC1d8AE3d1F145' as Address;
+const PREDICTION_POOL_IMPL = '0x675b24758B199c3A5674f0288dfdeaA217fB2A86' as Address;
+const PREDICTION_TREASURY = '0xDABEDD148F5AE5f3e130aB811a8975828Ea75AA8' as Address;
+const PREDICTION_FACTORY = '0x33fE315c8a7FeA10152dD2b21B5d87936aF9B79d' as Address;
 
 export const CONTRACTS: readonly ContractDef[] = [
     {
@@ -132,31 +139,29 @@ export const CONTRACTS: readonly ContractDef[] = [
         description: 'Deploys prediction-market clones (CPMM and parimutuel) and keeps the registry. Admin controls fees, treasury and lifecycle; resolution itself needs an N-of-M signer quorum (e.g. 3-of-5).',
         category: 'prediction',
         chainId: NURA_CHAIN_ID,
-        address: null,
+        address: PREDICTION_FACTORY,
         abi: PredictionFactoryAbi as Abi,
-        deploymentNote: 'Deployed by ignition/modules/forecast.ts (`npm run deploy:nurachain:forecast`); address recorded at deploy time only.'
+        deploymentNote: 'Deployed 2026-08-26 by ignition/modules/forecast.ts (`npm run deploy:nurachain:forecast`) — Batch #2. Verified on Nurachain (1020) at 0x33fE315c8a7FeA10152dD2b21B5d87936aF9B79d.'
     },
     {
         id: 'prediction-market',
         name: 'PredictionMarket',
-        description: 'One CPMM prediction market instance (ERC1155 outcome shares): buy, sell, merge sets, redeem, funding controls.',
+        description: 'CPMM prediction market clone implementation (ERC1155 outcome shares): buy, sell, merge sets, redeem, funding controls. This is the template; each live market is a minimal proxy via PredictionFactory.createMarket.',
         category: 'prediction',
         chainId: NURA_CHAIN_ID,
-        // Clones are created by the factory; there is no single fixed address.
-        address: null,
+        address: PREDICTION_MARKET_IMPL,
         abi: PredictionMarketAbi as Abi,
-        deploymentNote: 'Instances are deployed by PredictionFactory.createMarket; paste a specific market via the factory listing first.'
+        deploymentNote: 'Implementation deployed 2026-08-26 by forecast Batch #1 at 0x4b94c8F32Ff506D31d79d21D94eC1d8AE3d1F145 (clones via factory; paste a specific market address to interact as an instance).'
     },
     {
         id: 'prediction-pool',
         name: 'PredictionPool',
-        description: 'One parimutuel prediction market instance: bet native coin on an outcome, admin resolves after lockTime, winners claim pro-rata net of fee.',
+        description: 'Parimutuel prediction market clone implementation: bet native coin on an outcome, admin resolves after lockTime, winners claim pro-rata net of fee. This is the template; each live market is a minimal proxy via PredictionFactory.createMarket2.',
         category: 'prediction',
         chainId: NURA_CHAIN_ID,
-        // Clones are created by the factory; there is no single fixed address.
-        address: null,
+        address: PREDICTION_POOL_IMPL,
         abi: PredictionPoolAbi as Abi,
-        deploymentNote: 'Instances are deployed by PredictionFactory.createMarket2; paste a specific market via the factory listing first.'
+        deploymentNote: 'Implementation deployed 2026-08-26 by forecast Batch #1 at 0x675b24758B199c3A5674f0288dfdeaA217fB2A86 (clones via factory; paste a specific market address to interact as an instance).'
     },
     {
         id: 'prediction-treasury',
@@ -164,9 +169,9 @@ export const CONTRACTS: readonly ContractDef[] = [
         description: 'Collects protocol fees from markets; withdraws go to the configured fee recipient.',
         category: 'prediction',
         chainId: NURA_CHAIN_ID,
-        address: null,
+        address: PREDICTION_TREASURY,
         abi: PredictionTreasuryAbi as Abi,
-        deploymentNote: 'Repointed per-deployment via PredictionFactory.setTreasury.'
+        deploymentNote: 'Deployed 2026-08-26 by forecast Batch #1 at 0xDABEDD148F5AE5f3e130aB811a8975828Ea75AA8; repointable via PredictionFactory.setTreasury.'
     },
     {
         id: 'collateralized-nft',

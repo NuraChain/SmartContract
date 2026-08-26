@@ -21,10 +21,11 @@ of every outcome) — which is what guarantees winning shares always redeem at f
 
 | File | Role |
 | --- | --- |
-| `PredictionFactory.sol` | Deploys markets as cheap EIP-1167 clones, holds `ADMIN_ROLE`, keeps the canonical registry with pagination and status filters. Every market trusts the factory as its *controller*. |
-| `PredictionMarket.sol` | One market: CPMM trading, liquidity, resolution, redemption. An upgradeable-style ERC-1155 that is initialized exactly once per clone. |
+| `PredictionFactory.sol` | Deploys markets as cheap EIP-1167 clones (`createMarket` = CPMM, `createMarket2` = parimutuel pool), holds `ADMIN_ROLE`, keeps the canonical registry with pagination and status filters. Every market trusts the factory as its *controller*. |
+| `PredictionMarket.sol` | One CPMM market: trading, liquidity, resolution, redemption. An upgradeable-style ERC-1155 that is initialized exactly once per clone. |
+| `PredictionPool.sol` | One parimutuel pool market: direct bets on outcomes until `lockTime`, admin resolution, fee off the top, winners split the rest pro-rata. |
 | `PredictionTreasury.sol` | Sink for protocol fees. Markets forward their cut here; the owner withdraws to a configurable recipient. Two-step ownership (`Ownable2Step`) + reentrancy guard. |
-| `PredictionTypes.sol` | Shared `MarketStatus` enum, `MarketParams` / `MarketRecord` structs. |
+| `PredictionTypes.sol` | Shared `MarketStatus` / `MarketKind` enums, `MarketParams` / `MarketRecord` structs. |
 | `PredictionErrors.sol` | File-level custom errors shared across the system (cheaper and more decodable than revert strings). |
 | `PredictionEvents.sol` | File-level events; one declaration site keeps emitted topics identical everywhere. |
 | `libraries/MarketMath.sol` | Fixed-product buy/sell/price math over the reserve array. Only uses `Math.mulDiv` — no log/exp, no fixed-point library. |
@@ -203,9 +204,11 @@ fees either stay in the pool (LP cut) or leave through the treasury (protocol cu
 | Action | Anyone | Factory admin (`ADMIN_ROLE`) | Notes |
 | --- | --- | --- | --- |
 | `buy` / `sell` / `calcBuy` / `calcSell` | ✅ | — | Only while `Open` and `block.timestamp < lockTime` |
+| `bet` / `claim` (pool markets) | ✅ | — | Bets only while `Open` before `lockTime`; claims after Resolved/Voided |
 | `addFunding` / `removeFunding` / `mergeSets` | ✅ | — | Funding requires `Open`; `mergeSets` blocked after Resolved/Voided |
 | `redeem` | ✅ | — | Requires `Resolved` or `Voided` |
 | `createMarket` (payable) | — | ✅ | Clones + initializes + registers atomically |
+| `createMarket2` (pool) | — | ✅ | Same, minus seed liquidity — deliberately not payable |
 | `pause` / `unpause` / `close` / `resolve` / `voidMarket` | — | ✅ | Called through the factory, which relays to the clone and syncs its registry |
 | `setDefaultFees`, `setTreasury`, `repointTreasury` | — | ✅ | `repointTreasury` is per-market so gas stays bounded |
 | Treasury `withdraw`, `setFeeRecipient` | — | Treasury owner | Two-step ownership handover |
@@ -254,9 +257,10 @@ initialized, never the implementation itself.
 Read these before relying on the system:
 
 - **Resolution is centralized.** A single admin key decides the winning outcome and can
-  `resolve` at any time — including *before* `lockTime`; the contract does not enforce that
-  the event deadline has passed. Integrity of payouts rests entirely on the honesty of the
-  `ADMIN_ROLE` holder(s). There is no dispute window or oracle integration.
+  `resolve` at any time — including *before* `lockTime` on CPMM markets (the contract does not
+  enforce that the event deadline has passed). Pool markets (`createMarket2`) are stricter:
+  resolution before `lockTime` reverts. Integrity of payouts rests entirely on the honesty of
+  the `ADMIN_ROLE` holder(s). There is no dispute window or oracle integration.
 - **Admin can pause/close at will**, stranding traders in `Closed` until an eventual
   resolve/void. Funds are never stealable — every path ends in pro-rata or winner-take-all
   payout — but trading can be halted indefinitely.
@@ -270,19 +274,56 @@ Read these before relying on the system:
 
 ---
 
-## 12. Source files
+## 12. Pool markets — `createMarket2` (parimutuel)
+
+`createMarket2` deploys the second engine, `PredictionPool`: a **parimutuel** market with no
+AMM, no shares, and no liquidity providers. How it works:
+
+1. **Create** — an admin calls `createMarket2(params)`. Not payable on purpose: a pool needs
+   no seed liquidity, so attached value would be unrecoverable and the call fails loudly.
+   A `feeBps` of 0 inherits the factory default — this is how a fee percentage is matched to
+   the market's type/category. The fee is capped at `MAX_FEE_BPS` (10%).
+2. **Bet** — until `lockTime`, anyone calls `bet(outcomeIndex)` with native collateral,
+   backing option 0, 1, 2, ... Stakes accumulate per user per outcome; nothing is minted.
+   Implied odds are viewable live via `impliedOdds(index)` (stake share of the pool, WAD).
+3. **Lock** — at `lockTime` betting stops automatically.
+4. **Resolve** — an admin declares the winner via the factory's `resolveMarket`. Unlike the
+   CPMM, resolving **before** `lockTime` is impossible (`LockNotReached`) — every late bet
+   would change everyone's payout, so the pool must close to new money first.
+5. **Fee, then split** — resolution takes the house fee off the whole pool once
+   (`pool × feeBps / BPS`, floored) and forwards it to the treasury. What remains becomes the
+   prize:
+   ```
+   payout(user) = (totalPool − fee) × stakeOnWinner(user) / totalStakedOnWinner
+   ```
+   i.e. the remaining tokens are divided among the winning option's backers *as shares
+   proportional to their stake*. Payouts floor-round; sub-unit dust stays in the contract.
+6. **Claim** — winners pull their payout with `claim()` (one-shot `_claimed` flag, checked
+   native transfer, burn-free accounting). `previewPayout(index)` shows what a claim would pay.
+   `voidMarket()` instead lets every bettor reclaim exactly their own stake, fee-free.
+
+Both engines share the factory registry, status buckets, pagination, treasury, and event
+surface; `marketKind(marketId)` reports which engine a registered market runs on
+(`MarketKind.Amm` or `MarketKind.Pool`). Pool markets ignore `protocolFeeShareBps` — there are
+no LPs to retain a cut for, so the entire fee goes to the treasury.
+
+---
+
+## 13. Source files
 
 ```
 contracts/Forecast/
-├── PredictionFactory.sol        # Clone factory + ADMIN_ROLE registry control plane
-├── PredictionMarket.sol         # One market: ERC-1155 shares, CPMM trading, settlement
+├── PredictionFactory.sol        # Clone factory (createMarket + createMarket2), ADMIN_ROLE registry
+├── PredictionMarket.sol         # CPMM market: ERC-1155 shares, trading, settlement
+├── PredictionPool.sol           # Parimutuel market: bets, resolve-after-lock, pro-rata claims
 ├── PredictionTreasury.sol       # Protocol-fee sink (Ownable2Step)
-├── PredictionTypes.sol          # MarketStatus enum, MarketParams/MarketRecord structs
+├── PredictionTypes.sol          # MarketStatus/MarketKind enums, MarketParams/MarketRecord structs
 ├── PredictionErrors.sol         # Shared custom errors
 ├── PredictionEvents.sol         # Shared events
 ├── interfaces/
 │   ├── IPredictionFactory.sol
-│   ├── IPredictionMarket.sol
+│   ├── IPredictionMarket.sol    # CPMM surface
+│   ├── IPredictionPool.sol      # Parimutuel surface
 │   └── IPredictionTreasury.sol
 ├── libraries/
 │   ├── MarketMath.sol           # FPMM trade/pricing math (mulDiv only)

@@ -44,6 +44,9 @@ event PredictionPlaced(
     uint256 sharesOut
 );
 
+/// @notice A bet on a pool market: `better` staked `amount` collateral on `outcome`.
+event BetPlaced(address indexed market, address indexed better, uint256 indexed outcome, uint256 amount);
+
 /// @notice A sell trade: `seller` returned `sharesIn` of `outcome` for `amountOut` collateral.
 event PredictionSold(
     address indexed market,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import { MarketStatus, MarketParams, MarketRecord } from "../PredictionTypes.sol";
+import { MarketKind, MarketStatus, MarketParams, MarketRecord } from "../PredictionTypes.sol";
 
 /**
  * @title IPredictionFactory
@@ -22,6 +22,18 @@ interface IPredictionFactory {
         external
         payable
         returns (uint256 marketId, address market);
+
+    /**
+     * @notice Deploys a new parimutuel pool market: users bet native collateral directly on an
+     *        outcome until `lockTime`; an admin then resolves the winner, the house fee is
+     *        deducted once from the whole pool, and the remainder is shared pro-rata among
+     *        the winning outcome's backers. Needs no seed liquidity, so it is not payable.
+     * @param params Market configuration; a `feeBps` of 0 inherits the factory default (this
+     *        is where the fee percentage per market type/category comes from).
+     * @return marketId The market's registry index.
+     * @return market The deployed clone address.
+     */
+    function createMarket2(MarketParams calldata params) external returns (uint256 marketId, address market);
 
     /// @notice Pauses a market (admin only).
     function pauseMarket(uint256 marketId) external;
@@ -63,6 +75,9 @@ interface IPredictionFactory {
 
     /// @notice The clone address for a market by id.
     function marketAddress(uint256 marketId) external view returns (address);
+
+    /// @notice Which engine a market runs on (AMM shares vs parimutuel pool).
+    function marketKind(uint256 marketId) external view returns (MarketKind);
 
     /// @notice The treasury protocol fees flow into.
     function treasury() external view returns (address);

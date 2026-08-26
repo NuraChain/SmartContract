@@ -25,6 +25,8 @@ error InvalidOutcome();
 error InvalidFee();
 /// @dev lockTime/resolveTime ordering is invalid (must be now < lock <= resolve).
 error InvalidTiming();
+/// @dev Resolution was attempted before the market's lockTime.
+error LockNotReached();
 
 /// @dev Market is not in the Open status required for this action.
 error MarketNotOpen();

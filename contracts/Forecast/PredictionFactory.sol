@@ -7,7 +7,7 @@ import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableS
 
 import { IPredictionFactory } from "./interfaces/IPredictionFactory.sol";
 import { IPredictionMarket } from "./interfaces/IPredictionMarket.sol";
-import { MarketStatus, MarketParams, MarketRecord } from "./PredictionTypes.sol";
+import { MarketKind, MarketStatus, MarketParams, MarketRecord } from "./PredictionTypes.sol";
 import { ZeroAddress, InvalidFee } from "./PredictionErrors.sol";
 import { MarketCreated, TreasuryUpdated, FeesUpdated } from "./PredictionEvents.sol";
 
@@ -33,6 +33,9 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
     /// @notice The market implementation cloned for every new market.
     address public immutable marketImplementation;
 
+    /// @notice The parimutuel implementation cloned by {createMarket2}.
+    address public immutable poolImplementation;
+
     /// @notice Treasury applied to new markets.
     address private _treasury;
 
@@ -43,6 +46,8 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
 
     /// @dev Registry of every market, indexed by marketId.
     MarketRecord[] private _records;
+    /// @dev Which engine each market runs on.
+    mapping(uint256 marketId => MarketKind kind) private _kinds;
     /// @dev marketId sets bucketed by current status (for O(1) transitions + paged filters).
     mapping(MarketStatus => EnumerableSet.UintSet) private _byStatus;
 
@@ -50,6 +55,7 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
      * @param admin Address granted DEFAULT_ADMIN_ROLE and ADMIN_ROLE.
      * @param treasury_ Treasury for protocol fees.
      * @param marketImplementation_ Deployed {PredictionMarket} implementation to clone.
+     * @param poolImplementation_ Deployed {PredictionPool} implementation to clone.
      * @param defaultFeeBps_ Default trade fee (bps).
      * @param defaultProtocolFeeShareBps_ Default protocol share of fees (bps).
      */
@@ -57,10 +63,14 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
         address admin,
         address treasury_,
         address marketImplementation_,
+        address poolImplementation_,
         uint16 defaultFeeBps_,
         uint16 defaultProtocolFeeShareBps_
     ) {
-        if (admin == address(0) || treasury_ == address(0) || marketImplementation_ == address(0)) {
+        if (
+            admin == address(0) || treasury_ == address(0) || marketImplementation_ == address(0)
+                || poolImplementation_ == address(0)
+        ) {
             revert ZeroAddress();
         }
         if (defaultFeeBps_ > MAX_FEE_BPS || defaultProtocolFeeShareBps_ > BPS) revert InvalidFee();
@@ -69,6 +79,7 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
         _grantRole(ADMIN_ROLE, admin);
         _treasury = treasury_;
         marketImplementation = marketImplementation_;
+        poolImplementation = poolImplementation_;
         defaultFeeBps = defaultFeeBps_;
         defaultProtocolFeeShareBps = defaultProtocolFeeShareBps_;
     }
@@ -115,6 +126,52 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
         emit MarketCreated(
             marketId, market, effective.creator, effective.category, effective.outcomeNames.length, msg.value
         );
+    }
+
+    /**
+     * @notice Deploys a new parimutuel {PredictionPool} market. Betting runs until
+     *         `params.lockTime`; afterwards an admin resolves the winner, the house fee is
+     *         taken off the pool once, and the remainder is shared pro-rata among the winning
+     *         outcome's backers.
+     * @dev Not payable on purpose: a pool needs no seed liquidity, so attached value would be
+     *      unrecoverable — fail loudly instead. A `feeBps` of 0 inherits the factory default,
+     *      which is how a fee percentage gets matched to the market's type/category; the pool
+     *      ignores `protocolFeeShareBps` (there are no LPs).
+     * @param params Market configuration.
+     * @return marketId The market's registry index.
+     * @return market The deployed clone address.
+     */
+    function createMarket2(MarketParams calldata params)
+        external
+        onlyRole(ADMIN_ROLE)
+        returns (uint256 marketId, address market)
+    {
+        MarketParams memory effective = params;
+        if (effective.feeBps == 0) {
+            effective.feeBps = defaultFeeBps;
+        }
+
+        market = Clones.clone(poolImplementation);
+        IPredictionMarket(market).initialize(address(this), _treasury, effective);
+
+        marketId = _records.length;
+        _kinds[marketId] = MarketKind.Pool;
+        _records.push(
+            MarketRecord({
+                market: market,
+                creator: effective.creator,
+                title: effective.title,
+                category: effective.category,
+                status: MarketStatus.Open,
+                createdAt: uint64(block.timestamp),
+                lockTime: effective.lockTime,
+                resolveTime: effective.resolveTime,
+                outcomeCount: uint32(effective.outcomeNames.length)
+            })
+        );
+        _byStatus[MarketStatus.Open].add(marketId);
+
+        emit MarketCreated(marketId, market, effective.creator, effective.category, effective.outcomeNames.length, 0);
     }
 
     /// @inheritdoc IPredictionFactory
@@ -188,6 +245,11 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
     /// @inheritdoc IPredictionFactory
     function marketAddress(uint256 marketId) external view returns (address) {
         return _records[marketId].market;
+    }
+
+    /// @notice Which engine a market runs on (AMM shares vs parimutuel pool).
+    function marketKind(uint256 marketId) external view returns (MarketKind) {
+        return _kinds[marketId];
     }
 
     /// @inheritdoc IPredictionFactory

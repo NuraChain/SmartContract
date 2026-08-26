@@ -24,6 +24,7 @@
     "deploy:nurachain:univ2": "hardhat deploy --sc univ2 --network nurachain",
     "deploy:nurachain:univ3": "hardhat deploy --sc univ3 --network nurachain",
     "deploy:nurachain:vault": "hardhat deploy --sc vault --network nurachain",
+    "deploy:nurachain:forecast": "hardhat deploy --sc forecast --network nurachain",
     "setup:nurachain:vault": "hardhat run scripts/vault-setup.ts --network nurachain"
   },
   "devDependencies": {

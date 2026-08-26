@@ -8,6 +8,16 @@ pragma solidity 0.8.24;
  */
 
 /**
+ * @notice Which engine a registered market runs on.
+ * - Amm:  CPMM {PredictionMarket} — tradeable outcome shares against virtual reserves.
+ * - Pool: parimutuel {PredictionPool} — direct bets, winner takes the pool pro-rata net of fee.
+ */
+enum MarketKind {
+    Amm,
+    Pool
+}
+
+/**
  * @notice Lifecycle of a market.
  * - Open:     trading and liquidity are live (until lockTime).
  * - Paused:   temporarily halted by an admin; can return to Open.

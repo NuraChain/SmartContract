@@ -1,5 +1,20 @@
 # Smart Contract System — Overview
 
+> **Languages / زبان‌ها / اللغات / Idiomas / Línguas / भाषाएँ / 语言 / Языки / Langues / Diller:**
+> English (this folder, full reference) ·
+> [فارسی](../fa/contracts/README.md) (full mirror) ·
+> [العربية](../ar/contracts/README.md) ·
+> [Español](../es/contracts/README.md) ·
+> [Português](../pt/contracts/README.md) ·
+> [हिन्दी](../hi/contracts/README.md) ·
+> [中文](../zh/contracts/README.md) ·
+> [Русский](../ru/contracts/README.md) ·
+> [Français](../fr/contracts/README.md) ·
+> [Türkçe](../tr/contracts/README.md)
+>
+> The English folder is the canonical, per-contract deep reference. `docs/fa/` mirrors it
+> file-for-file; every other language ships a translated system overview pointing back here.
+
 Documentation for every contract in this repository, generated from the actual source
 under `contracts/`. One file per concrete first-party contract; libraries, mocks and
 vendored code are covered by dedicated files as noted below.

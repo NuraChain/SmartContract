@@ -1,0 +1,218 @@
+import { Link } from 'azerothjs';
+import type { Child } from 'azerothjs';
+
+import { NURA_CHAIN, explorerTxUrl } from '../config/chain.ts';
+import { CONTRACTS } from '../config/contracts.ts';
+import { parseAbiFunctions } from '../lib/abi.ts';
+import { fmtNative, shortAddress, timeAgo } from '../lib/format.ts';
+import { activity } from '../lib/history.ts';
+import type { ActivityEntry } from '../lib/history.ts';
+import {
+    account,
+    connectedVia,
+    nativeBalance,
+    onRightChain,
+    startDiscovery,
+    walletChainId
+} from '../lib/wallet/store.ts';
+
+import ConnectButton from '../components/wallet/connect-button.component.azeroth';
+import Icon from '../components/ui/icon.component.azeroth';
+import EmptyState from '../components/ui/empty-state.component.azeroth';
+import Shamseh from '../components/ui/shamseh.component.azeroth';
+import { CATEGORY_LABEL } from '../config/contracts.ts';
+
+// The dashboard. Static-safe: the shell and the registry stats prerender;
+// wallet cells fill in on the client from the wallet signals.
+
+export default component Dashboard()
+{
+    derived totalReads = CONTRACTS.reduce((sum, def) => sum + parseAbiFunctions(def.abi).reads.length, 0);
+    derived totalWrites = CONTRACTS.reduce((sum, def) => sum + parseAbiFunctions(def.abi).writes.length, 0);
+
+    mount
+    {
+        startDiscovery();
+    }
+
+    <section class="mx-auto w-full max-w-6xl px-4 py-8 sm:py-12">
+        <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+            <div class="min-w-0">
+                <h1 class="font-display text-xl font-bold tracking-wide text-ink sm:text-2xl">Contract Manager</h1>
+                <p class="mt-1 max-w-2xl text-sm leading-relaxed text-faint">
+                    Transparent administration for the contracts deployed to { NURA_CHAIN.name }. Read state
+                    directly; execute writes through your own wallet - every call is shown before it is signed.
+                </p>
+            </div>
+            <div class="sm:hidden"><ConnectButton /></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <StatCard label="Wallet" icon="wallet" testId="stat-wallet">
+                <Show
+                    when={ account() }
+                    fallback={ <span class="text-sm text-faint">Not connected</span> }
+                    let={ address }
+                >
+                    <span class="block truncate font-mono text-sm text-ink" data-ltr>{ shortAddress(address as string) }</span>
+                    <span class="block truncate text-[11px] text-faint">{ connectedVia() }</span>
+                </Show>
+            </StatCard>
+            <StatCard label="Network" icon="shield-check" testId="stat-network">
+                <Show
+                    when={ walletChainId() !== null }
+                    fallback={ <span class="text-sm text-faint">No wallet</span> }
+                >
+                    <span class="block text-sm text-ink">{ NURA_CHAIN.name }</span>
+                    <span class="flex items-center gap-1 text-[11px]">
+                        <Show when={ !onRightChain() }>
+                            <Icon name="triangle-alert" size={ 11 } class="text-fall" />
+                        </Show>
+                        <span data-ltr>chain id { String(walletChainId()) }</span>
+                    </span>
+                </Show>
+            </StatCard>
+            <StatCard label="Native balance" icon="coins" testId="stat-balance">
+                <Show
+                    when={ nativeBalance() !== null && account() !== null }
+                    fallback={ <span class="text-sm text-faint">-</span> }
+                    let={ _balance }
+                >
+                    <span class="truncate font-mono text-sm text-val" data-ltr>{ fmtNative(nativeBalance() as bigint) } NURA</span>
+                </Show>
+            </StatCard>
+            <StatCard label="Contracts" icon="file-code" testId="stat-contracts">
+                <span class="font-mono text-lg text-val">{ String(CONTRACTS.length) }</span>
+            </StatCard>
+            <StatCard label="Functions" icon="layers" testId="stat-functions" wide>
+                <span class="font-mono text-lg text-val" data-ltr>{ String(totalReads) }</span>
+                <span class="text-xs text-faint">read</span>
+                <span aria-hidden="true"> · </span>
+                <span class="font-mono text-lg text-val" data-ltr>{ String(totalWrites) }</span>
+                <span class="text-xs text-faint">write</span>
+            </StatCard>
+        </div>
+
+        <div class="mt-8 grid gap-6 lg:grid-cols-[1fr_360px]">
+            <div class="min-w-0">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                    <h2 class="eyebrow">Quick Access</h2>
+                    <Link to="/contracts" class="text-xs text-ice hover:underline">All contracts</Link>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <For each={ CONTRACTS.slice(0, 8) } key={ (def) => def.id } let={ def }>
+                        <div>
+                            <QuickContract id={ def.id } name={ def.name } address={ def.address !== null } category={ CATEGORY_LABEL[def.category] } />
+                        </div>
+                    </For>
+                </div>
+                <Show when={ CONTRACTS.length > 8 }>
+                    <Link
+                        to="/contracts"
+                        class="mt-3 flex h-10 items-center justify-center rounded-xl border border-line text-xs text-faint hover:border-ice hover:text-ink"
+                    >
+                        + { String(CONTRACTS.length - 8) } more contracts
+                    </Link>
+                </Show>
+            </div>
+
+            <aside class="min-w-0">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                    <h2 class="eyebrow">Recent Activity</h2>
+                    <Link to="/activity" class="text-xs text-ice hover:underline">View all</Link>
+                </div>
+                <div class="card p-2">
+                    <Show
+                        when={ activity().length > 0 }
+                        fallback={
+                            <EmptyState
+                                title="Nothing yet"
+                                hint="Transactions you execute through this interface will appear here."
+                            />
+                        }
+                    >
+                        <ul class="divide-y divide-line">
+                            <For each={ activity().slice(0, 5) } key={ (entry) => entry.id } let={ entry }>
+                                <li>
+                                    <ActivityRow entry={ entry } />
+                                </li>
+                            </For>
+                        </ul>
+                    </Show>
+                </div>
+            </aside>
+        </div>
+
+        <div class="mt-10 flex items-center gap-3 rounded-xl border border-line bg-panel p-4 text-xs leading-relaxed text-faint">
+            <Shamseh size={ 20 } class="shrink-0 text-ice" />
+            <p>
+                Reads are static calls - free and signature-free. Writes always open a review step first,
+                and are signed by your wallet only after an explicit confirmation. This application stores
+                no keys and never signs automatically.
+            </p>
+        </div>
+    </section>
+}
+
+component StatCard(props: { label: string; icon?: string; testId?: string; wide?: boolean; children?: Child })
+{
+    <div class="card p-4" data-testid={ props.testId }>
+        <p class="eyebrow mb-1 flex items-center gap-1.5">
+            <Show when={ props.icon } let={ iconName }>
+                <Icon name={ iconName } size={ 12 } />
+            </Show>
+            { props.label }
+        </p>
+        <div class={ `flex items-baseline gap-1 ${ props.wide ? 'flex-wrap' : '' }` }>{ props.children }</div>
+    </div>
+}
+
+component QuickContract(props: { id: string; name: string; address: boolean; category: string })
+{
+    <Link
+        to={ `/contracts/${ props.id }` }
+        class="flex items-center gap-3 rounded-xl border border-line bg-panel px-3 py-3 hover:border-ice"
+        data-testid={ `quick-${ props.id }` }
+    >
+        <Icon name="file-code" size={ 16 } class="shrink-0 text-ice" />
+        <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm text-ink">{ props.name }</span>
+            <Show when={ !props.address }>
+                <span class="block truncate text-[11px] text-fall">No deployment recorded</span>
+            </Show>
+            <span class="sr-only">{ props.category }</span>
+        </span>
+        <Icon name="chevron-right" size={ 14 } class="shrink-0 text-faint rtl:rotate-180" />
+    </Link>
+}
+
+component ActivityRow(props: { entry: ActivityEntry })
+{
+    <div class="flex items-center gap-3 px-2 py-2.5" data-testid="activity-row">
+        <span class={ `h-2 w-2 shrink-0 rounded-full ${ statusTone(props.entry.status) }` } aria-hidden="true" />
+        <span class="min-w-0 flex-1">
+            <span class="block truncate font-mono text-[13px] text-ink" data-ltr>{ props.entry.signature }</span>
+            <span class="block truncate text-[11px] text-faint">{ props.entry.contractName } · { timeAgo(props.entry.timestamp) }</span>
+        </span>
+        <Show when={ props.entry.hash } let={ hash }>
+            <a
+                href={ explorerTxUrl(hash) }
+                target="_blank"
+                rel="noreferrer"
+                class="flex shrink-0 items-center gap-0.5 text-[11px] text-ice hover:underline"
+                aria-label="View transaction on explorer"
+            >
+                <Icon name="arrow-up-right" size={ 12 } />
+            </a>
+        </Show>
+    </div>
+}
+
+function statusTone(status: ActivityEntry['status']): string
+{
+    if (status === 'confirmed')
+    {
+        return 'bg-rise';
+    }
+    return status === 'reverted' ? 'bg-fall' : 'bg-val animate-pulse';
+}

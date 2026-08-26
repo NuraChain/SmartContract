@@ -1,0 +1,160 @@
+import { Link, Portal, useRoute } from 'azerothjs';
+
+import { currentTheme, toggleTheme } from '../../lib/theme.ts';
+
+import AddChainButton from '../wallet/add-chain-button.component.azeroth';
+import ConnectButton from '../wallet/connect-button.component.azeroth';
+import Icon from '../ui/icon.component.azeroth';
+import Shamseh from '../ui/shamseh.component.azeroth';
+
+// Mobile-first: the bar carries logo + connect + hamburger; nav links and the
+// theme toggle live in a slide-over drawer below sm and inline above.
+
+const DRAWER_CLOSE_MS = 230;
+
+const NAV: Array<{ to: string; label: string }> = [
+    { to: '/', label: 'Dashboard' },
+    { to: '/contracts', label: 'Contracts' },
+    { to: '/activity', label: 'Activity' }
+];
+
+export default component Header()
+{
+    state drawerOpen = false;
+    state drawerClosing = false;
+
+    // Every close path plays the slide-out first, then unmounts.
+    const closeDrawer = (): void =>
+    {
+        if (!drawerOpen || drawerClosing)
+        {
+            return;
+        }
+        drawerClosing = true;
+        setTimeout(() =>
+        {
+            drawerOpen = false;
+            drawerClosing = false;
+        }, DRAWER_CLOSE_MS);
+    };
+
+    // Navigation closes the drawer even when the click lands on the active link.
+    const location = useRoute();
+    effect (location().pathname)
+    {
+        closeDrawer();
+    }
+
+    const onKey = (event: KeyboardEvent): void =>
+    {
+        if (event.key === 'Escape')
+        {
+            closeDrawer();
+        }
+    };
+
+    mount
+    {
+        document.addEventListener('keydown', onKey);
+    }
+
+    cleanup
+    {
+        document.removeEventListener('keydown', onKey);
+    }
+
+    const navLink = 'rounded-lg px-3 py-2 text-sm text-faint hover:text-ink [&.active]:bg-panel [&.active]:text-ice';
+
+    <header class="sticky top-0 z-40 border-b border-line bg-bg/95 backdrop-blur-sm">
+        <div class="mx-auto flex max-w-6xl items-center gap-2 px-4 py-3 sm:gap-6">
+            <Link to="/" class="flex min-w-0 items-center gap-2.5 text-ink" aria-label="Contract Manager">
+                <Shamseh size={ 26 } class="shrink-0 text-ice" />
+                <span class="font-display truncate text-base font-bold tracking-wide max-[380px]:hidden">
+                    Contract Manager
+                </span>
+            </Link>
+            <nav class="hidden flex-1 gap-1 sm:flex" aria-label="Primary">
+                <For each={ NAV } key={ (item) => item.to } let={ item }>
+                    <span class="flex">
+                        <Link to={ item.to } activeClass="active" class={ navLink } end={ item.to === '/' }>{ item.label }</Link>
+                    </span>
+                </For>
+            </nav>
+            <div class="ms-auto flex items-center gap-1.5">
+                <button
+                    type="button"
+                    class="hidden rounded-lg p-2 text-faint hover:text-ink sm:block"
+                    aria-label={ currentTheme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme' }
+                    onClick={ () => toggleTheme() }
+                >
+                    <Icon name={ currentTheme() === 'dark' ? 'sun' : 'moon' } size={ 18 } />
+                </button>
+                <AddChainButton compact />
+                <ConnectButton />
+                <button
+                    type="button"
+                    class="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-ink sm:hidden"
+                    aria-label="Open menu"
+                    aria-expanded={ String(drawerOpen) }
+                    data-testid="drawer-open"
+                    onClick={ () => { drawerOpen = true; } }
+                >
+                    <Icon name="menu" size={ 20 } />
+                </button>
+            </div>
+        </div>
+
+        <Show when={ drawerOpen }>
+            <Portal>
+                <div class="fixed inset-0 z-50 sm:hidden" class:is-closing={ drawerClosing }>
+                    <div class="anim-overlay absolute inset-0 bg-black/60" onClick={ closeDrawer } />
+                    <aside
+                        class="anim-drawer absolute inset-y-0 end-0 flex w-72 max-w-[85vw] flex-col gap-1 border-s border-line bg-panel p-4 shadow-2xl"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Menu"
+                    >
+                        <div class="mb-3 flex items-center justify-between">
+                            <span class="flex items-center gap-2">
+                                <Shamseh size={ 22 } class="text-ice" />
+                                <span class="font-display text-sm font-bold">Contract Manager</span>
+                            </span>
+                            <button
+                                type="button"
+                                class="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-faint hover:text-ink"
+                                aria-label="Close menu"
+                                onClick={ closeDrawer }
+                            >
+                                <Icon name="x" size={ 18 } />
+                            </button>
+                        </div>
+                        <For each={ NAV } key={ (item) => item.to } let={ item }>
+                            <span class="flex">
+                                <Link
+                                    to={ item.to }
+                                    activeClass="active"
+                                    class={ `${ navLink } flex min-h-11 w-full items-center` }
+                                    onClick={ closeDrawer }
+                                >
+                                    { item.label }
+                                </Link>
+                            </span>
+                        </For>
+                        <div class="mt-4 flex flex-col gap-2 border-t border-line pt-4">
+                            <button
+                                type="button"
+                                class="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-line px-3 text-sm text-faint hover:text-ink"
+                                aria-label={ currentTheme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme' }
+                                onClick={ () => toggleTheme() }
+                            >
+                                <Icon name={ currentTheme() === 'dark' ? 'sun' : 'moon' } size={ 16 } />
+                                <span>Theme</span>
+                            </button>
+                            <AddChainButton onDone={ closeDrawer } />
+                        </div>
+                    </aside>
+                </div>
+            </Portal>
+        </Show>
+    </header>
+}

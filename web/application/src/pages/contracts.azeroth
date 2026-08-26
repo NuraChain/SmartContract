@@ -1,0 +1,95 @@
+import { CONTRACTS, CATEGORY_LABEL } from '../config/contracts.ts';
+
+import ContractCard from '../components/contract/contract-card.component.azeroth';
+import EmptyState from '../components/ui/empty-state.component.azeroth';
+import Input from '../components/ui/input.component.azeroth';
+
+// The supported-contract registry, searchable and filterable.
+
+const CATEGORIES = Object.keys(CATEGORY_LABEL) as Array<keyof typeof CATEGORY_LABEL>;
+
+export default component Contracts()
+{
+    state query = '';
+    state category = 'all';
+
+    derived filtered = CONTRACTS.filter((def) =>
+    {
+        if (category !== 'all' && def.category !== category)
+        {
+            return false;
+        }
+        const text = query.trim().toLowerCase();
+        if (text === '')
+        {
+            return true;
+        }
+        return def.name.toLowerCase().includes(text) ||
+            (def.address ?? '').toLowerCase().includes(text) ||
+            CATEGORY_LABEL[def.category].toLowerCase().includes(text);
+    });
+
+    <section class="mx-auto w-full max-w-6xl px-4 py-8 sm:py-12">
+        <h1 class="font-display text-xl font-bold tracking-wide text-ink sm:text-2xl">Contracts</h1>
+        <p class="mt-1 max-w-2xl text-sm leading-relaxed text-faint">
+            Every contract this interface can talk to, straight from the registry. Entries marked
+            "no deployment recorded" are known contracts whose deployed address is not on record - they
+            are never guessed.
+        </p>
+
+        <div class="mt-6 flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div class="lg:w-80">
+                <Input value={ query } onInput={ (value) => { query = value; } } placeholder="Search name or address" icon="search" mono testId="contract-search" />
+            </div>
+            <div class="flex flex-wrap gap-1.5" role="group" aria-label="Filter by category">
+                <span>
+                    <Chip label="All" active={ category === 'all' } onPick={ () => { category = 'all'; } } testId="filter-all" />
+                </span>
+                <For each={ CATEGORIES } key={ (value) => value } let={ value }>
+                    <span>
+                        <Chip
+                            label={ CATEGORY_LABEL[value] }
+                            active={ category === value }
+                            onPick={ () => { category = value; } }
+                            testId={ `filter-${ String(value) }` }
+                        />
+                    </span>
+                </For>
+            </div>
+            <p class="text-xs text-faint lg:ms-auto" aria-live="polite" data-testid="result-count">
+                { String(filtered.length) } of { String(CONTRACTS.length) }
+            </p>
+        </div>
+
+        <Show
+            when={ filtered.length > 0 }
+            fallback={
+                <EmptyState
+                    title="No contracts match"
+                    hint="Try a different search or clear the category filter."
+                />
+            }
+        >
+            <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <For each={ filtered } key={ (def) => def.id } let={ def }>
+                    <div>
+                        <ContractCard def={ def } />
+                    </div>
+                </For>
+            </div>
+        </Show>
+    </section>
+}
+
+component Chip(props: { label: string; active: boolean; onPick: () => void; testId?: string })
+{
+    <button
+        type="button"
+        class={ `h-8 rounded-lg border px-3 text-xs ${ props.active ? 'border-ice bg-ice/15 text-ice' : 'border-line text-faint hover:border-line-strong hover:text-ink' }` }
+        aria-pressed={ String(props.active) }
+        data-testid={ props.testId }
+        onClick={ () => props.onPick() }
+    >
+        { props.label }
+    </button>
+}

@@ -1,0 +1,113 @@
+import { explorerTxUrl } from '../config/chain.ts';
+import { findContract } from '../config/contracts.ts';
+import { clearActivity, activity } from '../lib/history.ts';
+import type { ActivityEntry } from '../lib/history.ts';
+import { shortAddress, timeAgo } from '../lib/format.ts';
+
+import Icon from '../components/ui/icon.component.azeroth';
+import EmptyState from '../components/ui/empty-state.component.azeroth';
+
+// Transactions initiated from this interface. Local metadata only - function,
+// contract, hash, status, time. Nothing secret is ever stored.
+
+export default component Activity()
+{
+    derived entries = activity();
+
+    <section class="mx-auto w-full max-w-6xl px-4 py-8 sm:py-12">
+        <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <h1 class="font-display text-xl font-bold tracking-wide text-ink sm:text-2xl">Activity</h1>
+                <p class="mt-1 max-w-2xl text-sm leading-relaxed text-faint">
+                    Every write submitted through this interface, with its outcome and explorer link.
+                </p>
+            </div>
+            <Show when={ entries.length > 0 }>
+                <button
+                    type="button"
+                    class="btn-ghost h-9 px-3 text-[13px] text-fall"
+                    data-testid="clear-history"
+                    onClick={ () => clearActivity() }
+                >
+                    Clear history
+                </button>
+            </Show>
+        </div>
+
+        <Show
+            when={ entries.length > 0 }
+            fallback={
+                <EmptyState
+                    title="No transactions yet"
+                    hint="Open a contract, execute one of its write functions, and it will be tracked here."
+                />
+            }
+        >
+            <div class="flex flex-col gap-2" data-testid="activity-list">
+                <For each={ entries } key={ (entry) => entry.id } let={ entry }>
+                    <div>
+                        <ActivityCard entry={ entry } />
+                    </div>
+                </For>
+            </div>
+        </Show>
+    </section>
+}
+
+component ActivityCard(props: { entry: ActivityEntry })
+{
+    <div class="card p-4">
+        <div class="flex flex-wrap items-start gap-x-3 gap-y-1">
+            <StatusBadge status={ props.entry.status } />
+            <span class="min-w-0 flex-1 font-mono text-sm text-ink" data-ltr>{ props.entry.signature }</span>
+            <span class="text-xs text-faint">{ timeAgo(props.entry.timestamp) }</span>
+        </div>
+        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-faint">
+            <span>
+                Contract:
+                <Show when={ findContract(props.entry.contractId) !== undefined } fallback={ <span>{ props.entry.contractName }</span> }>
+                    <a href={ `/contracts/${ props.entry.contractId }` } class="ms-1 text-ice hover:underline">{ props.entry.contractName }</a>
+                </Show>
+            </span>
+            <Show when={ props.entry.value > 0n }>
+                <span>Value: <span class="font-mono" data-ltr>{ props.entry.value.toString() } wei</span></span>
+            </Show>
+        </div>
+        <Show when={ props.entry.paramsText !== '' }>
+            <p class="mt-1 break-all font-mono text-[11px] text-faint" data-ltr>({ props.entry.paramsText })</p>
+        </Show>
+        <div class="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3">
+            <Show
+                when={ props.entry.hash }
+                fallback={ <span class="font-mono text-xs text-faint">No hash yet</span> }
+                let={ hash }
+            >
+                <span class="truncate font-mono text-xs text-faint" data-ltr title={ hash }>{ shortAddress(hash) }</span>
+                <a
+                    href={ explorerTxUrl(hash) }
+                    target="_blank"
+                    rel="noreferrer"
+                    class="inline-flex shrink-0 items-center gap-1 text-xs text-ice hover:underline"
+                >
+                    View on Explorer <Icon name="arrow-up-right" size={ 12 } />
+                </a>
+            </Show>
+        </div>
+    </div>
+}
+
+component StatusBadge(props: { status: ActivityEntry['status'] })
+{
+    const tone = props.status === 'confirmed'
+        ? 'bg-rise/15 text-rise'
+        : props.status === 'reverted'
+            ? 'bg-fall/15 text-fall'
+            : 'bg-val/15 text-val';
+    const label = props.status === 'confirmed' ? 'Confirmed' : props.status === 'reverted' ? 'Reverted' : 'Pending';
+    <span class={ `inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${ tone }` }>
+        <Show when={ props.status === 'pending' }>
+            <Icon name="refresh-cw" size={ 10 } class="animate-spin" />
+        </Show>
+        { label }
+    </span>
+}

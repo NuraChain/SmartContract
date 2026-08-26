@@ -1,0 +1,215 @@
+import { decodeFunctionResult, encodeFunctionData } from 'viem';
+
+import type { ContractDef } from '../../config/contracts.ts';
+import { publicClient } from '../../lib/chain-client.ts';
+import { classifyError } from '../../lib/errors.ts';
+import type { ClassifiedError } from '../../lib/errors.ts';
+import { formatValue, parseValue, weiHint } from '../../lib/abi.ts';
+import type { FunctionSpec } from '../../lib/abi.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+import Button from '../ui/button.component.azeroth';
+import ParamField from './param-field.component.azeroth';
+
+// One READ function: generated form, explicit Read button, formatted result
+// with the raw value preserved. Reads are plain eth_calls - no wallet, no gas,
+// no signature - which is also what makes QuoterV2-style revert-to-answer
+// functions work here unchanged.
+
+export default component ReadCard(props: {
+    def: ContractDef;
+    fn: FunctionSpec;
+    testId?: string;
+})
+{
+    state open = false;
+    state busy = false;
+    state values = props.fn.inputs.map(() => '');
+    state errors = props.fn.inputs.map((): string | null => null);
+    state result: string | null = null;
+    state rawResult: string | null = null;
+    state scaled: string | null = null;
+    state failure: ClassifiedError | null = null;
+
+    const setInput = (index: number, value: string): void =>
+    {
+        values = values.map((item, position) => position === index ? value : item);
+    };
+
+    const collectArgs = (): unknown[] | null =>
+    {
+        let ok = true;
+        const args: unknown[] = [];
+        const nextErrors = props.fn.inputs.map((inputSpec, index): string | null =>
+        {
+            try
+            {
+                args.push(parseValue(inputSpec, inputSpec.name !== '' ? inputSpec.name : `param${ index + 1 }`, values[index] ?? ''));
+                return null;
+            }
+            catch (error)
+            {
+                ok = false;
+                return error instanceof Error ? error.message : 'invalid value';
+            }
+        });
+        errors = nextErrors;
+        return ok ? args : null;
+    };
+
+    const run = async (): Promise<void> =>
+    {
+        if (busy)
+        {
+            return;
+        }
+        failure = null;
+        result = null;
+        rawResult = null;
+        scaled = null;
+        if (props.def.address === null)
+        {
+            failure = classifyError(new Error('No deployment recorded for this contract'));
+            return;
+        }
+        const args = collectArgs();
+        if (args === null)
+        {
+            return;
+        }
+        busy = true;
+        try
+        {
+            const data = encodeFunctionData({
+                abi: props.def.abi,
+                functionName: props.fn.name,
+                args: args as never
+            });
+            const response = await publicClient().call({ to: props.def.address, data });
+            if (response.data === undefined)
+            {
+                throw new Error('execution reverted');
+            }
+            const decoded = decodeFunctionResult({
+                abi: props.def.abi,
+                functionName: props.fn.name,
+                args: args as never,
+                data: response.data
+            });
+            rawResult = formatValue(decoded);
+            result = primaryOutput(decoded);
+            const first = Array.isArray(decoded) && decoded.length > 0 ? decoded[0] : decoded;
+            scaled = typeof first === 'bigint' ? weiHint(first) : null;
+        }
+        catch (error)
+        {
+            failure = classifyError(error);
+        }
+        finally
+        {
+            busy = false;
+        }
+    };
+
+    <article class="card overflow-hidden" data-testid={ props.testId }>
+        <button
+            type="button"
+            class="flex w-full items-center gap-3 px-4 py-3 text-start hover:bg-ink/4"
+            aria-expanded={ String(open) }
+            onClick={ () => { open = !open; } }
+        >
+            <Icon name="eye" size={ 16 } class="shrink-0 text-ice" />
+            <span class="min-w-0 flex-1">
+                <span class="block truncate font-mono text-sm text-ink" data-ltr>{ props.fn.name }</span>
+                <span class="block truncate font-mono text-[11px] text-faint" data-ltr>{ props.fn.signature }</span>
+            </span>
+            <Show when={ props.fn.outputs.length > 0 }>
+                <span class="hidden font-mono text-[10px] text-faint sm:block" data-ltr>
+                    → { props.fn.outputs.map((output) => output.type).join(', ') }
+                </span>
+            </Show>
+            <Icon
+                name="chevron-down"
+                size={ 16 }
+                class={ `shrink-0 text-faint transition-transform ${ open ? 'rotate-180' : '' }` }
+            />
+        </button>
+        <Show when={ open }>
+            <div class="flex flex-col gap-4 border-t border-line px-4 py-4">
+                <For each={ props.fn.inputs.map((entry, position) => ({ entry, position })) } key={ (row) => String(row.position) } let={ row }>
+                    <div>
+                        <ParamField
+                            spec={ row.entry }
+                            index={ row.position }
+                            value={ values[row.position] ?? '' }
+                            error={ errors[row.position] ?? null }
+                            onInput={ (value) => setInput(row.position, value) }
+                            testId={ `read-${ props.fn.name }-${ String(row.position) }` }
+                        />
+                    </div>
+                </For>
+                <div class="flex flex-wrap items-center gap-2">
+                    <Button size="sm" variant="ghost" busy={ busy } onClick={ () => void run() } testId={ `read-${ props.fn.name }-go` }>
+                        <Icon name="refresh-cw" size={ 14 } />
+                        Read `{ props.fn.name }`
+                    </Button>
+                    <span class="text-[11px] text-faint">Static call · no wallet, no gas</span>
+                </div>
+
+                <Show when={ failure !== null }>
+                    <div class="rounded-lg border border-fall/40 bg-fall/10 p-3" role="alert" data-testid="read-error">
+                        <p class="text-sm font-medium text-fall">{ failure.title }</p>
+                        <p class="mt-0.5 text-xs text-faint">{ failure.hint }</p>
+                        <details class="mt-2">
+                            <summary class="cursor-pointer text-[11px] text-faint hover:text-ink">Technical details</summary>
+                            <pre class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-faint" data-ltr>{ failure.technical }</pre>
+                        </details>
+                    </div>
+                </Show>
+
+                <Show when={ result !== null }>
+                    <div class="rounded-lg border border-line bg-panel p-3" data-testid="read-result">
+                        <p class="eyebrow mb-1">Result</p>
+                        <p class="break-all font-mono text-sm text-val" data-ltr>{ result }</p>
+                        <Show when={ scaled !== null }>
+                            <p class="mt-1 text-[11px] text-faint" data-ltr>= { scaled } at 18 decimals</p>
+                        </Show>
+                        <details class="mt-2">
+                            <summary class="cursor-pointer text-[11px] text-faint hover:text-ink">Raw value</summary>
+                            <pre class="mt-1 whitespace-pre-wrap break-all font-mono text-[11px] text-ink" data-ltr>{ rawResult }</pre>
+                        </details>
+                    </div>
+                </Show>
+            </div>
+        </Show>
+    </article>
+}
+
+function primaryOutput(decoded: unknown): string
+{
+    if (Array.isArray(decoded))
+    {
+        if (decoded.length === 1)
+        {
+            return single(decoded[0]);
+        }
+        return decoded.map(single).join(' · ');
+    }
+    return single(decoded);
+}
+
+function single(value: unknown): string
+{
+    if (typeof value === 'bigint')
+    {
+        return value.toString();
+    }
+    if (typeof value === 'object' && value !== null)
+    {
+        return JSON.stringify(
+            value,
+            (_key, item) => typeof item === 'bigint' ? item.toString() : item
+        );
+    }
+    return String(value);
+}

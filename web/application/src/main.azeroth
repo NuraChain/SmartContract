@@ -1,0 +1,7 @@
+import { bootClient } from '@azerothjs/kit/client';
+
+import App from './App.azeroth';
+
+// Markup already on the page is ADOPTED (hydration, loader handoff read back); an empty shell
+// renders normally.
+bootClient(App);

@@ -1,0 +1,15 @@
+import type { Child } from 'azerothjs';
+
+import Shamseh from './shamseh.component.azeroth';
+
+export default component EmptyState(props: { title: string; hint?: string; children?: Child })
+{
+    <div class="flex flex-col items-center gap-3 px-6 py-14 text-center">
+        <Shamseh size={ 34 } class="text-faint" strokeWidth={ 1.8 } />
+        <p class="text-sm font-medium text-ink">{ props.title }</p>
+        <Show when={ props.hint } let={ hint }>
+            <p class="max-w-xs text-xs leading-relaxed text-faint">{ hint }</p>
+        </Show>
+        { props.children }
+    </div>
+}

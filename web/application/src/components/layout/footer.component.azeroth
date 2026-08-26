@@ -1,0 +1,27 @@
+import { NURA_CHAIN } from '../../config/chain.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+
+// Minimal footer for an admin tool: what this app is, what it never touches.
+
+export default component Footer()
+{
+    <footer class="border-t border-line">
+        <div class="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-6 text-xs text-faint sm:flex-row sm:items-center sm:justify-between">
+            <p class="max-w-2xl leading-relaxed">
+                { `Contract Manager - administrative interface for ${ NURA_CHAIN.name } (chain id ${ String(NURA_CHAIN.id) }).` }
+                Transactions are signed by your own wallet; this application never stores keys and never
+                signs automatically.
+            </p>
+            <a
+                href={ NURA_CHAIN.blockExplorers.default.url }
+                target="_blank"
+                rel="noreferrer"
+                class="flex shrink-0 items-center gap-1 text-ice hover:underline"
+            >
+                { NURA_CHAIN.blockExplorers.default.name }
+                <Icon name="external-link" size={ 12 } />
+            </a>
+        </div>
+    </footer>
+}

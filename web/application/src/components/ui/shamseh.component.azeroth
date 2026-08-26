@@ -1,0 +1,23 @@
+// The Nura Swap mark: a shamseh - the eight-pointed "little sun" at the center of
+// Persian girih tilework - drawn as two overlaid squares, an inscribed ring, and
+// a lit core. Nura is Persian for light; this is the light in the identity.
+
+// strokeWidth is in viewBox units: at icon sizes the default reads crisp, but a
+// hero-scale render must pass ~0.5 or the lines blow up with the scale.
+export default component Shamseh(props: { size?: number; class?: string; strokeWidth?: number })
+{
+    <svg
+        class={ props.class }
+        width={ props.size ?? 24 }
+        height={ props.size ?? 24 }
+        viewBox="-50 -50 100 100"
+        fill="none"
+        stroke="currentColor"
+        aria-hidden="true"
+    >
+        <rect x="-31" y="-31" width="62" height="62" stroke-width={ props.strokeWidth ?? 2.5 } />
+        <rect x="-31" y="-31" width="62" height="62" stroke-width={ props.strokeWidth ?? 2.5 } transform="rotate(45)" />
+        <circle r="19" stroke-width={ (props.strokeWidth ?? 2.5) * 0.8 } />
+        <circle r="4.5" fill="currentColor" stroke="none" />
+    </svg>
+}

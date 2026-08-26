@@ -1,0 +1,46 @@
+{
+    "name": "contract-manager-application",
+    "private": true,
+    "version": "2.0.0",
+    "type": "module",
+    "engines": {
+        "node": ">=22"
+    },
+    "scripts": {
+        "dev": "azeroth dev",
+        "check": "azeroth check",
+        "build": "azeroth build",
+        "test": "vitest run",
+        "coverage": "vitest run --coverage"
+    },
+    "dependencies": {
+        "@azerothjs/kit": "^2.0.0-beta.2",
+        "@fontsource/ibm-plex-mono": "^5.3.0",
+        "@fontsource/ibm-plex-sans": "^5.3.0",
+        "@fontsource/unbounded": "^5.3.0",
+        "@fontsource/vazirmatn": "^5.3.0",
+        "azerothjs": "^2.0.0-beta.2",
+        "viem": "^2.55.11"
+    },
+    "devDependencies": {
+        "@azerothjs/cli": "^2.0.0-beta.2",
+        "@azerothjs/compiler": "^2.0.0-beta.2",
+        "@azerothjs/devtools": "^2.0.0-beta.2",
+        "@azerothjs/eslint-plugin": "^2.0.0-beta.2",
+        "@azerothjs/language-server": "^2.0.0-beta.2",
+        "@azerothjs/testing": "^2.0.0-beta.2",
+        "@azerothjs/typescript-plugin": "^2.0.0-beta.2",
+        "@eslint/js": "^10.0.1",
+        "@tailwindcss/vite": "^4.0.0",
+        "eslint": "^10.7.0",
+        "globals": "^17.7.0",
+        "happy-dom": "^20.10.6",
+        "jiti": "^2.7.0",
+        "lucide-static": "^1.28.0",
+        "tailwindcss": "^4.0.0",
+        "typescript": "^6.0.3",
+        "typescript-eslint": "^8.64.0",
+        "vite": "^8.1.5",
+        "vitest": "^4.1.9"
+    }
+}

@@ -1,0 +1,31 @@
+{
+    "name": "contract-manager",
+    "private": true,
+    "version": "2.0.0",
+    "type": "module",
+    "engines": {
+        "node": ">=24"
+    },
+    "workspaces": [
+        "application"
+    ],
+    "scripts": {
+        "dev": "npm run dev --workspace application",
+        "check": "npm run check --workspace application",
+        "build": "npm run build --workspace application",
+        "test": "npm test --workspace application",
+        "test:web": "npm test --workspace application",
+        "coverage": "npm run coverage --workspace application",
+        "lint:rtl": "node application/scripts/lint-rtl.mjs",
+        "extract:abi": "node application/scripts/extract-abi.mjs",
+        "verify": "npm run lint:rtl && npm run check && npm run build && npm test"
+    },
+    "optionalDependencies": {
+        "@tailwindcss/oxide-linux-x64-gnu": "4.3.3",
+        "@tailwindcss/oxide-win32-x64-msvc": "4.3.3"
+    },
+    "devDependencies": {
+        "@azerothjs/cli": "^2.0.0-beta.2",
+        "@vitest/coverage-v8": "^4.1.11"
+    }
+}

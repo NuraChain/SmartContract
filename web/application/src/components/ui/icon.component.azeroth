@@ -1,0 +1,14 @@
+// Lucide icon via the generated sprite (public/icons.svg). Stroke follows
+// currentColor, so icons inherit text color everywhere.
+
+export default component Icon(props: { name: string; size?: number; class?: string })
+{
+    <svg
+        class={ props.class }
+        width={ props.size ?? 20 }
+        height={ props.size ?? 20 }
+        aria-hidden="true"
+    >
+        <use href={ `/icons.svg#i-${ props.name }` } />
+    </svg>
+}

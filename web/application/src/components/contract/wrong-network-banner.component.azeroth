@@ -1,0 +1,46 @@
+import { NURA_CHAIN } from '../../config/chain.ts';
+import { account, onRightChain, switchChain, walletChainId } from '../../lib/wallet/store.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+
+// The strict network gate. Rendered wherever a write is possible: blocks the
+// flow while the wallet sits on another chain and offers the exact remedy.
+
+export default component WrongNetworkBanner()
+{
+    state switching = false;
+
+    const doSwitch = (): void =>
+    {
+        switching = true;
+        void switchChain().finally(() => { switching = false; });
+    };
+
+    <Show when={ account() !== null && !onRightChain() }>
+        <div
+            class="flex flex-col gap-3 rounded-xl border border-fall/40 bg-fall/10 p-4 text-sm sm:flex-row sm:items-center"
+            data-testid="wrong-network-banner"
+            role="alert"
+        >
+            <Icon name="triangle-alert" size={ 18 } class="shrink-0 text-fall" />
+            <div class="min-w-0 flex-1">
+                <p class="font-medium text-ink">Wrong network</p>
+                <p class="mt-0.5 text-xs leading-relaxed text-faint">
+                    This application only executes on { NURA_CHAIN.name }. The connected wallet is on
+                    chain id <span class="font-mono" data-ltr>{ String(walletChainId() ?? '?') }</span>;
+                    expected chain id <span class="font-mono" data-ltr>{ String(NURA_CHAIN.id) }</span>.
+                    Writes are blocked until the network matches.
+                </p>
+            </div>
+            <button
+                type="button"
+                class="btn-ice h-9 shrink-0 px-3 text-[13px]"
+                disabled={ switching }
+                data-testid="banner-switch-network"
+                onClick={ doSwitch }
+            >
+                Switch Network
+            </button>
+        </div>
+    </Show>
+}

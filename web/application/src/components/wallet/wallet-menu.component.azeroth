@@ -1,0 +1,98 @@
+import { Portal } from 'azerothjs';
+
+import { explorerAddressUrl, NURA_CHAIN } from '../../config/chain.ts';
+import { addressGradient, fmtNative, shortAddress } from '../../lib/format.ts';
+import { pushToast } from '../../lib/toast.ts';
+import { connectedVia, disconnect, nativeBalance } from '../../lib/wallet/store.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+
+// The connected-account sheet: identity, copy, explorer, disconnect. Disconnect
+// lives BEHIND this menu deliberately - it must not fire on the address button
+// itself.
+
+export default component WalletMenu(props: { address: string; onClose: () => void })
+{
+    const balanceLabel = (): string =>
+    {
+        const value = nativeBalance();
+        return value === null ? '-' : `${ fmtNative(value) } NURA`;
+    };
+
+    const copy = async (): Promise<void> =>
+    {
+        try
+        {
+            await navigator.clipboard.writeText(props.address);
+            pushToast('success', 'Address copied.');
+        }
+        catch
+        {
+            pushToast('error', 'Could not copy to the clipboard.');
+        }
+        props.onClose();
+    };
+
+    <Portal>
+        <div class="fixed inset-0 z-50" onClick={ () => props.onClose() }>
+            <div
+                class="anim-pop absolute end-4 top-16 w-72 rounded-xl border border-line-strong bg-raised p-2 shadow-2xl"
+                role="dialog"
+                aria-label="Connected account"
+                onClick={ (event) => event.stopPropagation() }
+            >
+                <div class="flex items-center gap-2.5 border-b border-line px-2 pb-3 pt-1">
+                    <span
+                        class="h-8 w-8 shrink-0 rounded-full"
+                        style={ `background:${ addressGradient(props.address) }` }
+                        aria-hidden="true"
+                    />
+                    <span class="min-w-0">
+                        <span class="block font-mono text-sm" data-ltr>{ shortAddress(props.address) }</span>
+                        <span class="block text-[11px] text-faint">{ connectedVia() ?? '' }</span>
+                    </span>
+                </div>
+                <div class="space-y-1 px-2 py-2 text-xs text-faint">
+                    <span class="flex items-center justify-between">
+                        <span>Network</span>
+                        <span>{ NURA_CHAIN.name }</span>
+                    </span>
+                    <span class="flex items-center justify-between">
+                        <span>Native balance</span>
+                        <span class={ `font-mono ${ nativeBalance() === null ? 'text-faint' : 'text-val' }` } data-ltr>
+                            { balanceLabel() }
+                        </span>
+                    </span>
+                </div>
+                <button
+                    type="button"
+                    class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-start text-sm hover:bg-ink/6"
+                    data-testid="wallet-copy"
+                    onClick={ () => void copy() }
+                >
+                    <Icon name="copy" size={ 15 } class="text-faint" />
+                    <span>Copy address</span>
+                </button>
+                <a
+                    href={ explorerAddressUrl(props.address) }
+                    target="_blank"
+                    rel="noreferrer"
+                    class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm hover:bg-ink/6"
+                    onClick={ () => props.onClose() }
+                >
+                    <Icon name="external-link" size={ 15 } class="text-faint" />
+                    <span>View on explorer</span>
+                </a>
+                <button
+                    type="button"
+                    class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-start text-sm text-fall hover:bg-fall/10"
+                    data-testid="wallet-disconnect"
+                    onClick={ () => { disconnect(); props.onClose(); } }
+                >
+                    <Icon name="x" size={ 15 } />
+                    <span>Disconnect</span>
+                </button>
+            </div>
+        </div>
+    </Portal>
+}

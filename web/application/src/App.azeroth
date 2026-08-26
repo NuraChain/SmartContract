@@ -1,0 +1,39 @@
+import { RouterProvider, Routes, createRouter, createMemoryHistory } from 'azerothjs';
+import type { LoaderHandoff } from 'azerothjs';
+
+import { routes } from './routes.ts';
+import { currentTheme } from './lib/theme.ts';
+
+import Footer from './components/layout/footer.component.azeroth';
+import Header from './components/layout/header.component.azeroth';
+import Toasts from './components/ui/toasts.component.azeroth';
+
+export default component App(props: { url?: string; handoff?: LoaderHandoff })
+{
+    const router = createRouter({
+        routes,
+        history: props.url !== undefined ? createMemoryHistory(props.url) : undefined,
+        initialLoaderData: props.handoff
+    });
+
+    mount
+    {
+        // First browser read applies the persisted theme.
+        currentTheme();
+    }
+
+    <RouterProvider router={ router }>
+        <div class="flex min-h-screen flex-col">
+            <Header />
+            <main class="motion-safe:animate-rise flex-1">
+                <Routes fallback={ () =>
+                    <section class="mx-auto max-w-6xl px-4 py-24 text-center">
+                        <h1 class="font-display text-2xl">This page does not exist.</h1>
+                    </section>
+                } />
+            </main>
+            <Footer />
+            <Toasts />
+        </div>
+    </RouterProvider>
+}

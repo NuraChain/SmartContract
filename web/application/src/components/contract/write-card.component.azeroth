@@ -1,0 +1,164 @@
+import type { Address } from 'viem';
+
+import type { ContractDef } from '../../config/contracts.ts';
+import { parseValue } from '../../lib/abi.ts';
+import type { FunctionSpec } from '../../lib/abi.ts';
+import type { WriteRequest } from '../../lib/tx-manager.ts';
+import { account } from '../../lib/wallet/store.ts';
+
+import Button from '../ui/button.component.azeroth';
+import Icon from '../ui/icon.component.azeroth';
+import ParamField from './param-field.component.azeroth';
+import TxReviewModal from './tx-review-modal.component.azeroth';
+
+// One WRITE function: generated form, explicit Execute button. Nothing leaves
+// the page here - the button only opens the review step, where the user sees
+// exactly what will be signed before any wallet prompt.
+
+export default component WriteCard(props: {
+    def: ContractDef;
+    fn: FunctionSpec;
+    testId?: string;
+})
+{
+    state open = false;
+    state reviewOpen = false;
+    state values = props.fn.inputs.map(() => '');
+    state errors = props.fn.inputs.map((): string | null => null);
+    state valueField = '';
+    state valueError: string | null = null;
+
+    const setInput = (index: number, value: string): void =>
+    {
+        values = values.map((item, position) => position === index ? value : item);
+    };
+
+    const collectRequest = (): WriteRequest | null =>
+    {
+        let ok = true;
+        const args: unknown[] = [];
+        const nextErrors = props.fn.inputs.map((inputSpec, index): string | null =>
+        {
+            try
+            {
+                args.push(parseValue(inputSpec, inputSpec.name !== '' ? inputSpec.name : `param${ index + 1 }`, values[index] ?? ''));
+                return null;
+            }
+            catch (error)
+            {
+                ok = false;
+                return error instanceof Error ? error.message : 'invalid value';
+            }
+        });
+        errors = nextErrors;
+        let native = 0n;
+        if (props.fn.payable)
+        {
+            try
+            {
+                native = parseValue(
+                    { name: 'value', type: 'uint256', base: 'uint', arrayDepth: 0 },
+                    'value',
+                    valueField.trim() === '' ? '0' : valueField
+                ) as bigint;
+                valueError = null;
+            }
+            catch (error)
+            {
+                ok = false;
+                valueError = error instanceof Error ? error.message : 'invalid value';
+            }
+        }
+        if (!ok || props.def.address === null || account() === null)
+        {
+            return null;
+        }
+        return {
+            contractId: props.def.id,
+            contractName: props.def.name,
+            address: props.def.address as Address,
+            abi: props.def.abi,
+            functionName: props.fn.name,
+            signature: props.fn.signature,
+            args,
+            value: native
+        };
+    };
+
+    const execute = (): void =>
+    {
+        if (collectRequest() !== null)
+        {
+            reviewOpen = true;
+        }
+    };
+
+    <article class="card border-fall/30 overflow-hidden" data-testid={ props.testId }>
+        <button
+            type="button"
+            class="flex w-full items-center gap-3 px-4 py-3 text-start hover:bg-fall/5"
+            aria-expanded={ String(open) }
+            onClick={ () => { open = !open; } }
+        >
+            <Icon name="pencil" size={ 16 } class="shrink-0 text-fall" />
+            <span class="min-w-0 flex-1">
+                <span class="block truncate font-mono text-sm text-ink" data-ltr>{ props.fn.name }</span>
+                <span class="block truncate font-mono text-[11px] text-faint" data-ltr>{ props.fn.signature }</span>
+            </span>
+            <Show when={ props.fn.payable }>
+                <span class="rounded-full bg-val/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-val">
+                    PAYABLE
+                </span>
+            </Show>
+            <Icon
+                name="chevron-down"
+                size={ 16 }
+                class={ `shrink-0 text-faint transition-transform ${ open ? 'rotate-180' : '' }` }
+            />
+        </button>
+        <Show when={ open }>
+            <div class="flex flex-col gap-4 border-t border-fall/20 px-4 py-4">
+                <For each={ props.fn.inputs.map((entry, position) => ({ entry, position })) } key={ (row) => String(row.position) } let={ row }>
+                    <div>
+                        <ParamField
+                            spec={ row.entry }
+                            index={ row.position }
+                            value={ values[row.position] ?? '' }
+                            error={ errors[row.position] ?? null }
+                            onInput={ (value) => setInput(row.position, value) }
+                            testId={ `write-${ props.fn.name }-${ String(row.position) }` }
+                        />
+                    </div>
+                </For>
+                <Show when={ props.fn.payable }>
+                    <ParamField
+                        spec={ { name: 'value', type: 'uint256', base: 'uint', arrayDepth: 0 } }
+                        index={ props.fn.inputs.length }
+                        value={ valueField }
+                        error={ valueError }
+                        onInput={ (value) => { valueField = value; } }
+                        testId={ `write-${ props.fn.name }-value` }
+                    />
+                    <p class="text-[11px] text-faint">
+                        This function accepts native NURA. `value` is sent from your wallet with the transaction.
+                    </p>
+                </Show>
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <Button size="sm" variant="danger" onClick={ execute } testId={ `execute-${ props.fn.name }` }>
+                        <Icon name="zap" size={ 14 } />
+                        Execute `{ props.fn.name }`
+                    </Button>
+                    <span class="text-[11px] text-faint">State-changing · requires wallet signature</span>
+                </div>
+
+                <Show when={ account() === null }>
+                    <p class="text-xs text-fall" role="alert">Connect a wallet to execute this function.</p>
+                </Show>
+            </div>
+        </Show>
+        <Show when={ reviewOpen }>
+            <TxReviewModal def={ props.def } fn={ props.fn } collectRequest={ collectRequest } onClose={ () => { reviewOpen = false; } } />
+        </Show>
+    </article>
+}

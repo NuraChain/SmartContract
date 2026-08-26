@@ -1,0 +1,35 @@
+import type { Child } from 'azerothjs';
+
+import { buttonClass } from './variants.ts';
+import type { ButtonSize, ButtonVariant } from './variants.ts';
+
+import Shamseh from './shamseh.component.azeroth';
+
+// The app's one action control. `busy` swaps in the spinning shamseh and blocks
+// further clicks without collapsing the button's width.
+
+export default component Button(props: {
+    variant?: ButtonVariant;
+    size?: ButtonSize;
+    block?: boolean;
+    busy?: boolean;
+    disabled?: boolean;
+    type?: 'button' | 'submit';
+    testId?: string;
+    onClick?: () => void;
+    children?: Child;
+})
+{
+    <button
+        type={ props.type ?? 'button' }
+        class={ buttonClass(props.variant ?? 'ice', props.size ?? 'md', props.block ?? false) }
+        disabled={ (props.disabled ?? false) || (props.busy ?? false) }
+        data-testid={ props.testId }
+        onClick={ () => props.onClick?.() }
+    >
+        <Show when={ props.busy }>
+            <Shamseh size={ 16 } class="animate-spin" />
+        </Show>
+        { props.children }
+    </button>
+}

@@ -1,0 +1,130 @@
+import { parseValue, weiHint } from '../../lib/abi.ts';
+import type { ParamSpec } from '../../lib/abi.ts';
+
+// One ABI parameter -> one labeled, validated field. uint/int fields accept
+// human units (a decimal point scales by 10^18) or raw integers; the resolved
+// raw value and the 18-decimal reading are both echoed underneath so nothing
+// is hidden. Arrays and tuples take JSON.
+
+export default component ParamField(props: {
+    spec: ParamSpec;
+    index: number;
+    value: string;
+    error: string | null;
+    onInput: (value: string) => void;
+    testId?: string;
+})
+{
+    derived label = props.spec.name !== '' ? props.spec.name : `param${ props.index + 1 }`;
+    derived scalarBool = props.spec.base === 'bool' && props.spec.arrayDepth === 0;
+
+    // Plain readers over the controlled value; called from the tracked template.
+    const rawValue = (): bigint | null =>
+    {
+        if ((props.spec.base !== 'uint' && props.spec.base !== 'int') || props.spec.arrayDepth > 0)
+        {
+            return null;
+        }
+        const text = props.value.trim();
+        if (text === '' || !/^-?\d+(\.\d+)?$/.test(text))
+        {
+            return null;
+        }
+        try
+        {
+            return parseValue(props.spec, label, text) as bigint;
+        }
+        catch
+        {
+            return null;
+        }
+    };
+
+    const scaledHint = (): string | null =>
+    {
+        const raw = rawValue();
+        return raw !== null && !props.value.includes('.') ? weiHint(raw) : null;
+    };
+
+    const rawEchoText = (): string | null =>
+    {
+        const raw = rawValue();
+        return props.value.includes('.') && raw !== null && props.error === null ? raw.toString() : null;
+    };
+
+    <div class="flex flex-col gap-1">
+        <div class="flex items-baseline justify-between gap-2">
+            <span class="font-mono text-[13px] text-ink" data-ltr>{ label }</span>
+            <span class="rounded bg-ink/8 px-1.5 py-0.5 font-mono text-[10px] text-faint" data-ltr>
+                { props.spec.type }
+            </span>
+        </div>
+        <Show
+            when={ scalarBool }
+            fallback={
+                <input
+                    type="text"
+                    class={ `h-10 w-full rounded-[0.65rem] border bg-raised px-3 font-mono text-sm text-ink outline-none placeholder:text-faint focus:border-ice ${ props.error !== null ? 'border-fall' : 'border-line' }` }
+                    value={ props.value }
+                    placeholder={ placeholderFor(props.spec) }
+                    aria-label={ `${ label } (${ props.spec.type })` }
+                    data-testid={ props.testId }
+                    data-ltr
+                    spellcheck={ false }
+                    onInput={ (event) => props.onInput((event.currentTarget as HTMLInputElement).value) }
+                />
+            }
+        >
+            <div class="flex gap-2">
+                <button
+                    type="button"
+                    class={ boolClass(props.value === 'true') }
+                    aria-pressed={ String(props.value === 'true') }
+                    data-testid={ props.testId === undefined ? undefined : `${ props.testId }-true` }
+                    onClick={ () => props.onInput('true') }
+                >
+                    true
+                </button>
+                <button
+                    type="button"
+                    class={ boolClass(props.value === 'false') }
+                    aria-pressed={ String(props.value === 'false') }
+                    data-testid={ props.testId === undefined ? undefined : `${ props.testId }-false` }
+                    onClick={ () => props.onInput('false') }
+                >
+                    false
+                </button>
+            </div>
+        </Show>
+        <Show when={ scaledHint() } let={ scaled }>
+            <p class="text-[11px] text-faint" data-ltr>= { scaled } at 18 decimals</p>
+        </Show>
+        <Show when={ rawEchoText() } let={ echo }>
+            <p class="truncate font-mono text-[11px] text-faint" data-ltr title={ echo }>raw: { echo }</p>
+        </Show>
+        <Show when={ props.error !== null }>
+            <p class="text-xs text-fall" role="alert">{ props.error }</p>
+        </Show>
+    </div>
+}
+
+function boolClass(active: boolean): string
+{
+    return active
+        ? 'h-9 rounded-lg border border-ice bg-ice/15 px-4 font-mono text-sm text-ice'
+        : 'h-9 rounded-lg border border-line px-4 font-mono text-sm text-faint hover:text-ink';
+}
+
+function placeholderFor(spec: ParamSpec): string
+{
+    switch (spec.base)
+    {
+        case 'address': return '0x…';
+        case 'bytes': return '0x…';
+        case 'string': return 'text';
+        case 'uint':
+        case 'int': return spec.arrayDepth > 0 ? '[1, 2]' : '1.5 or 1500000000000000000';
+        case 'tuple': return '{ "key": value }';
+        default: return spec.arrayDepth > 0 ? '[...]' : '';
+    }
+}

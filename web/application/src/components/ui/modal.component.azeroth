@@ -1,0 +1,81 @@
+import { Portal } from 'azerothjs';
+import type { Child } from 'azerothjs';
+
+import Icon from './icon.component.azeroth';
+
+// Every close path routes through requestClose: the exit animation plays first
+// (`.is-closing` flips the layers into their out keyframes), then the parent's
+// onClose unmounts. Parents keep the plain mount/unmount API.
+//
+// The panel never grows past the viewport: `max-h-full` reads the overlay's
+// content box (viewport minus its p-4), so the cap tracks that padding without a
+// second magic number. The header stays pinned and the body scrolls - without
+// this a tall modal, V3 add-liquidity above all, is clipped at both ends with
+// its title and its primary button out of reach.
+
+const CLOSE_MS = 170;
+
+export default component Modal(props: { title: string; onClose: () => void; children?: Child })
+{
+    state closing = false;
+
+    let panel: HTMLElement | null = null;
+
+    const requestClose = (): void =>
+    {
+        if (closing)
+        {
+            return;
+        }
+        closing = true;
+        setTimeout(() => props.onClose(), CLOSE_MS);
+    };
+
+    const onKey = (event: KeyboardEvent): void =>
+    {
+        if (event.key === 'Escape')
+        {
+            requestClose();
+        }
+    };
+
+    mount
+    {
+        document.addEventListener('keydown', onKey);
+        panel?.focus();
+    }
+
+    cleanup
+    {
+        document.removeEventListener('keydown', onKey);
+    }
+
+    <Portal>
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4" class:is-closing={ closing }>
+            <div class="anim-overlay absolute inset-0 bg-black/60" onClick={ requestClose } />
+            <section
+                ref={ (element) => { panel = element; } }
+                tabindex="-1"
+                role="dialog"
+                aria-modal="true"
+                aria-label={ props.title }
+                class="anim-pop card-pop relative flex max-h-full w-full max-w-md flex-col p-5"
+            >
+                <header class="mb-4 flex shrink-0 items-center justify-between gap-4">
+                    <h2 class="font-display text-sm font-medium tracking-wide">{ props.title }</h2>
+                    <button
+                        type="button"
+                        class="rounded-md p-1 text-faint hover:text-ink"
+                        aria-label="Close"
+                        onClick={ requestClose }
+                    >
+                        <Icon name="x" size={ 18 } />
+                    </button>
+                </header>
+                <div class="-mx-3 min-h-0 flex-1 overflow-y-auto px-3">
+                    { props.children }
+                </div>
+            </section>
+        </div>
+    </Portal>
+}

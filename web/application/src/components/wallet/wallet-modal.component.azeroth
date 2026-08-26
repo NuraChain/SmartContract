@@ -1,0 +1,133 @@
+import { WALLET_BRANDS, brandFor } from '../../lib/wallet/brands.ts';
+import { connectInjected, walletOptions } from '../../lib/wallet/store.ts';
+import type { WalletOption } from '../../lib/wallet/store.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+import Modal from '../ui/modal.component.azeroth';
+
+// The connect sheet merges two sources:
+//   1. what the browser ANNOUNCED over EIP-6963 - the only wallets that can
+//      actually connect, each with the icon it announced;
+//   2. the named roster - so a visitor with nothing installed learns which
+//      wallets work here and where to get one, instead of hitting a dead end.
+
+interface Row
+{
+    key: string;
+    label: string;
+    icon: string | null;
+    option: WalletOption | null;
+    install: string | null;
+}
+
+export default component WalletModal(props: { onClose: () => void })
+{
+    state connecting = '';
+
+    const connect = async (option: WalletOption): Promise<void> =>
+    {
+        // A failed attempt (declined prompt, locked wallet) keeps the sheet
+        // open: closing it would strand the user back on the page with a toast
+        // and no way forward but finding this modal again.
+        connecting = option.id;
+        try
+        {
+            if (await connectInjected(option))
+            {
+                props.onClose();
+            }
+        }
+        finally
+        {
+            connecting = '';
+        }
+    };
+
+    derived detected = walletOptions().map((option): Row =>
+    {
+        const brand = brandFor(option.id);
+        return {
+            key: option.id,
+            label: brand?.label ?? option.name,
+            // The wallet's own announced icon is the truthful one; our vector is
+            // the fallback for a brand that announced without an icon.
+            icon: option.icon ?? brand?.icon ?? null,
+            option,
+            install: null
+        };
+    });
+
+    derived missing = WALLET_BRANDS
+        .filter((brand) => !walletOptions().some((option) => option.id === brand.rdns))
+        .map((brand): Row => ({
+            key: brand.rdns,
+            label: brand.label,
+            icon: brand.icon,
+            option: null,
+            install: brand.install
+        }));
+
+    <Modal title="Connect a wallet" onClose={ props.onClose }>
+        <div class="flex flex-col gap-2">
+            <Show when={ detected.length > 0 }>
+                <p class="eyebrow">Detected</p>
+            </Show>
+            <For each={ detected } key={ (row) => row.key } let={ row }>
+                <button
+                    type="button"
+                    class="flex items-center gap-3 rounded-lg border border-line bg-raised px-4 py-3 text-start text-sm hover:border-ice disabled:opacity-60"
+                    disabled={ connecting !== '' }
+                    data-testid={ `wallet-${ row.key }` }
+                    onClick={ () => void connect(row.option as WalletOption) }
+                >
+                    <Show
+                        when={ row.icon }
+                        let={ icon }
+                        fallback={ <Icon name="wallet" size={ 24 } class="text-ice" /> }
+                    >
+                        <img src={ icon } alt="" class="h-6 w-6 rounded" />
+                    </Show>
+                    <span class="flex-1">
+                        { row.label }
+                        <Show when={ connecting === row.key }>
+                            <span class="ms-2 text-xs text-faint">Connecting…</span>
+                        </Show>
+                    </span>
+                    <Icon name="arrow-right" size={ 15 } class="text-faint rtl:rotate-180" />
+                </button>
+            </For>
+
+            <Show when={ missing.length > 0 }>
+                <p class="eyebrow mt-2">
+                    { detected.length > 0 ? 'Other wallets' : 'No wallet detected - install one to connect' }
+                </p>
+            </Show>
+            <For each={ missing } key={ (row) => row.key } let={ row }>
+                <a
+                    href={ row.install as string }
+                    target="_blank"
+                    rel="noreferrer"
+                    class="flex items-center gap-3 rounded-lg border border-line px-4 py-3 text-sm text-faint hover:border-ice hover:text-ink"
+                    data-testid={ `install-${ row.key }` }
+                >
+                    <Show
+                        when={ row.icon }
+                        let={ icon }
+                        fallback={ <Icon name="wallet" size={ 24 } /> }
+                    >
+                        <img src={ icon } alt="" class="h-6 w-6 rounded opacity-70" />
+                    </Show>
+                    <span class="flex-1">{ row.label }</span>
+                    <span class="flex items-center gap-1 text-xs">
+                        <span>Install</span>
+                        <Icon name="external-link" size={ 13 } />
+                    </span>
+                </a>
+            </For>
+            <p class="mt-2 text-[11px] leading-relaxed text-faint">
+                Connection is read-only until you explicitly execute a function. This application never
+                asks for private keys or seed phrases.
+            </p>
+        </div>
+    </Modal>
+}

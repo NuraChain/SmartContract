@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  review_status: true
+  review_details: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/coverage/**"
+    - "!**/*.lock"
+  path_instructions:
+    - path: "**/*.{ts,tsx,js,jsx}"
+      instructions: |
+        Review as production TypeScript/JavaScript for a DEX.
+        - Check type safety, validation, async race conditions, error handling, RPC trust boundaries, and secret exposure.
+        - Treat token addresses, chain IDs, reserves, quotes, balances, slippage, deadlines, and transaction status as untrusted until validated.
+        - Check approval flows, transaction replacement/nonce handling, replay risks, sandwich/MEV-sensitive assumptions, and unsafe client-side price calculations.
+    - path: "**/*.{sol}"
+      instructions: |
+        Review Solidity as high-risk financial infrastructure.
+        - Check reentrancy, access control, token accounting, precision/rounding, fee logic, slippage/deadline enforcement, oracle assumptions, callbacks, flash-loan interactions, and external calls.
+        - Verify factory/router/pair wiring, init code hashes, fee tiers, WNURA/native-token handling, and privileged roles where applicable.
+        - Never assume a token or caller is trusted without explicit code/config evidence.
+    - path: "contracts/**"
+      instructions: |
+        Treat all contracts as production financial code. Flag deployment/network configuration mismatches and dangerous defaults.
+    - path: "**/*.{md,mdx}"
+      instructions: |
+        Verify DEX terminology, contract addresses, network IDs, swap paths, deployment instructions, and security claims.

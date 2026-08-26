@@ -1,0 +1,88 @@
+import { addressGradient, shortAddress } from '../../lib/format.ts';
+import { NURA_CHAIN } from '../../config/chain.ts';
+import {
+    account,
+    connectedVia,
+    onRightChain,
+    startDiscovery,
+    switchChain,
+    walletChainId
+} from '../../lib/wallet/store.ts';
+
+import WalletMenu from './wallet-menu.component.azeroth';
+import WalletModal from './wallet-modal.component.azeroth';
+import Icon from '../ui/icon.component.azeroth';
+
+// Header wallet entry: Connect -> address pill; a wrong network shows an
+// explicit switch button before anything else.
+
+export default component ConnectButton()
+{
+    state open = false;
+    state menuOpen = false;
+    state switching = false;
+
+    mount
+    {
+        startDiscovery();
+    }
+
+    const doSwitch = (): void =>
+    {
+        switching = true;
+        void switchChain().finally(() => { switching = false; });
+    };
+
+    <div class="flex items-center gap-2">
+        <Show
+            when={ account() }
+            let={ address }
+            fallback={
+                <button
+                    type="button"
+                    class="btn-ice px-4 py-2 text-sm"
+                    data-testid="header-connect"
+                    onClick={ () => { open = true; } }
+                >
+                    <Icon name="wallet" size={ 15 } />
+                    Connect Wallet
+                </button>
+            }
+        >
+            <Show when={ !onRightChain() && walletChainId() !== null }>
+                <button
+                    type="button"
+                    class="rounded-lg bg-fall px-3 py-2 text-sm font-medium text-white hover:brightness-110"
+                    disabled={ switching }
+                    data-testid="switch-network"
+                    onClick={ doSwitch }
+                >
+                    Switch to { NURA_CHAIN.name }
+                </button>
+            </Show>
+            <button
+                type="button"
+                class="btn-ghost px-3 py-2 text-sm"
+                data-testid="wallet-button"
+                aria-expanded={ String(menuOpen) }
+                onClick={ () => { menuOpen = true; } }
+            >
+                <span
+                    class="h-4 w-4 shrink-0 rounded-full"
+                    style={ `background:${ addressGradient(address) }` }
+                    aria-hidden="true"
+                />
+                <span class="font-mono" data-ltr>{ shortAddress(address) }</span>
+                <Show when={ connectedVia() }>
+                    <span class="hidden text-xs text-faint lg:inline">{ connectedVia() }</span>
+                </Show>
+            </button>
+            <Show when={ menuOpen }>
+                <WalletMenu address={ address } onClose={ () => { menuOpen = false; } } />
+            </Show>
+        </Show>
+        <Show when={ open }>
+            <WalletModal onClose={ () => { open = false; } } />
+        </Show>
+    </div>
+}

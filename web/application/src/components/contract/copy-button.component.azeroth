@@ -1,0 +1,31 @@
+import { pushToast } from '../../lib/toast.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+
+// Copies any verbatim string (address, hash, signature) with feedback.
+
+export default component CopyButton(props: { value: string; label?: string; testId?: string })
+{
+    const copy = async (): Promise<void> =>
+    {
+        try
+        {
+            await navigator.clipboard.writeText(props.value);
+            pushToast('success', 'Copied to clipboard.');
+        }
+        catch
+        {
+            pushToast('error', 'Could not copy to the clipboard.');
+        }
+    };
+
+    <button
+        type="button"
+        class="shrink-0 rounded-md p-1 text-faint hover:text-ice"
+        aria-label={ props.label ?? 'Copy' }
+        data-testid={ props.testId }
+        onClick={ () => void copy() }
+    >
+        <Icon name="copy" size={ 14 } />
+    </button>
+}

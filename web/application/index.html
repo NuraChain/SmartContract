@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <title>Contract Manager</title>
+        <meta name="description" content="Contract Manager - a transparent administrative interface for smart contracts on Nura Chain. Read state and execute functions through your own wallet."/>
+        <meta property="og:title" content="Contract Manager"/>
+        <meta property="og:description" content="A transparent Web3 administration interface: inspect supported contracts, read their state, execute their functions through your own wallet."/>
+        <meta property="og:type" content="website"/>
+        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f2f5f8"/>
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#090d12"/>
+        <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='-50%20-50%20100%20100'%3E%3Cg%20fill='none'%20stroke='%235fb3e8'%20stroke-width='6'%3E%3Crect%20x='-31'%20y='-31'%20width='62'%20height='62'/%3E%3Crect%20x='-31'%20y='-31'%20width='62'%20height='62'%20transform='rotate(45)'/%3E%3C/g%3E%3Ccircle%20r='9'%20fill='%235fb3e8'/%3E%3C/svg%3E"/>
+        <script>
+            // Pre-paint: apply the persisted theme class so the first frame is
+            // already right.
+            try
+            {
+                var theme = localStorage.getItem('cm.theme');
+                if (theme === 'light' || theme === 'dark') { document.documentElement.classList.add(theme); }
+            }
+            catch (error) { /* storage unavailable - defaults stand */ }
+        </script>
+        <link rel="stylesheet" href="/src/styles.css"/>
+    </head>
+    <body>
+        <div id="root"></div>
+        <script type="module" src="/src/main.azeroth" defer></script>
+    </body>
+</html>

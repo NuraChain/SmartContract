@@ -1,0 +1,30 @@
+// Text input with an optional leading icon. Declares value + onInput so parents
+// can drive it as a controlled field.
+
+import Icon from './icon.component.azeroth';
+
+export default component Input(props: {
+    value: string;
+    onInput: (value: string) => void;
+    placeholder?: string;
+    icon?: string;
+    testId?: string;
+    ariaLabel?: string;
+    mono?: boolean;
+})
+{
+    <label class="flex h-11 items-center gap-2.5 rounded-[0.65rem] border border-line bg-raised px-3 focus-within:border-ice">
+        <Show when={ props.icon } let={ icon }>
+            <Icon name={ icon } size={ 16 } class="shrink-0 text-faint" />
+        </Show>
+        <input
+            class={ `w-full min-w-0 bg-transparent text-sm text-ink outline-none placeholder:text-faint ${ props.mono ? 'font-mono' : '' }` }
+            value={ props.value }
+            placeholder={ props.placeholder ?? '' }
+            aria-label={ props.ariaLabel ?? props.placeholder ?? 'Input' }
+            data-testid={ props.testId }
+            data-ltr={ props.mono ? '' : undefined }
+            onInput={ (event) => props.onInput((event.currentTarget as HTMLInputElement).value) }
+        />
+    </label>
+}

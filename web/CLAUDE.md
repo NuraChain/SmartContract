@@ -7,10 +7,10 @@ id 1020). One workspace:
 application/   compiled .azeroth components on vite (AzerothJS)
 ```
 
-The exchange/smart contracts live in a **separate repository**
-(`C:\Users\Alex\Desktop\Smart Contract`). This app consumes its compiled
-artifacts (`src/config/abi/*.json`, refreshed by `npm run extract:abi`) and
-never imports Solidity.
+The contracts live in the **parent repository** (`C:\Users\Alex\Desktop\Smart
+Contract`, this repo's root). This app consumes its compiled artifacts
+(`src/config/abi/*.json`, refreshed by `node scripts/extract-abi.mjs` after a
+`npx hardhat compile` there) and never imports Solidity.
 
 ---
 

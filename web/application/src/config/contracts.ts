@@ -20,11 +20,10 @@ import Multicall3Abi from './abi/Multicall3.json';
 import NonfungiblePositionManagerAbi from './abi/NonfungiblePositionManager.json';
 import PredictionFactoryAbi from './abi/PredictionFactory.json';
 import PredictionMarketAbi from './abi/PredictionMarket.json';
+import PredictionPoolAbi from './abi/PredictionPool.json';
 import PredictionTreasuryAbi from './abi/PredictionTreasury.json';
 import QuoterV2Abi from './abi/QuoterV2.json';
 import SwapRouterAbi from './abi/SwapRouter.json';
-import UniswapV2FactoryAbi from './abi/UniswapV2Factory.json';
-import UniswapV2Router02Abi from './abi/UniswapV2Router02.json';
 import UniswapV3FactoryAbi from './abi/UniswapV3Factory.json';
 import WnuraAbi from './abi/WNURA.json';
 
@@ -33,7 +32,6 @@ import { NURA_CHAIN_ID } from './chain.ts';
 export type ContractCategory =
     | 'token'
     | 'airdrop'
-    | 'amm-v2'
     | 'amm-v3'
     | 'prediction'
     | 'vault'
@@ -64,7 +62,6 @@ export interface ContractDef
 export const CATEGORY_LABEL: Record<ContractCategory, string> = {
     token: 'Token',
     airdrop: 'Airdrop',
-    'amm-v2': 'AMM · V2',
     'amm-v3': 'AMM · V3',
     prediction: 'Prediction',
     vault: 'Vault',
@@ -77,7 +74,6 @@ const BRIDGE_USDT = '0x4E0DB0B1Da408faF5637202CF48b0bc7733bE6dC' as Address;
 const BRIDGE_BNB = '0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc' as Address;
 const WNURA = '0xf0a4eC07916feBa4432121Ed5969887D9b939cD0' as Address;
 const MULTICALL3 = '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24' as Address;
-const UNISWAP_V2_ROUTER = '0xfE126FD0CEcec827112bFc5440d792b3698B3850' as Address;
 
 export const CONTRACTS: readonly ContractDef[] = [
     {
@@ -111,28 +107,6 @@ export const CONTRACTS: readonly ContractDef[] = [
         deploymentNote: 'Live since the original exchange deployment.'
     },
     {
-        id: 'uniswap-v2-router',
-        name: 'UniswapV2Router02',
-        description: 'V2 entrypoint: add/remove liquidity and swap paths over the pair factory, with native-coin variants.',
-        category: 'amm-v2',
-        chainId: NURA_CHAIN_ID,
-        address: UNISWAP_V2_ROUTER,
-        abi: UniswapV2Router02Abi as Abi,
-        deploymentNote: 'Live router; built from the older contracts/swap tree of the exchange deployment.'
-    },
-    {
-        id: 'uniswap-v2-factory',
-        name: 'UniswapV2Factory',
-        description: 'Creates and registers V2 pairs. This fork adds an adjustable swapFee slot on top of stock UniswapV2.',
-        category: 'amm-v2',
-        chainId: NURA_CHAIN_ID,
-        // The live factory predates the current source tree; its address is not
-        // recorded anywhere in the contracts repository. Honest null.
-        address: null,
-        abi: UniswapV2FactoryAbi as Abi,
-        deploymentNote: 'Live factory predates the current source tree; address not recorded in the repository.'
-    },
-    {
         id: 'multicall3',
         name: 'Multicall3',
         description: 'Aggregate arbitrary calls into one transaction or one eth_call. Shared infrastructure across the chain.',
@@ -155,23 +129,34 @@ export const CONTRACTS: readonly ContractDef[] = [
     {
         id: 'prediction-factory',
         name: 'PredictionFactory',
-        description: 'Deploys prediction-market clones and keeps the registry. Admin controls fees, treasury and market lifecycle.',
+        description: 'Deploys prediction-market clones (CPMM and parimutuel) and keeps the registry. Admin controls fees, treasury and market lifecycle.',
         category: 'prediction',
         chainId: NURA_CHAIN_ID,
         address: null,
         abi: PredictionFactoryAbi as Abi,
-        deploymentNote: 'No Ignition module yet - the Forecast group is not wired into the deploy task.'
+        deploymentNote: 'Deployed by ignition/modules/forecast.ts (`npm run deploy:nurachain:forecast`); address recorded at deploy time only.'
     },
     {
         id: 'prediction-market',
         name: 'PredictionMarket',
-        description: 'One prediction market instance (ERC1155 outcome shares): buy, sell, merge sets, redeem, funding controls.',
+        description: 'One CPMM prediction market instance (ERC1155 outcome shares): buy, sell, merge sets, redeem, funding controls.',
         category: 'prediction',
         chainId: NURA_CHAIN_ID,
         // Clones are created by the factory; there is no single fixed address.
         address: null,
         abi: PredictionMarketAbi as Abi,
         deploymentNote: 'Instances are deployed by PredictionFactory.createMarket; paste a specific market via the factory listing first.'
+    },
+    {
+        id: 'prediction-pool',
+        name: 'PredictionPool',
+        description: 'One parimutuel prediction market instance: bet native coin on an outcome, admin resolves after lockTime, winners claim pro-rata net of fee.',
+        category: 'prediction',
+        chainId: NURA_CHAIN_ID,
+        // Clones are created by the factory; there is no single fixed address.
+        address: null,
+        abi: PredictionPoolAbi as Abi,
+        deploymentNote: 'Instances are deployed by PredictionFactory.createMarket2; paste a specific market via the factory listing first.'
     },
     {
         id: 'prediction-treasury',
@@ -201,7 +186,7 @@ export const CONTRACTS: readonly ContractDef[] = [
         chainId: NURA_CHAIN_ID,
         address: null,
         abi: UniswapV3FactoryAbi as Abi,
-        deploymentNote: 'Deployed alongside the V2 suite by ignition/modules/univ3.ts; address recorded at deploy time only.'
+        deploymentNote: 'Deployed by ignition/modules/univ3.ts; address recorded at deploy time only.'
     },
     {
         id: 'nonfungible-position-manager',

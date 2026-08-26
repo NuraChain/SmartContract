@@ -19,6 +19,9 @@ ignition/params.json
 # friends). The unpacked contracts are what belongs in git, not the tarball.
 *.zip
 
+# Deploy / debug logs (hardhat.config.ts:160 deployLogFile)
+logs/
+
 # Editor / OS noise
 .DS_Store
 .idea/

@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import { readdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -10,6 +10,36 @@ import { ArgumentType } from "hardhat/types/arguments";
 import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 
 import { coinAmount, parseClaims, parseFromFile, parseReward } from "./scripts/lib/params.ts";
+
+// ── Nurachain Ignition patch ────────────────────────────────────────────
+// Nurachain (1020) returns baseFeePerGas=0 but enforces 47 gwei floor.
+// Upstream @nomicfoundation/ignition-core treats any 0-baseFee chain as
+// zero-fee (intended for private Besu) and returns maxFee 0, ignoring
+// networks.nurachain.ignition.{maxFeePerGas,gasPrice}. The check explicitly
+// excludes BSC/opBNB (56,97,204,5611) – 1020 must be excluded too.
+// We patch both src and dist at startup so `npm install` does not regress.
+// See node_modules/@nomicfoundation/ignition-core/src/internal/execution/jsonrpc-client.ts:680
+// ───────────────────────────────────────────────────────────────────────
+try {
+  const src = resolve(process.cwd(), "node_modules/@nomicfoundation/ignition-core/src/internal/execution/jsonrpc-client.ts");
+  const dist = resolve(process.cwd(), "node_modules/@nomicfoundation/ignition-core/dist/src/internal/execution/jsonrpc-client.js");
+  for (const file of [src, dist]) {
+    if (!existsSync(file)) continue;
+    let content = readFileSync(file, "utf8");
+    if (content.includes("chainId !== 1020")) continue; // already patched
+    if (content.includes("chainId !== 5611")) {
+      content = content.replace(
+        /chainId !== 5611(\s*\)?)/,
+        "chainId !== 5611 &&\n        chainId !== 1020$1",
+      );
+      content = content.replace("&&\n        chainId !== 1020)", "&&\n                chainId !== 1020)");
+      writeFileSync(file, content, "utf8");
+      console.log(`[hardhat.config] patched Nurachain fees in ${file}`);
+    }
+  }
+} catch {
+  // best-effort: if patch fails, deploy will still show 0-fee in diagnostics
+}
 
 // Each entry is a folder under contracts/ paired with the Ignition module that
 // deploys it. Adding a contracts/<name> folder means adding ignition/modules/<name>.ts
@@ -151,6 +181,186 @@ const FORECAST_OVERRIDES = Object.fromEntries(
 const COIN: Record<string, string> = {
   nurachain: "NURA",
 };
+
+// ── deploy logger ──────────────────────────────────────────────────────────
+// Writes to console and to logs/deploy-<network>-<sc>-<timestamp>.log so a
+// dropped-tx (HHE10400) can be diagnosed without re-running. Never logs the
+// private key – only address / balance / fee fields.
+// ──────────────────────────────────────────────────────────────────────────
+function deployLogFile(network: string, sc: string): string {
+  const dir = resolve(process.cwd(), "logs");
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  return resolve(dir, `deploy-${network}-${sc}-${ts}.log`);
+}
+
+function deployLog(line: string, file?: string): void {
+  console.log(line);
+  if (file) {
+    try {
+      appendFileSync(file, line + "\n");
+    } catch {}
+  }
+}
+
+function fmtWei(value: unknown): string {
+  try {
+    const n = typeof value === "bigint" ? value : BigInt(String(value));
+    const gwei = Number(n) / 1e9;
+    return `${n.toString()} wei (${gwei.toFixed(2)} gwei)`;
+  } catch {
+    return String(value);
+  }
+}
+
+function maskRpc(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    return url.slice(0, 48) + (url.length > 48 ? "…" : "");
+  }
+}
+
+async function logDeployDiagnostics(
+  hre: {
+    network: { create: () => Promise<{ provider: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }; ethers?: unknown }> };
+    config: { networks: Record<string, unknown> };
+  },
+  networkName: string,
+  sc: string,
+  logFile: string,
+): Promise<{ provider: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } | undefined }> {
+  const header = `\n========== DEPLOY DIAGNOSTICS  network=${networkName}  sc=${sc}  time=${new Date().toISOString()} ==========`;
+  deployLog(header, logFile);
+
+  // Config as Hardhat sees it (after merging profiles)
+  try {
+    const netCfg = (hre.config.networks as Record<string, Record<string, unknown>>)[networkName] as
+      | Record<string, unknown>
+      | undefined;
+    deployLog(`[config] networks.${networkName} = ${JSON.stringify(netCfg, (_, v) => (typeof v === "bigint" ? `${v}n` : v), 2)}`, logFile);
+  } catch (e) {
+    deployLog(`[config] failed to read hre.config.networks: ${String(e)}`, logFile);
+  }
+
+  // Hardhat 3: provider lives on the connection returned by hre.network.create()
+  // (see scripts/preflight.ts:69 `await network.getOrCreate()`). The old
+  // `hre.network.provider` does not exist – that is why previous runs logged
+  // `Cannot read properties of undefined (reading 'request')` for every rpc call.
+  let provider: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } | undefined;
+  let ethers: unknown;
+  try {
+    const conn = await hre.network.create();
+    provider = (conn as { provider: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }).provider;
+    ethers = (conn as { ethers?: unknown }).ethers;
+    deployLog(`[diag] network connection established`, logFile);
+  } catch (e) {
+    deployLog(`[diag] hre.network.create() FAILED: ${e instanceof Error ? e.message : String(e)}`, logFile);
+  }
+
+  if (!provider) {
+    deployLog(`[diag] no provider – skipping rpc checks (run npm run preflight:nurachain for direct provider diagnostics)`, logFile);
+    // still continue to journal peek below
+  } else {
+    const rpcCall = async (method: string, params: unknown[] = []): Promise<unknown> => {
+      try {
+        const res = await provider!.request({ method, params });
+        const pretty = typeof res === "string" ? res : JSON.stringify(res);
+        deployLog(`[rpc] ${method}(${JSON.stringify(params)}) => ${pretty}`, logFile);
+        return res;
+      } catch (e) {
+        deployLog(`[rpc] ${method} FAILED: ${e instanceof Error ? e.message : String(e)}`, logFile);
+        return undefined;
+      }
+    };
+
+    // Chain / gas oracle – Nurachain is known to return 0 for gasPrice
+    await rpcCall("eth_chainId");
+    await rpcCall("net_version");
+    const gasPrice = await rpcCall("eth_gasPrice");
+    await rpcCall("eth_maxPriorityFeePerGas");
+    await rpcCall("eth_feeHistory", ["0x5", "latest", [25, 75]]);
+    await rpcCall("eth_blockNumber");
+
+    if (gasPrice !== undefined) {
+      deployLog(`[diag] eth_gasPrice raw=${String(gasPrice)}  decoded=${fmtWei(gasPrice)}`, logFile);
+      try {
+        if (BigInt(String(gasPrice)) === 0n) {
+          deployLog(`[diag] ⚠ eth_gasPrice is 0 – Ignition would send 0-fee tx if networks.${networkName}.ignition.gasPrice is not set. Expected 500_000_000_000n (500 gwei) per hardhat.config.ts:400`, logFile);
+        }
+      } catch {}
+    }
+
+    // Deployer account
+    try {
+      const accounts = (await provider.request({ method: "eth_accounts", params: [] })) as string[] | undefined;
+      deployLog(`[diag] eth_accounts => ${JSON.stringify(accounts)}`, logFile);
+      const target = accounts?.[0];
+      if (target) {
+        const bal = (await provider.request({ method: "eth_getBalance", params: [target, "latest"] })) as string | undefined;
+        const nonce = (await provider.request({ method: "eth_getTransactionCount", params: [target, "latest"] })) as string | undefined;
+        const pendingNonce = (await provider.request({ method: "eth_getTransactionCount", params: [target, "pending"] })) as string | undefined;
+        deployLog(`[diag] deployer ${target}  balance=${bal ? fmtWei(bal) : "?"}  nonce latest=${nonce} pending=${pendingNonce}`, logFile);
+        if (bal && BigInt(bal) === 0n) deployLog(`[diag] ✖ deployer balance is 0 – funding needed before deploy`, logFile);
+        // also log via ethers if available for formatEther
+        if (ethers && target && bal) {
+          try {
+            const eth = ethers as { formatEther?: (v: string | bigint) => string; provider?: { getBalance?: (a: string) => Promise<bigint> } };
+            if (eth.formatEther) deployLog(`[diag] deployer balance formatted: ${eth.formatEther(BigInt(bal))} native`, logFile);
+          } catch {}
+        }
+      }
+    } catch (e) {
+      deployLog(`[diag] deployer lookup failed: ${String(e)}`, logFile);
+    }
+  }
+
+  // Journal quick peek
+  try {
+    const journalPath = resolve(process.cwd(), `ignition/deployments/chain-${process.env.NURACHAIN_CHAIN_ID ?? "1020"}/journal.jsonl`);
+    if (existsSync(journalPath)) {
+      const lines = readFileSync(journalPath, "utf8").trim().split("\n");
+      const last = lines.slice(-8).join("\n");
+      deployLog(`[diag] journal ${journalPath}  lines=${lines.length}\n[last 8 lines]\n${last}`, logFile);
+      // surface 0-fee pattern that causes HHE10400
+      const zeroFee = lines.filter((l) => l.includes('"value":"0"') && l.includes("maxFeePerGas")).length;
+      if (zeroFee > 0) deployLog(`[diag] ⚠ journal contains ${zeroFee} tx(s) with maxFeePerGas=0 – they will be dropped by Nurachain (floor ~47 gwei). Use --reset after fixing ignition.gasPrice.`, logFile);
+    } else {
+      deployLog(`[diag] no journal yet at ${journalPath} (first deploy)`, logFile);
+    }
+  } catch (e) {
+    deployLog(`[diag] journal read failed: ${String(e)}`, logFile);
+  }
+
+  deployLog(`========== END DIAGNOSTICS ==========\n`, logFile);
+  return { provider };
+}
+
+function dumpJournalOnFailure(networkName: string, logFile: string): void {
+  try {
+    const chainId = process.env.NURACHAIN_CHAIN_ID ?? "1020";
+    const journalPath = resolve(process.cwd(), `ignition/deployments/chain-${chainId}/journal.jsonl`);
+    if (!existsSync(journalPath)) {
+      deployLog(`[fail] no journal at ${journalPath}`, logFile);
+      return;
+    }
+    const raw = readFileSync(journalPath, "utf8");
+    const lines = raw.trim().split("\n");
+    deployLog(`\n[fail] ===== JOURNAL DUMP (${lines.length} lines) ${journalPath} =====`, logFile);
+    // last 30 lines are enough to see ONCHAIN_INTERACTION_DROPPED loop
+    for (const line of lines.slice(-30)) deployLog(`[journal] ${line}`, logFile);
+    // also write full copy to log dir for sharing
+    try {
+      const copy = resolve(process.cwd(), `logs/journal-chain-${chainId}-${Date.now()}.jsonl`);
+      appendFileSync(copy, raw);
+      deployLog(`[fail] full journal copied to ${copy}`, logFile);
+    } catch {}
+    deployLog(`[fail] ===== END JOURNAL =====\n`, logFile);
+  } catch (e) {
+    deployLog(`[fail] dumpJournal failed: ${String(e)}`, logFile);
+  }
+}
 
 async function readParametersFile(file: string): Promise<Record<string, Record<string, unknown>>> {
   const path = resolve(process.cwd(), file);
@@ -301,7 +511,71 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
       throw new Error(`--max-claims and --reward only apply to --sc airdrop, not --sc ${sc}.`);
     }
 
-    console.log(`Deploying contracts/${sc} via ignition/modules/${sc}.ts\n`);
+    const networkName = hre.globalOptions.network as string;
+    const logFile = deployLogFile(networkName, sc);
+    deployLog(`\n[deploy] Deploying contracts/${sc} via ignition/modules/${sc}.ts  network=${networkName}  reset=${String(reset)}  verify=${String(verify)}`, logFile);
+    if (parameters) deployLog(`[deploy] --parameters=${parameters}`, logFile);
+    deployLog(`[deploy] logFile=${logFile}`, logFile);
+    // Masked RPC for sanity-check (never logs secrets)
+    try {
+      const rawUrl = (hre.config.networks[networkName] as unknown as { url?: unknown })?.url;
+      // configVariable values resolve lazily via hre.network – also try provider-level
+      deployLog(`[deploy] config networks.${networkName}.url type=${typeof rawUrl}`, logFile);
+    } catch {}
+
+    // Pre-flight diagnostics: gas oracle, deployer balance/nonce, ignition config, journal
+    await logDeployDiagnostics(
+      hre as unknown as {
+        network: { create: () => Promise<{ provider: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }; ethers?: unknown }> };
+        config: { networks: Record<string, unknown> };
+      },
+      networkName,
+      sc,
+      logFile,
+    );
+
+    // Hardhat Ignition caches strategyConfig in the journal at first run.
+    // If the first run used an empty strategyConfig (old config without
+    // ignition.gasPrice) it will keep resending 0-fee txs forever, even
+    // after hardhat.config.ts is fixed. Detect that stale state and force
+    // a reset so the new maxFeePerGas (500 gwei) is actually used.
+    let effectiveReset = reset;
+    {
+      const chainId = process.env.NURACHAIN_CHAIN_ID ?? "1020";
+      const jPath = resolve(process.cwd(), `ignition/deployments/chain-${chainId}/journal.jsonl`);
+      if (existsSync(jPath)) {
+        const raw = readFileSync(jPath, "utf8");
+        const hasDropped = raw.includes("ONCHAIN_INTERACTION_DROPPED");
+        const hasReplacedByUser = raw.includes("ONCHAIN_INTERACTION_REPLACED_BY_USER");
+        const hasZeroFee = raw.includes('"maxFeePerGas":{"_kind":"bigint","value":"0"}');
+        const hasEmptyStrategyConfig = raw.includes('"strategyConfig":{}');
+        if ((hasDropped || hasReplacedByUser) && hasZeroFee) {
+          deployLog(`[deploy] ⚠ stale journal detected: ${hasDropped ? "ONCHAIN_INTERACTION_DROPPED" : ""}${hasReplacedByUser ? " ONCHAIN_INTERACTION_REPLACED_BY_USER" : ""} with maxFeePerGas=0 + strategyConfig={}`, logFile);
+          deployLog(`[deploy]   Root cause: first deploy ran before ignition.gasPrice/maxFeePerGas was set (see hardhat.config.ts:619).`, logFile);
+          deployLog(`[deploy]   Ignition resumes the same 0-fee interaction – new fees are ignored until journal is wiped.`, logFile);
+          if (!reset) {
+            deployLog(`[deploy] → auto-wiping stale deployment (equivalent to --reset) so new 500 gwei fees take effect`, logFile);
+            try {
+              const { rmSync } = await import("node:fs");
+              const deploymentDir = resolve(process.cwd(), `ignition/deployments/chain-${chainId}`);
+              rmSync(deploymentDir, { recursive: true, force: true });
+              deployLog(`[deploy]   wiped ${deploymentDir}`, logFile);
+              effectiveReset = true;
+            } catch (e) {
+              deployLog(`[deploy]   wipe failed: ${String(e)} – please run manually: Remove-Item -Recurse -Force ignition/deployments/chain-${chainId}`, logFile);
+              deployLog(`[deploy]   → re-run with --reset:  npm run deploy:nurachain:${sc} -- --reset`, logFile);
+            }
+          } else {
+            deployLog(`[deploy]   --reset already set, Ignition will recreate deployment with correct fees`, logFile);
+          }
+          if (hasEmptyStrategyConfig) {
+            deployLog(`[deploy]   strategyConfig={} in journal confirms empty config was cached at init`, logFile);
+          }
+        } else if (hasDropped) {
+          deployLog(`[deploy] ⚠ journal contains ONCHAIN_INTERACTION_DROPPED – previous run was dropped. If fees were fixed, use --reset.`, logFile);
+        }
+      }
+    }
 
     // Ignition's --parameters takes either a path or a literal JSON5 string. The airdrop
     // values are settled here rather than in the module, so they go on as a string with
@@ -327,12 +601,42 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
       });
     }
 
-    await hre.tasks.getTask(["ignition", "deploy"]).run({
-      modulePath: `ignition/modules/${sc}.ts`,
-      parameters: resolvedParameters,
-      reset,
-      verify,
-    });
+    deployLog(`[deploy] → calling ignition deploy  module=ignition/modules/${sc}.ts  effectiveReset=${String(effectiveReset)}`, logFile);
+    const t0 = Date.now();
+    try {
+      await hre.tasks.getTask(["ignition", "deploy"]).run({
+        modulePath: `ignition/modules/${sc}.ts`,
+        parameters: resolvedParameters,
+        reset: effectiveReset,
+        verify,
+      });
+      deployLog(`[deploy] ✓ ignition finished in ${((Date.now() - t0) / 1000).toFixed(1)}s`, logFile);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      deployLog(`\n[deploy] ✖ ignition failed after ${((Date.now() - t0) / 1000).toFixed(1)}s`, logFile);
+      deployLog(`[deploy] error: ${msg}`, logFile);
+      if (stack) deployLog(`[deploy] stack:\n${stack}`, logFile);
+
+      // HHE10400-specific hint + journal dump
+      if (msg.includes("HHE10400") || msg.includes("were dropped") || msg.includes("ONCHAIN_INTERACTION_DROPPED")) {
+        deployLog(`\n[deploy] ── HHE10400 diagnosis ──`, logFile);
+        deployLog(`[deploy] All txs in the batch were dropped by the node mempool.`, logFile);
+        deployLog(`[deploy] Common causes on Nurachain:`, logFile);
+        deployLog(`[deploy]  1) fee < 47 gwei – node reports eth_gasPrice=0 but enforces floor. Check [rpc] eth_gasPrice above and that ignition.gasPrice=500_000_000_000n is in [config].`, logFile);
+        deployLog(`[deploy]  2) stale journal with 0-fee tx – run with --reset:  npm run deploy:nurachain:${sc} -- --reset`, logFile);
+        deployLog(`[deploy]  3) deployer balance 0 or nonce gap – check [diag] deployer line above.`, logFile);
+        deployLog(`[deploy]  4) RPC mismatch (wrong NURACHAIN_RPC_URL / chainId) – compare eth_chainId vs NURACHAIN_CHAIN_ID.`, logFile);
+        dumpJournalOnFailure(networkName, logFile);
+      } else {
+        dumpJournalOnFailure(networkName, logFile);
+      }
+
+      deployLog(`[deploy] full log saved to ${logFile}`, logFile);
+      throw error;
+    }
+
+    deployLog(`[deploy] full log saved to ${logFile}`, logFile);
   })
   .build();
 
@@ -391,6 +695,19 @@ export default defineConfig({
       chainId: nurachainChainId,
       url: configVariable("NURACHAIN_RPC_URL"),
       accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
+
+      // The node rejects any tx priced below ~47 gwei (every mined tx pays exactly
+      // that), yet its RPC reports eth_gasPrice and eth_maxPriorityFeePerGas as 0.
+      // Left alone, Ignition prices deploys off those zeros and the node drops the
+      // txs from the mempool — HHE10400, "all transactions were dropped". Pin fees
+      // above the floor instead of trusting the fee oracle. Both legacy and EIP-1559
+      // fields are set because Ignition sends type-2 on this network (see journal
+      // maxFeePerGas=0) and would otherwise ignore a lone gasPrice.
+      ignition: {
+        gasPrice: 500_000_000_000n,
+        maxFeePerGas: 500_000_000_000n,
+        maxPriorityFeePerGas: 5_000_000_000n,
+      },
     },
   },
 

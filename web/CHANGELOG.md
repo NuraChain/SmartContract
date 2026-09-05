@@ -14,9 +14,25 @@ changelog covers the Contract Manager application itself.
 - **Identity category** with the profile registry from the contracts repository:
   `NuraProfile` (the implementation ABI, to be used at the `NuraProfileProxy`
   address), `NuraProfileLens` (read model: `getProfile`, `getFullProfile`, typed
-  and paged collection getters) and `SocialVerifier` (reference extension). No
-  deployment is recorded yet, so all three show as such. `scripts/extract-abi.mjs`
-  picks up the three artifacts.
+  and paged collection getters) and `SocialVerifier` (reference extension),
+  with their Nurachain (1020) addresses from the 2026-09-05 deployment: the
+  proxy `0x8CFbcEf737BE3C67A52A20Ae3DCC685ACF759460` (implementation
+  `0x8ff69542387343fe8a9e053779f23058fBbA7f71`), the lens
+  `0xE8BD8Fc19907274b3CF87Bd72F4cd92Ca3c62F05` and the verifier
+  `0xc81bF5e81a9aB9447eeE873b916538750f3161D8`. `scripts/extract-abi.mjs` picks
+  up the three artifacts.
+
+### Changed
+
+- **The contracts page is organised by repository folder.** One section per
+  `contracts/<folder>` of the contracts repository (token, airdrop, univ3,
+  vault, forecast, profile, plus `testing` for WNURA and a section for shared
+  chain infrastructure), each headed by the folder's path, description and
+  deploy command. The chips filter by folder instead of by category; search also
+  matches folder names and paths. Each entry in `src/config/contracts.ts` now
+  declares its `folder`, and `FOLDERS` describes the sections.
+- The contract detail overview shows the source folder and links back to its
+  section.
 
 ## [2.0.0] - 2026-08-24
 

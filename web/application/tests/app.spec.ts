@@ -43,6 +43,36 @@ describe('Contracts page', () =>
         const card = container.querySelector('[data-testid="contract-airdrop"]');
         expect(card?.querySelector('[data-testid="no-address"]')?.textContent).toContain('No deployment recorded');
     });
+
+    it('groups the registry into one section per contracts-repository folder', () =>
+    {
+        const { container } = renderTest(() => ContractsPage({}));
+        for (const folder of ['token', 'airdrop', 'univ3', 'vault', 'forecast', 'profile', 'testing', 'external'])
+        {
+            const section = container.querySelector(`[data-testid="folder-${ folder }"]`);
+            expect(section, `section ${ folder }`).not.toBeNull();
+            expect(section?.querySelector('h2')).not.toBeNull();
+            expect(section?.querySelectorAll('[data-testid^="contract-"]').length).toBeGreaterThan(0);
+        }
+        // Each card sits in exactly one section, and the section names its source folder.
+        const profile = container.querySelector('[data-testid="folder-profile"]');
+        expect(profile?.textContent).toContain('contracts/profile');
+        expect(profile?.querySelector('[data-testid="contract-nura-profile"]')).not.toBeNull();
+        expect(profile?.querySelector('[data-testid="contract-bridge-usdt"]')).toBeNull();
+        expect(container.querySelectorAll('[data-testid="contract-bridge-usdt"]').length).toBe(1);
+    });
+
+    it('filters to a single folder section from the chips', async () =>
+    {
+        const { container } = renderTest(() => ContractsPage({}));
+        (container.querySelector('[data-testid="filter-profile"]') as HTMLButtonElement).click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(container.querySelector('[data-testid="folder-profile"]')).not.toBeNull();
+        expect(container.querySelector('[data-testid="folder-token"]')).toBeNull();
+        expect(container.querySelector('[data-testid="result-count"]')?.textContent).toContain('3 of');
+        expect(container.querySelector('[data-testid="filter-profile"]')?.getAttribute('aria-pressed')).toBe('true');
+    });
 });
 
 describe('Contract detail page', () =>

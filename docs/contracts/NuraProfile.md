@@ -308,3 +308,12 @@ the README for the full table and the packing decisions behind it.
 `scripts/profile-setup.ts` registers the verifier (owner action);
 `scripts/profile-upgrade.ts` performs and verifies a UUPS upgrade. Parameters: `owner`,
 `verifierAdmin`, `verifierSigner` (all default to the deployer).
+
+Live on Nurachain (chain id 1020), deployed 2026-09-05:
+
+| Contract | Address |
+| --- | --- |
+| `NuraProfileProxy` (the registry address; use the `NuraProfile` ABI here) | `0x8CFbcEf737BE3C67A52A20Ae3DCC685ACF759460` |
+| `NuraProfile` implementation 1.0.0 (behind the proxy) | `0x8ff69542387343fe8a9e053779f23058fBbA7f71` |
+| `NuraProfileLens` | `0xE8BD8Fc19907274b3CF87Bd72F4cd92Ca3c62F05` |
+| `SocialVerifier` | `0xc81bF5e81a9aB9447eeE873b916538750f3161D8` |

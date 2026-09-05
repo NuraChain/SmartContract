@@ -173,3 +173,12 @@ README گروه.
 مقداردهی‌شده با `owner`، lens و `SocialVerifier` را مستقر می‌کند؛ ‏`scripts/profile-setup.ts`
 افزونهٔ تأیید را ثبت می‌کند (عمل مالک)؛ ‏`scripts/profile-upgrade.ts` ارتقای UUPS را انجام و
 تأیید می‌کند. پارامترها: `owner`، `verifierAdmin`، `verifierSigner` (پیش‌فرض: deployer).
+
+مستقرشده روی نوراچین (chain id 1020) در تاریخ 2026-09-05:
+
+| قرارداد | آدرس |
+| --- | --- |
+| ‏`NuraProfileProxy` (آدرس رجیستری؛ با ABI ‏`NuraProfile` استفاده شود) | ‏`0x8CFbcEf737BE3C67A52A20Ae3DCC685ACF759460` |
+| پیاده‌سازی `NuraProfile` نسخهٔ 1.0.0 (پشت پراکسی) | ‏`0x8ff69542387343fe8a9e053779f23058fBbA7f71` |
+| ‏`NuraProfileLens` | ‏`0xE8BD8Fc19907274b3CF87Bd72F4cd92Ca3c62F05` |
+| ‏`SocialVerifier` | ‏`0xc81bF5e81a9aB9447eeE873b916538750f3161D8` |

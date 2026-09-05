@@ -80,11 +80,19 @@ Vault：       deposit ─▶ mint NFT（预留 lockAmount） ── redeem 向�
 | BridgeBNB | Nurachain 1020 | 0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc |
 | WNURA | Nurachain 1020 | 0xf0a4eC07916feBa4432121Ed5969887D9b939cD0 |
 | Multicall3 | Nurachain 1020 | 0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24 |
+| PredictionFactory | Nurachain 1020 | 0x33fE315c8a7FeA10152dD2b21B5d87936aF9B79d |
+| PredictionMarket（实现合约；市场为其克隆） | Nurachain 1020 | 0x4b94c8F32Ff506D31d79d21D94eC1d8AE3d1F145 |
+| PredictionPool（实现合约；资金池为其克隆） | Nurachain 1020 | 0x675b24758B199c3A5674f0288dfdeaA217fB2A86 |
+| PredictionTreasury | Nurachain 1020 | 0xDABEDD148F5AE5f3e130aB811a8975828Ea75AA8 |
+| NuraProfileProxy（个人资料注册表 — 使用 `NuraProfile` ABI） | Nurachain 1020 | 0x8CFbcEf737BE3C67A52A20Ae3DCC685ACF759460 |
+| NuraProfile（代理背后的实现合约 1.0.0） | Nurachain 1020 | 0x8ff69542387343fe8a9e053779f23058fBbA7f71 |
+| NuraProfileLens | Nurachain 1020 | 0xE8BD8Fc19907274b3CF87Bd72F4cd92Ca3c62F05 |
+| SocialVerifier | Nurachain 1020 | 0xc81bF5e81a9aB9447eeE873b916538750f3161D8 |
 | 其余 | Nurachain 1020 | 仓库中未记录 — 部署时登记 |
 
 ## 整体安全态势
 
-- 全库无代理/升级机制；行为在部署时固定。
+- 除个人资料注册表外全库无代理/升级机制：`NuraProfile` 是 ERC-1967 代理背后的 UUPS 合约，仅其两步制所有者可升级，且管理员无法触及用户内容；其余合约的行为在部署时固定。
 - 克隆实现调用 `_disableInitializers()`，初始化与创建原子完成。
 - 资金路径遵循 checks-effects-interactions 并使用存储型重入锁。
 - 舍入始终有利于资金池/金库。

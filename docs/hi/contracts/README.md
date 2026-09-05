@@ -80,11 +80,19 @@ Airdrop:       बैकएंड Claim(account,deadline) साइन करत
 | BridgeBNB | Nurachain 1020 | 0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc |
 | WNURA | Nurachain 1020 | 0xf0a4eC07916feBa4432121Ed5969887D9b939cD0 |
 | Multicall3 | Nurachain 1020 | 0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24 |
+| PredictionFactory | Nurachain 1020 | 0x33fE315c8a7FeA10152dD2b21B5d87936aF9B79d |
+| PredictionMarket (इम्प्लीमेंटेशन; मार्केट क्लोन हैं) | Nurachain 1020 | 0x4b94c8F32Ff506D31d79d21D94eC1d8AE3d1F145 |
+| PredictionPool (इम्प्लीमेंटेशन; पूल क्लोन हैं) | Nurachain 1020 | 0x675b24758B199c3A5674f0288dfdeaA217fB2A86 |
+| PredictionTreasury | Nurachain 1020 | 0xDABEDD148F5AE5f3e130aB811a8975828Ea75AA8 |
+| NuraProfileProxy (प्रोफ़ाइल रजिस्ट्री — `NuraProfile` ABI के साथ) | Nurachain 1020 | 0x8CFbcEf737BE3C67A52A20Ae3DCC685ACF759460 |
+| NuraProfile (प्रॉक्सी के पीछे इम्प्लीमेंटेशन 1.0.0) | Nurachain 1020 | 0x8ff69542387343fe8a9e053779f23058fBbA7f71 |
+| NuraProfileLens | Nurachain 1020 | 0xE8BD8Fc19907274b3CF87Bd72F4cd92Ca3c62F05 |
+| SocialVerifier | Nurachain 1020 | 0xc81bF5e81a9aB9447eeE873b916538750f3161D8 |
 | शेष | Nurachain 1020 | रिपॉज़िटरी में नहीं मिला — डिप्लॉय के समय दर्ज |
 
 ## समग्र सुरक्षा
 
-- कहीं भी प्रॉक्सी/अपग्रेड नहीं; व्यवहार डिप्लॉयमेंट पर तय होता है।
+- प्रोफ़ाइल रजिस्ट्री के अलावा कहीं भी प्रॉक्सी/अपग्रेड नहीं: `NuraProfile` एक ERC-1967 प्रॉक्सी के पीछे UUPS है, केवल उसका दो-चरणीय मालिक अपग्रेड कर सकता है, और एडमिन के पास उपयोगकर्ता सामग्री तक कोई रास्ता नहीं है। बाकी सभी का व्यवहार डिप्लॉयमेंट पर तय होता है।
 - क्लोन implementations `_disableInitializers()` कॉल करते हैं; initialization निर्माण के साथ atomic है।
 - पैसों के रास्ते checks-effects-interactions + storage आधारित reentrancy locks का पालन करते हैं।
 - राउंडिंग हमेशा पूल/ट्रेज़री के पक्ष में।

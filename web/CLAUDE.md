@@ -118,6 +118,12 @@ address of `null` means "no deployment recorded" — the UI says exactly that;
 do not invent addresses. `staticCallables` lists revert-to-answer functions
 (QuoterV2 pattern) so they render as reads.
 
+Every entry has a `folder`: the `contracts/<folder>` it is built from in the
+contracts repository. `FOLDERS` (same file) is the ordered list of sections the
+contracts page renders — one per repository folder, with its path, description
+and deploy command — so a new `contracts/<name>` folder there means a new
+`FOLDERS` entry here, and nothing else. `category` remains the short badge label.
+
 ## Wallet + transaction flow
 
 - Discovery/connection: `lib/wallet/store.ts` (EIP-6963, session restore via

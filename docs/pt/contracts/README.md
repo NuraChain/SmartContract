@@ -80,11 +80,19 @@ Airdrop:      o backend assina Claim(account,deadline) ─▶ getReward() ─▶
 | BridgeBNB | Nurachain 1020 | 0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc |
 | WNURA | Nurachain 1020 | 0xf0a4eC07916feBa4432121Ed5969887D9b939cD0 |
 | Multicall3 | Nurachain 1020 | 0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24 |
+| PredictionFactory | Nurachain 1020 | 0x33fE315c8a7FeA10152dD2b21B5d87936aF9B79d |
+| PredictionMarket (implementação; os mercados são clones) | Nurachain 1020 | 0x4b94c8F32Ff506D31d79d21D94eC1d8AE3d1F145 |
+| PredictionPool (implementação; os pools são clones) | Nurachain 1020 | 0x675b24758B199c3A5674f0288dfdeaA217fB2A86 |
+| PredictionTreasury | Nurachain 1020 | 0xDABEDD148F5AE5f3e130aB811a8975828Ea75AA8 |
+| NuraProfileProxy (o registro de perfis — usar a ABI de `NuraProfile`) | Nurachain 1020 | 0x8CFbcEf737BE3C67A52A20Ae3DCC685ACF759460 |
+| NuraProfile (implementação 1.0.0 atrás do proxy) | Nurachain 1020 | 0x8ff69542387343fe8a9e053779f23058fBbA7f71 |
+| NuraProfileLens | Nurachain 1020 | 0xE8BD8Fc19907274b3CF87Bd72F4cd92Ca3c62F05 |
+| SocialVerifier | Nurachain 1020 | 0xc81bF5e81a9aB9447eeE873b916538750f3161D8 |
 | demais | Nurachain 1020 | Não consta no repositório — registrado na implantação |
 
 ## Segurança transversal
 
-- Sem proxies nem upgrades; o comportamento fica fixado na implantação.
+- Sem proxies nem upgrades, exceto o registro de perfis: `NuraProfile` é um UUPS atrás de um proxy ERC-1967, atualizável apenas pelo seu proprietário em duas etapas, e o administrador não tem acesso ao conteúdo dos usuários. O comportamento de todo o resto fica fixado na implantação.
 - Implementações de clones chamam `_disableInitializers()`; inicialização é atômica com a criação.
 - Caminhos de dinheiro usam checks-effects-interactions com travas de reentrância em storage.
 - O arredondamento sempre favorece os poços/tesouraria.

@@ -1,84 +1,140 @@
-import { CONTRACTS, CATEGORY_LABEL } from '../config/contracts.ts';
+import { CONTRACTS, CATEGORY_LABEL, FOLDERS } from '../config/contracts.ts';
+import type { ContractDef, ContractFolder, FolderDef } from '../config/contracts.ts';
 
 import ContractCard from '../components/contract/contract-card.component.azeroth';
 import EmptyState from '../components/ui/empty-state.component.azeroth';
 import Input from '../components/ui/input.component.azeroth';
 
-// The supported-contract registry, searchable and filterable.
+// The supported-contract registry, one section per folder of the contracts
+// repository (contracts/token, contracts/airdrop, ...), searchable and
+// filterable by folder. A section only renders when something in it matches.
 
-const CATEGORIES = Object.keys(CATEGORY_LABEL) as Array<keyof typeof CATEGORY_LABEL>;
+interface Section
+{
+    folder: FolderDef;
+    contracts: ContractDef[];
+}
+
+// <For each> wants a mutable array; the registry exports its folders readonly.
+const FOLDER_LIST: FolderDef[] = [...FOLDERS];
+
+function matches(def: ContractDef, folder: FolderDef, text: string): boolean
+{
+    if (text === '')
+    {
+        return true;
+    }
+    return def.name.toLowerCase().includes(text) ||
+        (def.address ?? '').toLowerCase().includes(text) ||
+        CATEGORY_LABEL[def.category].toLowerCase().includes(text) ||
+        folder.title.toLowerCase().includes(text) ||
+        folder.path.toLowerCase().includes(text);
+}
 
 export default component Contracts()
 {
     state query = '';
-    state category = 'all';
+    state folder: ContractFolder | 'all' = 'all';
 
-    derived filtered = CONTRACTS.filter((def) =>
-    {
-        if (category !== 'all' && def.category !== category)
+    derived sections = FOLDERS
+        .filter((def) => folder === 'all' || def.id === folder)
+        .map((def): Section =>
         {
-            return false;
-        }
-        const text = query.trim().toLowerCase();
-        if (text === '')
-        {
-            return true;
-        }
-        return def.name.toLowerCase().includes(text) ||
-            (def.address ?? '').toLowerCase().includes(text) ||
-            CATEGORY_LABEL[def.category].toLowerCase().includes(text);
-    });
+            const text = query.trim().toLowerCase();
+            return {
+                folder: def,
+                contracts: CONTRACTS.filter((contract) => contract.folder === def.id && matches(contract, def, text))
+            };
+        })
+        .filter((section) => section.contracts.length > 0);
+
+    derived shown = sections.reduce((sum, section) => sum + section.contracts.length, 0);
 
     <section class="mx-auto w-full max-w-6xl px-4 py-8 sm:py-12">
         <h1 class="font-display text-xl font-bold tracking-wide text-ink sm:text-2xl">Contracts</h1>
         <p class="mt-1 max-w-2xl text-sm leading-relaxed text-faint">
-            Every contract this interface can talk to, straight from the registry. Entries marked
-            "no deployment recorded" are known contracts whose deployed address is not on record - they
-            are never guessed.
+            Every contract this interface can talk to, straight from the registry, grouped the way the
+            contracts repository is: one section per folder under <span class="font-mono" data-ltr>contracts/</span>,
+            each deployed on its own. Entries marked "no deployment recorded" are known contracts whose
+            deployed address is not on record - they are never guessed.
         </p>
 
         <div class="mt-6 flex flex-col gap-3 lg:flex-row lg:items-center">
             <div class="lg:w-80">
-                <Input value={ query } onInput={ (value) => { query = value; } } placeholder="Search name or address" icon="search" mono testId="contract-search" />
+                <Input value={ query } onInput={ (value) => { query = value; } } placeholder="Search name, address or folder" icon="search" mono testId="contract-search" />
             </div>
-            <div class="flex flex-wrap gap-1.5" role="group" aria-label="Filter by category">
+            <div class="flex flex-wrap gap-1.5" role="group" aria-label="Filter by folder">
                 <span>
-                    <Chip label="All" active={ category === 'all' } onPick={ () => { category = 'all'; } } testId="filter-all" />
+                    <Chip label="All" active={ folder === 'all' } onPick={ () => { folder = 'all'; } } testId="filter-all" />
                 </span>
-                <For each={ CATEGORIES } key={ (value) => value } let={ value }>
+                <For each={ FOLDER_LIST } key={ (def) => def.id } let={ def }>
                     <span>
                         <Chip
-                            label={ CATEGORY_LABEL[value] }
-                            active={ category === value }
-                            onPick={ () => { category = value; } }
-                            testId={ `filter-${ String(value) }` }
+                            label={ def.title }
+                            active={ folder === def.id }
+                            onPick={ () => { folder = def.id; } }
+                            testId={ `filter-${ def.id }` }
                         />
                     </span>
                 </For>
             </div>
             <p class="text-xs text-faint lg:ms-auto" aria-live="polite" data-testid="result-count">
-                { String(filtered.length) } of { String(CONTRACTS.length) }
+                { String(shown) } of { String(CONTRACTS.length) }
             </p>
         </div>
 
         <Show
-            when={ filtered.length > 0 }
+            when={ shown > 0 }
             fallback={
                 <EmptyState
                     title="No contracts match"
-                    hint="Try a different search or clear the category filter."
+                    hint="Try a different search or clear the folder filter."
                 />
             }
         >
-            <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <For each={ filtered } key={ (def) => def.id } let={ def }>
-                    <div>
-                        <ContractCard def={ def } />
-                    </div>
+            <div class="mt-4 flex flex-col gap-10">
+                <For each={ sections } key={ (section) => section.folder.id } let={ section }>
+                    <section
+                        class="scroll-mt-24"
+                        id={ `folder-${ section.folder.id }` }
+                        data-testid={ `folder-${ section.folder.id }` }
+                        aria-labelledby={ `folder-${ section.folder.id }-title` }
+                    >
+                        <FolderHeader folder={ section.folder } count={ section.contracts.length } />
+                        <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            <For each={ section.contracts } key={ (def) => def.id } let={ def }>
+                                <div>
+                                    <ContractCard def={ def } />
+                                </div>
+                            </For>
+                        </div>
+                    </section>
                 </For>
             </div>
         </Show>
     </section>
+}
+
+// A section's title bar: the folder's human name, its path in the repository,
+// what it does, how many contracts it holds here, and how it is deployed.
+component FolderHeader(props: { folder: FolderDef; count: number })
+{
+    <div class="flex flex-col gap-2 border-b border-line pb-3">
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2 id={ `folder-${ props.folder.id }-title` } class="font-display text-base font-semibold tracking-wide text-ink">
+                { props.folder.title }
+            </h2>
+            <span class="rounded-md bg-raised px-1.5 py-0.5 font-mono text-[11px] text-ice" data-ltr>{ props.folder.path }</span>
+            <span class="text-xs text-faint">
+                <span class="font-mono">{ String(props.count) }</span> { props.count === 1 ? 'contract' : 'contracts' }
+            </span>
+        </div>
+        <p class="max-w-3xl text-xs leading-relaxed text-faint">{ props.folder.description }</p>
+        <p class="text-[11px] text-faint">
+            <span class="eyebrow me-2">Deploy</span>
+            <span class="font-mono text-ink/80" data-ltr>{ props.folder.deploy }</span>
+        </p>
+    </div>
 }
 
 component Chip(props: { label: string; active: boolean; onPick: () => void; testId?: string })

@@ -21,6 +21,7 @@ can talk to. No component hardcodes an address or an ABI.
     name: 'BridgeUSDT',
     description: '...',
     category: 'token',
+    folder: 'token',                      // contracts/<folder> in the contracts repo = its section
     chainId: 1020,
     address: '0x4E0D...',                 // null = no deployment on record
     abi: BridgeUsdtAbi,                   // compiled artifact from the repo
@@ -38,6 +39,14 @@ npm run extract:abi        # ARTIFACTS_DIR env var overrides the source path
 An entry with `address: null` is listed honestly as "no deployment recorded" -
 never guessed. When a deployment lands, record its address there and the whole
 app picks it up.
+
+The contracts page is one section per folder of the contracts repository
+(`contracts/token`, `contracts/airdrop`, `contracts/univ3`, `contracts/vault`,
+`contracts/forecast`, `contracts/profile`, plus `contracts/testing` for the
+wrapped-native coin and a section for shared chain infrastructure the repository
+does not build). `FOLDERS` in the same file describes each section - path,
+description, deploy command - and every entry's `folder` files it under one.
+Adding a folder to the contracts repository means adding a `FOLDERS` entry here.
 
 ## Architecture
 

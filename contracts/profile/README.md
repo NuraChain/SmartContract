@@ -603,6 +603,18 @@ Environment: `NURACHAIN_RPC_URL`, `NURACHAIN_CHAIN_ID`, `DEPLOYER_PRIVATE_KEY` (
 network in `hardhat.config.ts` works, and nothing assumes a chain id. Nurachain's fee floor and
 0-fee oracle quirk are handled by the repo's `deploy` task (see the root README).
 
+**Live deployment (Nurachain, chain id 1020, 2026-09-05).** Recorded from Ignition's
+`deployed_addresses.json` and checked against the chain: the proxy's ERC-1967 slot points at the
+implementation, `lens.core()` and `verifier.profileRegistry()` both return the proxy, and the
+runtime code sizes match this build.
+
+| Contract | Address | Role |
+| --- | --- | --- |
+| `NuraProfileProxy` | `0x8CFbcEf737BE3C67A52A20Ae3DCC685ACF759460` | **the registry** — use with the `NuraProfile` ABI |
+| `NuraProfile` (implementation, 1.0.0) | `0x8ff69542387343fe8a9e053779f23058fBbA7f71` | behind the proxy; changes on upgrade |
+| `NuraProfileLens` | `0xE8BD8Fc19907274b3CF87Bd72F4cd92Ca3c62F05` | read model |
+| `SocialVerifier` | `0xc81bF5e81a9aB9447eeE873b916538750f3161D8` | reference extension; register with `npm run setup:nurachain:profile` |
+
 **Verification.** Nurachain's explorer does not yet accept verification API calls, so verify by
 hand: `npx hardhat flatten contracts/profile/NuraProfile.sol > NuraProfile.flat.sol` (and the
 proxy, the lens, the verifier), compiler 0.8.28, optimizer on / 200 runs, **viaIR on**, EVM

@@ -2,7 +2,7 @@ import { Link, useParams } from 'azerothjs';
 import type { Child } from 'azerothjs';
 
 import { NURA_CHAIN, explorerAddressUrl } from '../config/chain.ts';
-import { CATEGORY_LABEL, findContract } from '../config/contracts.ts';
+import { CATEGORY_LABEL, findContract, findFolder } from '../config/contracts.ts';
 import type { ContractDef } from '../config/contracts.ts';
 import { parseAbiFunctions } from '../lib/abi.ts';
 import type { FunctionSpec } from '../lib/abi.ts';
@@ -142,6 +142,17 @@ export default component ContractDetail()
                                     <CopyButton value={ address } label="Copy contract address" testId="copy-address" />
                                 </span>
                             </Show>
+                        </OverviewRow>
+                        <OverviewRow label="Source">
+                            <Link
+                                to={ `/contracts#folder-${ d().folder }` }
+                                class="font-mono text-xs text-ice hover:underline"
+                                data-ltr
+                                title={ findFolder(d().folder).title }
+                                data-testid="source-folder"
+                            >
+                                { findFolder(d().folder).path }
+                            </Link>
                         </OverviewRow>
                         <OverviewRow label="Network">
                             <span>{ NURA_CHAIN.name }</span>

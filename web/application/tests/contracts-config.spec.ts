@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getAddress } from 'viem';
 
 import { NURA_CHAIN_ID } from '../src/config/chain.ts';
-import { CATEGORY_LABEL } from '../src/config/contracts.ts';
+import { CATEGORY_LABEL, FOLDERS, contractsInFolder, findFolder } from '../src/config/contracts.ts';
 import type { ContractCategory } from '../src/config/contracts.ts';
 import { CONTRACTS, findContract } from '../src/config/contracts.ts';
 import { parseAbiFunctions } from '../src/lib/abi.ts';
@@ -81,5 +81,36 @@ describe('contract registry', () =>
         expect(findContract('bridge-usdt')?.name).toBe('BridgeUSDT');
         expect(findContract('nonexistent')).toBeUndefined();
         expect(findContract(undefined)).toBeUndefined();
+    });
+
+    it('files every contract under a declared folder, and every folder holds something', () =>
+    {
+        const ids = FOLDERS.map((folder) => folder.id);
+        expect(new Set(ids).size).toBe(FOLDERS.length);
+
+        for (const def of CONTRACTS)
+        {
+            expect(ids, `${ def.id } names an unknown folder`).toContain(def.folder);
+            expect(findFolder(def.folder).id).toBe(def.folder);
+        }
+        for (const folder of FOLDERS)
+        {
+            expect(contractsInFolder(folder.id).length, `${ folder.id } section would be empty`).toBeGreaterThan(0);
+            expect(folder.path).not.toBe('');
+            expect(folder.deploy).not.toBe('');
+        }
+    });
+
+    it('mirrors the contracts repository: each deployable folder is a `hardhat deploy --sc` group', () =>
+    {
+        const deployable = ['token', 'airdrop', 'univ3', 'vault', 'forecast', 'profile'];
+        for (const id of deployable)
+        {
+            const folder = findFolder(id as (typeof FOLDERS)[number]['id']);
+            expect(folder.path).toBe(`contracts/${ id }`);
+            expect(folder.deploy).toContain(`--sc ${ id }`);
+        }
+        expect(findFolder('testing').path).toBe('contracts/testing');
+        expect(contractsInFolder('profile').map((def) => def.id)).toEqual(['nura-profile', 'nura-profile-lens', 'social-verifier']);
     });
 });

@@ -80,11 +80,19 @@ Airdrop:      backend Claim(account,deadline) imzalar ─▶ getReward() ─▶ 
 | BridgeBNB | Nurachain 1020 | 0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc |
 | WNURA | Nurachain 1020 | 0xf0a4eC07916feBa4432121Ed5969887D9b939cD0 |
 | Multicall3 | Nurachain 1020 | 0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24 |
+| PredictionFactory | Nurachain 1020 | 0x33fE315c8a7FeA10152dD2b21B5d87936aF9B79d |
+| PredictionMarket (uygulama; piyasalar klondur) | Nurachain 1020 | 0x4b94c8F32Ff506D31d79d21D94eC1d8AE3d1F145 |
+| PredictionPool (uygulama; havuzlar klondur) | Nurachain 1020 | 0x675b24758B199c3A5674f0288dfdeaA217fB2A86 |
+| PredictionTreasury | Nurachain 1020 | 0xDABEDD148F5AE5f3e130aB811a8975828Ea75AA8 |
+| NuraProfileProxy (profil kaydı — `NuraProfile` ABI ile) | Nurachain 1020 | 0x8CFbcEf737BE3C67A52A20Ae3DCC685ACF759460 |
+| NuraProfile (proxy arkasındaki uygulama 1.0.0) | Nurachain 1020 | 0x8ff69542387343fe8a9e053779f23058fBbA7f71 |
+| NuraProfileLens | Nurachain 1020 | 0xE8BD8Fc19907274b3CF87Bd72F4cd92Ca3c62F05 |
+| SocialVerifier | Nurachain 1020 | 0xc81bF5e81a9aB9447eeE873b916538750f3161D8 |
 | diğerleri | Nurachain 1020 | Depoda bulunamadı — dağıtımda kaydedilir |
 
 ## Bütünsel güvenlik
 
-- Hiçbir yerde proxy/yükseltme yok; davranış dağıtımda kesinleşir.
+- Profil kaydı dışında hiçbir yerde proxy/yükseltme yok: `NuraProfile`, ERC-1967 proxy arkasında UUPS'tir, yalnızca iki adımlı sahibi yükseltebilir ve yöneticinin kullanıcı içeriğine erişimi yoktur. Diğer tüm sözleşmelerin davranışı dağıtımda kesinleşir.
 - Klon uygulamaları `_disableInitializers()` çağırır; başlatma, oluşturmayla atomiktir.
 - Para yolları checks-effects-interactions + storage tabanlı reentrancy kilitleri kullanır.
 - Yuvarlama her zaman havuzlar/hazine lehinedir.

@@ -17,6 +17,7 @@ Documentation de tous les contrats du dépôt, générée à partir du code sour
 | `PredictionMarket` | forecast/PredictionMarket.sol | marché de prédiction CPMM (ERC-1155) |
 | `PredictionPool` | forecast/PredictionPool.sol | marché parimutuel |
 | `PredictionTreasury` | forecast/PredictionTreasury.sol | trésorerie des frais |
+| `NuraProfile` | profile/NuraProfile.sol | registre de profils (UUPS) : nom unique, champs multilingues, extensions |
 | `FeeMath` / `MarketMath` | forecast/libraries | bibliothèques mathématiques |
 | `WNURA` | testing/WNURA.sol | natif enveloppé (WETH9) |
 | `MockToken` | testing/MockToken.sol | jeton de test |

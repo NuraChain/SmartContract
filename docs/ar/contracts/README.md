@@ -18,6 +18,7 @@
 | `PredictionMarket` | forecast/PredictionMarket.sol | سوق تنبؤ CPMM (‏ERC-1155) |
 | `PredictionPool` | forecast/PredictionPool.sol | سوق تنبؤ باريموتيول |
 | `PredictionTreasury` | forecast/PredictionTreasury.sol | خزانة الرسوم |
+| `NuraProfile` | profile/NuraProfile.sol | سجل الملفات الشخصية (UUPS): اسم مستخدم فريد، حقول متعددة اللغات، إضافات |
 | `FeeMath` / `MarketMath` | forecast/libraries | مكتبات رياضية |
 | `WNURA` | testing/WNURA.sol | العملة الأصلية المغلّفة (WETH9) |
 | `MockToken` | testing/MockToken.sol | رمز تجريبي للاختبار |

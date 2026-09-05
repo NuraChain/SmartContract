@@ -7,6 +7,17 @@ Notable changes to Contract Manager. The format follows
 The contracts this application administers live in a separate repository; this
 changelog covers the Contract Manager application itself.
 
+## [Unreleased]
+
+### Added
+
+- **Identity category** with the profile registry from the contracts repository:
+  `NuraProfile` (the implementation ABI, to be used at the `NuraProfileProxy`
+  address), `NuraProfileLens` (read model: `getProfile`, `getFullProfile`, typed
+  and paged collection getters) and `SocialVerifier` (reference extension). No
+  deployment is recorded yet, so all three show as such. `scripts/extract-abi.mjs`
+  picks up the three artifacts.
+
 ## [2.0.0] - 2026-08-24
 
 ### Changed

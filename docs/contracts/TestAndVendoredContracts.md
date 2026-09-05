@@ -10,6 +10,7 @@ they exist for the test suites, or are vendored third-party code.
 | `contracts/forecast/mocks/ReentrantBuyer.sol` | `ReentrantBuyer` | Attempts a re-entrant `buy` against a `PredictionMarket` clone during a callback; proves the storage reentrancy lock holds. |
 | `contracts/airdrop/mocks/AirdropMocks.sol` | `IAirdrop` (interface), `ReentrantClaimer`, `RejectingClaimer` | `ReentrantClaimer` re-enters `getReward` from its receive path (blocked by guard + CEI); `RejectingClaimer` refuses payouts to prove failed sends cannot corrupt claim state. |
 | `contracts/vault/mocks/VaultMocks.sol` | `MockConfigurableERC20`, `MockReentrantERC20`, `MockReentrantReceiver` | Misbehaving ERC20s (transfer hooks that re-enter deposit/redeem) and an ERC-721 receiver that re-enters mint; used by `Vault.test.ts` and the Solidity fuzz/invariant suites. |
+| `contracts/profile/mocks/ProfileMocks.sol` | `MockExtension`, `NotAnExtension`, `NuraProfileV2Mock` | `MockExtension` reports a configurable id / registry / ERC-165 answer so every failure mode of the `registerExtension` handshake is testable, and forwards writes to the core to exercise the namespace rules; `NotAnExtension` has no ERC-165 at all; `NuraProfileV2Mock` is the shape a real V2 takes (own ERC-7201 namespace, `reinitializer(2)`, new functions) and proves an upgrade keeps every V1 profile intact. |
 
 None of these hold funds in production deployments and none are referenced by Ignition
 modules.

@@ -49,6 +49,14 @@ function probes(deployer: string) {
         args: [deployer, deployer, 250n * 10n ** 18n, "Backed Position", "BPOS", ""],
       },
     ],
+    // The proxy is not probed: its constructor delegatecalls `initialize` into the
+    // implementation, so it can only be estimated against a real implementation address.
+    // The lens and verifier only store the addresses they are given.
+    profile: [
+      { name: "NuraProfile", args: [] },
+      { name: "NuraProfileLens", args: [deployer] },
+      { name: "SocialVerifier", args: [deployer, deployer, deployer] },
+    ],
   };
 }
 

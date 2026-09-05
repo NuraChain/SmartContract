@@ -10,9 +10,11 @@
     "test:solidity": "hardhat test solidity",
     "test:fuzz": "hardhat test solidity --grep testFuzz_",
     "test:invariant": "hardhat test solidity --grep invariant_",
-    "test:security": "hardhat test mocha --grep \"domain binding|hostile claimants|permit security|role administration|fee authority|admin withdrawal|reentrancy|public mint toggle|input validation\"",
+    "test:security": "hardhat test mocha --grep \"domain binding|hostile claimants|permit security|role administration|fee authority|admin withdrawal|reentrancy|public mint toggle|input validation|profile security\"",
     "test:scripts": "hardhat test mocha test/scripts/params.test.ts test/scripts/modules.test.ts",
-    "coverage": "hardhat test mocha --coverage test/BridgeToken.test.ts test/Airdrop.test.ts test/Vault.test.ts test/scripts/params.test.ts",
+    "test:profile": "hardhat test mocha test/Profile.test.ts",
+    "gas:profile": "hardhat run scripts/profile-gas.ts",
+    "coverage": "hardhat test mocha --coverage test/BridgeToken.test.ts test/Airdrop.test.ts test/Vault.test.ts test/Profile.test.ts test/scripts/params.test.ts",
     "typecheck": "tsc --noEmit",
     "clean": "hardhat clean",
     "preflight:nurachain": "hardhat run scripts/preflight.ts --network nurachain",
@@ -22,7 +24,10 @@
     "deploy:nurachain:univ3": "hardhat deploy --sc univ3 --network nurachain",
     "deploy:nurachain:vault": "hardhat deploy --sc vault --network nurachain",
     "deploy:nurachain:forecast": "hardhat deploy --sc forecast --network nurachain",
-    "setup:nurachain:vault": "hardhat run scripts/vault-setup.ts --network nurachain"
+    "deploy:nurachain:profile": "hardhat deploy --sc profile --network nurachain",
+    "setup:nurachain:vault": "hardhat run scripts/vault-setup.ts --network nurachain",
+    "setup:nurachain:profile": "hardhat run scripts/profile-setup.ts --network nurachain",
+    "upgrade:nurachain:profile": "hardhat run scripts/profile-upgrade.ts --network nurachain"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.7",

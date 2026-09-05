@@ -44,7 +44,7 @@ try {
 // Each entry is a folder under contracts/ paired with the Ignition module that
 // deploys it. Adding a contracts/<name> folder means adding ignition/modules/<name>.ts
 // and one line here.
-const DEPLOYABLE = ["token", "airdrop", "univ3", "vault", "forecast"] as const;
+const DEPLOYABLE = ["token", "airdrop", "univ3", "vault", "forecast", "profile"] as const;
 
 // contracts/univ3 is vendored Uniswap, pinned to the compiler it was audited and deployed
 // with, so the build needs three compilers. Hardhat picks one per file from the pragma;
@@ -174,6 +174,26 @@ const FORECAST_OVERRIDES = Object.fromEntries(
         // selectors in the dispatcher (e.g. 0xd628548b).
         viaIR: !file.endsWith("PredictionPool.sol"),
         optimizer: { enabled: true, runs: 400 },
+        evmVersion: "cancun",
+      },
+    },
+  ]),
+);
+
+// contracts/profile is the UUPS profile registry. It compiles with the repo's 0.8.28 profile
+// (cancun, runs 200) plus viaIR, for one reason: Nurachain enforces EIP-170 at exactly
+// 24576 bytes, and the legacy pipeline lands NuraProfile at ~25.4 KB. The Yul pipeline
+// brings it well under the limit with room for future implementation versions, and
+// removes the stack-too-deep ceiling the lens projections otherwise hit. Applied to the
+// whole folder so the lens, the proxy, the extensions and the mocks share one build.
+const PROFILE_OVERRIDES = Object.fromEntries(
+  solidityFiles("contracts/profile").map((file) => [
+    file,
+    {
+      version: "0.8.28",
+      settings: {
+        viaIR: true,
+        optimizer: { enabled: true, runs: 200 },
         evmVersion: "cancun",
       },
     },
@@ -681,8 +701,8 @@ export default defineConfig({
   // production profile, so either difference is one that lands on-chain.
   solidity: {
     profiles: {
-      default: { isolated: true, compilers: COMPILERS, overrides: { ...V3_OVERRIDES, ...FORECAST_OVERRIDES } },
-      production: { isolated: true, compilers: COMPILERS, overrides: { ...V3_OVERRIDES, ...FORECAST_OVERRIDES } },
+      default: { isolated: true, compilers: COMPILERS, overrides: { ...V3_OVERRIDES, ...FORECAST_OVERRIDES, ...PROFILE_OVERRIDES } },
+      production: { isolated: true, compilers: COMPILERS, overrides: { ...V3_OVERRIDES, ...FORECAST_OVERRIDES, ...PROFILE_OVERRIDES } },
     },
   },
 

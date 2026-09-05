@@ -1,0 +1,989 @@
+[
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "core_",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "constructor"
+    },
+    {
+        "inputs": [],
+        "name": "ZeroAddress",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "core",
+        "outputs": [
+            {
+                "internalType": "contract INuraProfile",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            }
+        ],
+        "name": "getFullProfile",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "username",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "uint64",
+                                "name": "createdAt",
+                                "type": "uint64"
+                            },
+                            {
+                                "internalType": "uint64",
+                                "name": "updatedAt",
+                                "type": "uint64"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "displayName",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "bio",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "avatar",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "cover",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "location",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "jobTitle",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "company",
+                                "type": "string"
+                            }
+                        ],
+                        "internalType": "struct ProfileView",
+                        "name": "profile",
+                        "type": "tuple"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "url",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "title",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "description",
+                                "type": "string"
+                            }
+                        ],
+                        "internalType": "struct Website[]",
+                        "name": "websites",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "uri",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "category",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "alt",
+                                "type": "string"
+                            }
+                        ],
+                        "internalType": "struct Image[]",
+                        "name": "images",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "platform",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "handle",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "url",
+                                "type": "string"
+                            }
+                        ],
+                        "internalType": "struct Social[]",
+                        "name": "socials",
+                        "type": "tuple[]"
+                    }
+                ],
+                "internalType": "struct FullProfileView",
+                "name": "full",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "profileId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            }
+        ],
+        "name": "getFullProfileById",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "username",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "uint64",
+                                "name": "createdAt",
+                                "type": "uint64"
+                            },
+                            {
+                                "internalType": "uint64",
+                                "name": "updatedAt",
+                                "type": "uint64"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "displayName",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "bio",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "avatar",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "cover",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "location",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "jobTitle",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "company",
+                                "type": "string"
+                            }
+                        ],
+                        "internalType": "struct ProfileView",
+                        "name": "profile",
+                        "type": "tuple"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "url",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "title",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "description",
+                                "type": "string"
+                            }
+                        ],
+                        "internalType": "struct Website[]",
+                        "name": "websites",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "uri",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "category",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "alt",
+                                "type": "string"
+                            }
+                        ],
+                        "internalType": "struct Image[]",
+                        "name": "images",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "platform",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "handle",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "url",
+                                "type": "string"
+                            }
+                        ],
+                        "internalType": "struct Social[]",
+                        "name": "socials",
+                        "type": "tuple[]"
+                    }
+                ],
+                "internalType": "struct FullProfileView",
+                "name": "full",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "profileId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "imageId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            }
+        ],
+        "name": "getImage",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "uri",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "category",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "alt",
+                        "type": "string"
+                    }
+                ],
+                "internalType": "struct Image",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "profileId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            }
+        ],
+        "name": "getImages",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "uri",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "category",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "alt",
+                        "type": "string"
+                    }
+                ],
+                "internalType": "struct Image[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "profileId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "string",
+                "name": "kind",
+                "type": "string"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            },
+            {
+                "internalType": "string[]",
+                "name": "attributeKeys",
+                "type": "string[]"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getItems",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "string[]",
+                        "name": "attributes",
+                        "type": "string[]"
+                    }
+                ],
+                "internalType": "struct ItemView[]",
+                "name": "items",
+                "type": "tuple[]"
+            },
+            {
+                "internalType": "uint256",
+                "name": "total",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            }
+        ],
+        "name": "getProfile",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "owner",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "username",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "uint64",
+                        "name": "createdAt",
+                        "type": "uint64"
+                    },
+                    {
+                        "internalType": "uint64",
+                        "name": "updatedAt",
+                        "type": "uint64"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "displayName",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "bio",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "avatar",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "cover",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "location",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "jobTitle",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "company",
+                        "type": "string"
+                    }
+                ],
+                "internalType": "struct ProfileView",
+                "name": "v",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "profileId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            }
+        ],
+        "name": "getProfileById",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "owner",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "username",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "uint64",
+                        "name": "createdAt",
+                        "type": "uint64"
+                    },
+                    {
+                        "internalType": "uint64",
+                        "name": "updatedAt",
+                        "type": "uint64"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "displayName",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "bio",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "avatar",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "cover",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "location",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "jobTitle",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "company",
+                        "type": "string"
+                    }
+                ],
+                "internalType": "struct ProfileView",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "string",
+                "name": "username",
+                "type": "string"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            }
+        ],
+        "name": "getProfileByUsername",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "owner",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "username",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "uint64",
+                        "name": "createdAt",
+                        "type": "uint64"
+                    },
+                    {
+                        "internalType": "uint64",
+                        "name": "updatedAt",
+                        "type": "uint64"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "displayName",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "bio",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "avatar",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "cover",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "location",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "jobTitle",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "company",
+                        "type": "string"
+                    }
+                ],
+                "internalType": "struct ProfileView",
+                "name": "v",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "profileId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "socialId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            }
+        ],
+        "name": "getSocial",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "platform",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "handle",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "url",
+                        "type": "string"
+                    }
+                ],
+                "internalType": "struct Social",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "profileId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            }
+        ],
+        "name": "getSocials",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "platform",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "handle",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "url",
+                        "type": "string"
+                    }
+                ],
+                "internalType": "struct Social[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "profileId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "websiteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            }
+        ],
+        "name": "getWebsite",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "url",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "title",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "description",
+                        "type": "string"
+                    }
+                ],
+                "internalType": "struct Website",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "profileId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "string",
+                "name": "lang",
+                "type": "string"
+            }
+        ],
+        "name": "getWebsites",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "url",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "title",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "description",
+                        "type": "string"
+                    }
+                ],
+                "internalType": "struct Website[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]

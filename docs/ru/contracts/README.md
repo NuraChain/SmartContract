@@ -17,6 +17,7 @@
 | `PredictionMarket` | forecast/PredictionMarket.sol | рынок предсказаний CPMM (ERC-1155) |
 | `PredictionPool` | forecast/PredictionPool.sol | пари-мютуэль рынок |
 | `PredictionTreasury` | forecast/PredictionTreasury.sol | казначейство комиссий |
+| `NuraProfile` | profile/NuraProfile.sol | реестр профилей (UUPS): уникальные имена, многоязычные поля, расширения |
 | `FeeMath` / `MarketMath` | forecast/libraries | математические библиотеки |
 | `WNURA` | testing/WNURA.sol | обёртка нативной монеты (WETH9) |
 | `MockToken` | testing/MockToken.sol | тестовый токен |

@@ -17,6 +17,7 @@ Documentación de todos los contratos del repositorio, generada del código fuen
 | `PredictionMarket` | forecast/PredictionMarket.sol | mercado de predicción CPMM (ERC-1155) |
 | `PredictionPool` | forecast/PredictionPool.sol | mercado parimutual |
 | `PredictionTreasury` | forecast/PredictionTreasury.sol | tesorería de comisiones |
+| `NuraProfile` | profile/NuraProfile.sol | registro de perfiles (UUPS): usuario único, campos multilingües, extensiones |
 | `FeeMath` / `MarketMath` | forecast/libraries | librerías matemáticas |
 | `WNURA` | testing/WNURA.sol | nativo envuelto (WETH9) |
 | `MockToken` | testing/MockToken.sol | token de prueba |

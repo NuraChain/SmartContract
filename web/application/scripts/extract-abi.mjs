@@ -29,7 +29,13 @@ const picks = [
     ['forecast/PredictionMarket.sol/PredictionMarket.json', 'PredictionMarket.json'],
     ['forecast/PredictionPool.sol/PredictionPool.json', 'PredictionPool.json'],
     ['forecast/PredictionTreasury.sol/PredictionTreasury.json', 'PredictionTreasury.json'],
-    ['vault/CollateralizedNFT.sol/CollateralizedNFT.json', 'CollateralizedNFT.json']
+    ['vault/CollateralizedNFT.sol/CollateralizedNFT.json', 'CollateralizedNFT.json'],
+    // Profile registry: the implementation ABI is what callers use AT THE PROXY ADDRESS
+    // (UUPS - the proxy itself has no ABI of its own). Lens = read model, verifier = the
+    // reference extension.
+    ['profile/NuraProfile.sol/NuraProfile.json', 'NuraProfile.json'],
+    ['profile/NuraProfileLens.sol/NuraProfileLens.json', 'NuraProfileLens.json'],
+    ['profile/extensions/SocialVerifier.sol/SocialVerifier.json', 'SocialVerifier.json']
 ];
 
 let total = 0;

@@ -12,6 +12,7 @@
 | `contracts/forecast/mocks/ReentrantBuyer.sol` | `ReentrantBuyer` | در حین callback تلاش به buy مجدد روی کلون PredictionMarket می‌کند؛ اثبات سلامت قفل reentrancy مبتنی بر storage. |
 | `contracts/airdrop/mocks/AirdropMocks.sol` | `IAirdrop` (اینترفیس)، ‏`ReentrantClaimer`, `RejectingClaimer` | اولی از مسیر receive دوباره getReward می‌زند (با گارد + CEI بسته می‌شود)؛ دومی پرداخت را رد می‌کند تا ثابت شود send ناموفق state ادعا را خراب نمی‌کند. |
 | `contracts/vault/mocks/VaultMocks.sol` | `MockConfigurableERC20`, `MockReentrantERC20`, `MockReentrantReceiver` | ERC20های بدرفتار (هوک انتقال که به deposit/redeem برمی‌گردد) و گیرندهٔ ERC-721ای که هنگام mint re-entry می‌کند؛ مصرف Vault.test.ts و مجموعه‌های fuzz/invariant سولیدیتی. |
+| `contracts/profile/mocks/ProfileMocks.sol` | `MockExtension`, `NotAnExtension`, `NuraProfileV2Mock` | ‏`MockExtension` شناسه/رجیستری/پاسخ ERC-165 قابل‌تنظیم دارد تا همهٔ حالت‌های خطای handshake ‏`registerExtension` تست شود و نوشتن‌ها را به هسته می‌فرستد تا قواعد فضای‌نام آزموده شود؛ ‏`NotAnExtension` اصلاً ERC-165 ندارد؛ ‏`NuraProfileV2Mock` شکل یک V2 واقعی است (فضای‌نام ERC-7201 مستقل، `reinitializer(2)`، توابع جدید) و ثابت می‌کند ارتقا همهٔ پروفایل‌های V1 را سالم نگه می‌دارد. |
 
 هیچ‌کدام در دیپلوی‌های production وجوه نگه نمی‌دارند و هیچ ماژول Ignitionی به آن‌ها
 اشاره نمی‌کند.

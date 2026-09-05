@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 
 import airdropModule from "../../ignition/modules/airdrop.ts";
+import profileModule from "../../ignition/modules/profile.ts";
 import tokenModule from "../../ignition/modules/token.ts";
 import univ3Module from "../../ignition/modules/univ3.ts";
 import vaultModule from "../../ignition/modules/vault.ts";
@@ -231,6 +232,82 @@ describe("ignition modules", () => {
 
       await vault.redeem(1n);
       expect(await vault.totalReserved()).to.equal(0n);
+    });
+  });
+
+  describe("profile", () => {
+    it("deploys implementation, initialized proxy, lens and verifier, all pointing at the proxy", async () => {
+      const [deployer] = await ethers.getSigners();
+      const { profile, implementation, proxy, lens, verifier } = await ignition.deploy(profileModule);
+
+      const proxyAddress = await proxy.getAddress();
+      expect(await profile.getAddress()).to.equal(proxyAddress);
+      expect(await profile.owner()).to.equal(deployer.address);
+      expect(await profile.VERSION()).to.equal("1.0.0");
+      expect(await profile.profilesCreated()).to.equal(0n);
+
+      // ERC-1967 implementation slot points at the bare implementation, which is locked.
+      const implSlot = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+      const stored = await ethers.provider.getStorage(proxyAddress, implSlot);
+      expect("0x" + stored.slice(-40)).to.equal((await implementation.getAddress()).toLowerCase());
+      await expect(implementation.initialize(deployer.address)).to.be.revertedWithCustomError(
+        implementation,
+        "InvalidInitialization",
+      );
+
+      expect(await lens.core()).to.equal(proxyAddress);
+      expect(await verifier.profileRegistry()).to.equal(proxyAddress);
+      expect(await verifier.hasRole(await verifier.VERIFIER_ROLE(), deployer.address)).to.equal(true);
+      expect(await verifier.hasRole(await verifier.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(true);
+
+      // The module deliberately does not register the extension (owner action; see profile-setup.ts).
+      expect(await profile.getExtension("social-verifier")).to.equal(ethers.ZeroAddress);
+    });
+
+    it("routes owner, verifierAdmin and verifierSigner through, and the result works end to end", async () => {
+      const [deployer, owner, verifierAdmin, signer] = await ethers.getSigners();
+      const { profile, lens, verifier } = await ignition.deploy(profileModule, {
+        parameters: {
+          profile: { owner: owner.address, verifierAdmin: verifierAdmin.address, verifierSigner: signer.address },
+        },
+      });
+
+      expect(await profile.owner()).to.equal(owner.address);
+      expect(await verifier.hasRole(await verifier.DEFAULT_ADMIN_ROLE(), verifierAdmin.address)).to.equal(true);
+      expect(await verifier.hasRole(await verifier.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(false);
+      expect(await verifier.hasRole(await verifier.VERIFIER_ROLE(), signer.address)).to.equal(true);
+
+      // The owner registers the verifier (what scripts/profile-setup.ts does), a user opts in and gets verified.
+      // Ignition hands back BaseContracts; re-attach the typed ABIs to use them from other signers.
+      const core = await ethers.getContractAt("NuraProfile", await profile.getAddress(), owner);
+      const verifierAs = await ethers.getContractAt("SocialVerifier", await verifier.getAddress(), deployer);
+      await core.registerExtension("social-verifier", await verifier.getAddress());
+      await core.connect(deployer).createProfile("deployer", "Deployer", "", "");
+      await core.connect(deployer).approveExtension(1n, "social-verifier", true);
+
+      const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 3600);
+      const sig = await signer.signTypedData(
+        {
+          name: "NuraSocialVerifier",
+          version: "1",
+          chainId: (await ethers.provider.getNetwork()).chainId,
+          verifyingContract: await verifier.getAddress(),
+        },
+        {
+          VerifyHandle: [
+            { name: "profileId", type: "uint256" },
+            { name: "platform", type: "string" },
+            { name: "handle", type: "string" },
+            { name: "nonce", type: "uint256" },
+            { name: "deadline", type: "uint256" },
+          ],
+        },
+        { profileId: 1n, platform: "github", handle: "nura-deployer", nonce: 0n, deadline },
+      );
+      await verifierAs.verifyHandle(1n, "github", "nura-deployer", deadline, sig);
+
+      expect(await verifier.verifiedHandle(1n, "github")).to.equal("nura-deployer");
+      expect((await lens.getProfile(deployer.address, "")).displayName).to.equal("Deployer");
     });
   });
 });

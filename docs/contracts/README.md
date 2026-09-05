@@ -34,6 +34,7 @@ vendored code are covered by dedicated files as noted below.
 | [PredictionTreasury.md](PredictionTreasury.md) | `PredictionTreasury` | `contracts/forecast/PredictionTreasury.sol` | fee sink |
 | [FeeMath.md](FeeMath.md) | `FeeMath` | `contracts/forecast/libraries/FeeMath.sol` | library |
 | [MarketMath.md](MarketMath.md) | `MarketMath` | `contracts/forecast/libraries/MarketMath.sol` | library |
+| [NuraProfile.md](NuraProfile.md) | `NuraProfile` (+ `NuraProfileProxy`, `NuraProfileLens`, `SocialVerifier`) | `contracts/profile/NuraProfile.sol` | UUPS profile registry |
 | [WNURA.md](WNURA.md) | `WNURA` | `contracts/testing/WNURA.sol` | wrapped-native token |
 | [MockToken.md](MockToken.md) | `MockToken` | `contracts/testing/MockToken.sol` | dev/test token |
 | [TestAndVendoredContracts.md](TestAndVendoredContracts.md) | mocks + Uniswap V3 tree | various | test-only / vendored |

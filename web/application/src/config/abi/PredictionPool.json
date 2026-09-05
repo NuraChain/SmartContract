@@ -230,6 +230,10 @@
         "type": "event"
     },
     {
+        "stateMutability": "payable",
+        "type": "fallback"
+    },
+    {
         "inputs": [],
         "name": "MAX_FEE_BPS",
         "outputs": [
@@ -731,5 +735,9 @@
         ],
         "stateMutability": "view",
         "type": "function"
+    },
+    {
+        "stateMutability": "payable",
+        "type": "receive"
     }
 ]

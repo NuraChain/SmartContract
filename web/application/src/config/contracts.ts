@@ -18,11 +18,14 @@ import BridgeUsdtAbi from './abi/BridgeUSDT.json';
 import CollateralizedNftAbi from './abi/CollateralizedNFT.json';
 import Multicall3Abi from './abi/Multicall3.json';
 import NonfungiblePositionManagerAbi from './abi/NonfungiblePositionManager.json';
+import NuraProfileAbi from './abi/NuraProfile.json';
+import NuraProfileLensAbi from './abi/NuraProfileLens.json';
 import PredictionFactoryAbi from './abi/PredictionFactory.json';
 import PredictionMarketAbi from './abi/PredictionMarket.json';
 import PredictionPoolAbi from './abi/PredictionPool.json';
 import PredictionTreasuryAbi from './abi/PredictionTreasury.json';
 import QuoterV2Abi from './abi/QuoterV2.json';
+import SocialVerifierAbi from './abi/SocialVerifier.json';
 import SwapRouterAbi from './abi/SwapRouter.json';
 import UniswapV3FactoryAbi from './abi/UniswapV3Factory.json';
 import WnuraAbi from './abi/WNURA.json';
@@ -35,6 +38,7 @@ export type ContractCategory =
     | 'amm-v3'
     | 'prediction'
     | 'vault'
+    | 'identity'
     | 'infra';
 
 export interface ContractDef
@@ -65,6 +69,7 @@ export const CATEGORY_LABEL: Record<ContractCategory, string> = {
     'amm-v3': 'AMM · V3',
     prediction: 'Prediction',
     vault: 'Vault',
+    identity: 'Identity',
     infra: 'Infrastructure'
 };
 
@@ -182,6 +187,36 @@ export const CONTRACTS: readonly ContractDef[] = [
         address: null,
         abi: CollateralizedNftAbi as Abi,
         deploymentNote: 'Deployed by ignition/modules/vault.ts plus scripts/vault-setup.ts.'
+    },
+    {
+        id: 'nura-profile',
+        name: 'NuraProfile',
+        description: 'Decentralized profile registry: one profile per address, unique usernames, localizable fields, generic websites/images/socials (and any other item kind), operators, two-step transfer, curated extensions. UUPS proxy - this is the implementation ABI at the proxy address.',
+        category: 'identity',
+        chainId: NURA_CHAIN_ID,
+        address: null,
+        abi: NuraProfileAbi as Abi,
+        deploymentNote: 'Deployed by ignition/modules/profile.ts (`npm run deploy:nurachain:profile`); the address to record is the NuraProfileProxy. Register the verifier with scripts/profile-setup.ts.'
+    },
+    {
+        id: 'nura-profile-lens',
+        name: 'NuraProfileLens',
+        description: 'Read model over NuraProfile: getProfile(address, lang), getFullProfile, getWebsites/getImages/getSocials and paged getItems, all resolved in one language with fallback. Stateless and replaceable.',
+        category: 'identity',
+        chainId: NURA_CHAIN_ID,
+        address: null,
+        abi: NuraProfileLensAbi as Abi,
+        deploymentNote: 'Deployed alongside the core by ignition/modules/profile.ts; bound to the proxy at construction.'
+    },
+    {
+        id: 'social-verifier',
+        name: 'SocialVerifier',
+        description: 'Reference profile extension: records EIP-712-attested handles (GitHub, X, Telegram, ...) into its own namespace on a profile after the owner opts in. VERIFIER_ROLE signs, owner or operator submits.',
+        category: 'identity',
+        chainId: NURA_CHAIN_ID,
+        address: null,
+        abi: SocialVerifierAbi as Abi,
+        deploymentNote: 'Deployed by ignition/modules/profile.ts; registered on the core as "social-verifier" by scripts/profile-setup.ts.'
     },
     {
         id: 'uniswap-v3-factory',

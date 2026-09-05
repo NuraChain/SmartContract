@@ -71,6 +71,7 @@ npx hardhat deploy --sc airdrop --network nurachain   # only contracts/airdrop
 npx hardhat deploy --sc univ3   --network nurachain   # only contracts/univ3
 npx hardhat deploy --sc vault   --network nurachain   # only contracts/vault
 npx hardhat deploy --sc forecast --network nurachain  # only contracts/forecast
+npx hardhat deploy --sc profile --network nurachain   # only contracts/profile
 ```
 
 `--sc vault` needs a `--parameters` file for the ERC20 address it locks — see
@@ -186,9 +187,13 @@ npm run deploy:nurachain:token
 npm run deploy:nurachain:airdrop
 npm run deploy:nurachain:univ3
 npm run deploy:nurachain:vault -- --parameters ./ignition/params.json
+npm run deploy:nurachain:profile
 
 # 3. Fund and verify the vault reserve
 npm run setup:nurachain:vault
+
+# 4. Register the profile registry's verifier extension and print its state
+npm run setup:nurachain:profile
 ```
 
 Run the preflight first. It estimates deployment gas against the actual node, which
@@ -616,6 +621,45 @@ Each of these would be a way to take collateral from holders, so none is here:
   `totalSupply()` is provided anyway.
 - **Not audited.**
 
+## The profile registry
+
+`contracts/profile` is a decentralized, extensible identity primitive: one profile per
+address, a globally unique case-normalized username, localizable key/value fields, unlimited
+websites / images / socials (and any item kind an application invents), owner-approved
+operators, two-step transfer with a recovery address, and a curated registry of extension
+contracts that attest data into their own namespace on a profile. It is UUPS-upgradeable
+behind an ERC-1967 proxy, keeps its state in one ERC-7201 namespace, and compiles with
+`viaIR` so it fits Nurachain's exact EIP-170 limit with room for future versions.
+
+The design rule everything follows from: **the core stores no schema.** Every value is
+addressed by `(profile, key, language)`; every list item is a bag of such values under a
+free-form `kind`. Adding a field, a language, a platform or a whole "wallets" section is a
+transaction, not a redeploy. New *logic* (verification, reputation, achievements) is a
+sidecar extension the core never calls into.
+
+```solidity
+uint256 id = profile.createProfile("alice", "Alice Doe", "Builder", "ipfs://…avatar");
+profile.setLocalizedField(id, "bio", "fa", "توسعه‌دهنده بلاکچین و سازنده Nura Chain");
+profile.addWebsite(id, "https://nurachain.net", "Nura Chain");
+profile.addSocial(id, "farcaster", "alice", "https://warpcast.com/alice");
+profile.addItem(id, "wallet", [FieldInput("chain", "", "bitcoin"), FieldInput("address", "", "bc1q…")]);
+
+lens.getFullProfile(aliceAddress, "fa");   // everything above, resolved in Persian with fallback
+```
+
+Three addresses matter: the **proxy** (`NuraProfileProxy`, writes + primitive reads, ABI
+`NuraProfile`), the **lens** (`NuraProfileLens`, `getProfile(address, lang)`, `getFullProfile`,
+typed and paged collection getters — stateless and replaceable), and the reference
+**`SocialVerifier`** extension (EIP-712-attested "this profile owns handle X on platform Y").
+The contract admin can upgrade, curate extensions and reserve usernames — and has no path to
+any user's content; the test suite asserts that function by function.
+
+Deploy with `npm run deploy:nurachain:profile`, then `npm run setup:nurachain:profile` to
+register the verifier; upgrade with `npm run upgrade:nurachain:profile`. The full design
+rationale, data model, gas table, security review and frontend integration guide are in
+[`contracts/profile/README.md`](contracts/profile/README.md); the per-function reference is
+[`docs/contracts/NuraProfile.md`](docs/contracts/NuraProfile.md).
+
 ## Tests
 
 ```bash
@@ -630,7 +674,9 @@ Narrower slices, for when you are working on one thing:
 
 ```bash
 npm run test:fuzz      # property tests only (256 randomised runs each)
-npm run test:invariant # stateful invariant runs over the vault
+npm run test:invariant # stateful invariant runs over the vault and the profile registry
+npm run test:profile   # the profile registry, its lens, its extension and its upgrade path
+npm run gas:profile    # gas table for every profile operation
 npm run test:security  # signature binding, reentrancy, access control, admin bounds
 npm run test:scripts   # the deployment layer: input parsing + every Ignition module
 
@@ -666,6 +712,11 @@ Three groups are worth knowing about specifically:
   against random sequences of every state transition it has rather than against sequences
   someone thought of. The handler holds the admin role, so retuning the lock and sweeping
   unreserved collateral are both in the search space.
+- **`test/Profile.test.ts`** — the profile registry from every caller's point of view, plus an
+  upgrade to a V2 mock that must keep every profile intact, and an "indexer" that replays the
+  event stream and diffs the result against the lens. `contracts/profile/test/*.t.sol` adds the
+  properties (any two username spellings that fold to the same bytes collide; any value up to
+  the cap round-trips) and the item-list invariants under random adds, removes and transfers.
 
 ### Determinism
 
@@ -689,6 +740,10 @@ Two rules worth keeping, both learned from breakage rather than taste:
 contracts/token/BridgeToken.sol         100.00% lines   100.00% branches
 contracts/airdrop/Airdrop.sol           100.00% lines   100.00% branches
 contracts/vault/CollateralizedNFT.sol   100.00% lines   100.00% branches
+contracts/profile/NuraProfile.sol       100.00% lines   100.00% statements
+contracts/profile/NuraProfileLens.sol   100.00% lines   100.00% statements
+contracts/profile/libraries/ProfileStrings.sol   100.00% lines   100.00% statements
+contracts/profile/extensions/SocialVerifier.sol  100.00% lines   100.00% statements
 ```
 
 `npm run coverage` is scoped to the contracts in this repo on purpose. Coverage instruments
@@ -737,6 +792,10 @@ router computes moves with it.
 - **V3 TWAPs are not safe to price against yet.** The oracle is only as expensive to
   manipulate as the liquidity behind it, and this chain's pools are shallow.
   See the oracle note under [The V3 swap](#the-oracle-needs-a-bigger-buffer-here-than-on-ethereum).
+- **The profile registry's owner key can upgrade it.** UUPS means whoever holds the
+  `NuraProfile` owner can replace the implementation. Ownership is two-step and the owner has
+  no path to user content, but an upgrade can add one. Move it to a multisig before users
+  depend on it, and treat `upgradeToAndCall` as the most sensitive call in this repo.
 - **Not audited.**
 
 ## Layout
@@ -765,15 +824,32 @@ contracts/vault/
   test/VaultInvariant.t.sol  stateful invariant runs: solvency, conservation, capacity
 contracts/airdrop/
   mocks/AirdropMocks.sol     re-entrant and payout-rejecting claimants, tests only
+contracts/profile/
+  NuraProfile.sol            UUPS profile registry: usernames, localized fields, items, extensions
+  NuraProfileProxy.sol       the ERC-1967 proxy — the address everyone uses
+  NuraProfileLens.sol        stateless read model: getProfile, getFullProfile, typed/paged getters
+  ProfileTypes.sol           shared structs; ProfileErrors.sol: file-level custom errors
+  interfaces/                INuraProfile (full surface + events), IProfileExtension (handshake)
+  libraries/                 ProfileKeys (well-known keys/kinds), ProfileStrings (validation, packing)
+  extensions/SocialVerifier.sol   reference extension: EIP-712-attested platform handles
+  mocks/ProfileMocks.sol     configurable extension, non-extension, V2 implementation, tests only
+  test/ProfileFuzz.t.sol     properties over usernames, keys, languages, values, item lists
+  test/ProfileInvariant.t.sol  item-list and ownership invariants under random sequences
+  README.md                  design, data model, gas, security review, frontend integration
 ignition/modules/
   token.ts                   deploys contracts/token   (--sc token)
   airdrop.ts                 deploys contracts/airdrop (--sc airdrop)
   univ3.ts                   deploys contracts/univ3   (--sc univ3)
   vault.ts                   deploys contracts/vault   (--sc vault)
+  forecast.ts                deploys contracts/forecast (--sc forecast)
+  profile.ts                 deploys contracts/profile (--sc profile): impl, proxy, lens, verifier
 scripts/
   preflight.ts               pre-deploy check: chain id, funding, gas, contract sizes
   write-init-code-hash.ts    regenerates the V3 pool init code hash
   vault-setup.ts             funds the vault reserve, then verifies and prints its state
+  profile-setup.ts           registers the verifier extension on the profile registry, prints state
+  profile-upgrade.ts         UUPS upgrade with owner, size and proxiableUUID checks
+  profile-gas.ts             gas table for every profile operation
   lib/params.ts              deployment input parsing and formatting, shared and tested
 test/
   BridgeToken.test.ts        47 tests: roles, mint, burn, pause, permit security, rescue
@@ -786,6 +862,8 @@ test/
   univ3/Positions.test.ts    20 tests: NFT lifecycle, permit, tokenURI
   univ3/Oracle.test.ts       12 tests: observations, TWAP, cardinality at 3s blocks
   Vault.test.ts              88 tests: solvency, redemption, admin bounds, reentrancy
+  Profile.test.ts            70 tests: usernames, localization, items, operators, transfer,
+                             extensions, verifier, upgrade, event replay
   scripts/params.test.ts     33 tests: deployment input parsing, away from any network
   scripts/modules.test.ts    Ignition module deployments: every module deployed and inspected
 .github/workflows/ci.yml     build, Mocha, Solidity fuzz/invariant, coverage

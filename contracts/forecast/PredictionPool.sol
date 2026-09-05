@@ -291,6 +291,17 @@ contract PredictionPool is IPredictionPool, Initializable {
         emit RewardClaimed(address(this), msg.sender, payout);
     }
 
+    /// @notice Receives native collateral sent directly to the contract. Reverts to prevent
+    ///         accidental sends — use {bet} to place a wager.
+    receive() external payable {
+        revert ZeroAmount();
+    }
+
+    /// @notice Fallback for any unmatched call. Reverts to prevent accidental interactions.
+    fallback() external payable {
+        revert ZeroAmount();
+    }
+
     // ----------------------------------------------------------------------------------------
     // Views
     // ----------------------------------------------------------------------------------------

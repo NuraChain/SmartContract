@@ -169,7 +169,10 @@ const FORECAST_OVERRIDES = Object.fromEntries(
     {
       version: "0.8.24",
       settings: {
-        viaIR: true,
+        // PredictionPool uses simple functions and doesn't need viaIR; disabling it
+        // avoids compiler-generated tuple decoder functions that appear as unnamed
+        // selectors in the dispatcher (e.g. 0xd628548b).
+        viaIR: !file.endsWith("PredictionPool.sol"),
         optimizer: { enabled: true, runs: 400 },
         evmVersion: "cancun",
       },

@@ -236,6 +236,42 @@ function fmtWei(value: unknown): string {
   }
 }
 
+// ── deployment ids ─────────────────────────────────────────────────────────
+// Ignition files every deployment under ignition/deployments/<deploymentId>, and that
+// folder is the whole story: a module whose futures already succeeded there is not
+// deployed again, it is reconciled and the recorded addresses are handed back. Changing
+// a contract's source does NOT change that — reconciliation keys on the module graph,
+// not on the bytecode — so a re-run after editing contracts returns the OLD addresses.
+//
+// Ignition's default id is `chain-<chainId>`, which means every group shares one folder
+// and one journal. That is why --reset is dangerous here: it wipes the state of every
+// group deployed to that chain, not just the one named by --sc. Pass --deployment-id to
+// give a group its own folder instead, which is the safe way to redeploy one group from
+// scratch while leaving the others' records alone.
+function defaultDeploymentId(): string {
+  return `chain-${process.env.NURACHAIN_CHAIN_ID ?? "1020"}`;
+}
+
+function deploymentDir(deploymentId: string): string {
+  return resolve(process.cwd(), `ignition/deployments/${deploymentId}`);
+}
+
+function journalPathFor(deploymentId: string): string {
+  return resolve(deploymentDir(deploymentId), "journal.jsonl");
+}
+
+/** Module prefixes ("forecast", "profile", …) with futures recorded in a deployment. */
+function modulesInDeployment(deploymentId: string): string[] {
+  const addresses = resolve(deploymentDir(deploymentId), "deployed_addresses.json");
+  if (!existsSync(addresses)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(addresses, "utf8")) as Record<string, string>;
+    return [...new Set(Object.keys(parsed).map((k) => k.split("#")[0]))].sort();
+  } catch {
+    return [];
+  }
+}
+
 function maskRpc(url: string): string {
   try {
     const u = new URL(url);
@@ -253,8 +289,9 @@ async function logDeployDiagnostics(
   networkName: string,
   sc: string,
   logFile: string,
+  deploymentId: string,
 ): Promise<{ provider: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } | undefined }> {
-  const header = `\n========== DEPLOY DIAGNOSTICS  network=${networkName}  sc=${sc}  time=${new Date().toISOString()} ==========`;
+  const header = `\n========== DEPLOY DIAGNOSTICS  network=${networkName}  sc=${sc}  deploymentId=${deploymentId}  time=${new Date().toISOString()} ==========`;
   deployLog(header, logFile);
 
   // Config as Hardhat sees it (after merging profiles)
@@ -341,7 +378,14 @@ async function logDeployDiagnostics(
 
   // Journal quick peek
   try {
-    const journalPath = resolve(process.cwd(), `ignition/deployments/chain-${process.env.NURACHAIN_CHAIN_ID ?? "1020"}/journal.jsonl`);
+    const journalPath = journalPathFor(deploymentId);
+    const sharing = modulesInDeployment(deploymentId);
+    if (sharing.length > 0) {
+      deployLog(`[diag] deployment "${deploymentId}" already holds: ${sharing.join(", ")}`, logFile);
+      if (sharing.includes(sc)) {
+        deployLog(`[diag] ⚠ "${sc}" is already recorded here – Ignition will reconcile and RETURN THE EXISTING ADDRESSES rather than deploy. To get fresh ones, use a new --deployment-id (safe) or --reset (wipes ${sharing.join(" + ")}).`, logFile);
+      }
+    }
     if (existsSync(journalPath)) {
       const lines = readFileSync(journalPath, "utf8").trim().split("\n");
       const last = lines.slice(-8).join("\n");
@@ -360,10 +404,9 @@ async function logDeployDiagnostics(
   return { provider };
 }
 
-function dumpJournalOnFailure(networkName: string, logFile: string): void {
+function dumpJournalOnFailure(deploymentId: string, logFile: string): void {
   try {
-    const chainId = process.env.NURACHAIN_CHAIN_ID ?? "1020";
-    const journalPath = resolve(process.cwd(), `ignition/deployments/chain-${chainId}/journal.jsonl`);
+    const journalPath = journalPathFor(deploymentId);
     if (!existsSync(journalPath)) {
       deployLog(`[fail] no journal at ${journalPath}`, logFile);
       return;
@@ -375,7 +418,7 @@ function dumpJournalOnFailure(networkName: string, logFile: string): void {
     for (const line of lines.slice(-30)) deployLog(`[journal] ${line}`, logFile);
     // also write full copy to log dir for sharing
     try {
-      const copy = resolve(process.cwd(), `logs/journal-chain-${chainId}-${Date.now()}.jsonl`);
+      const copy = resolve(process.cwd(), `logs/journal-${deploymentId}-${Date.now()}.jsonl`);
       appendFileSync(copy, raw);
       deployLog(`[fail] full journal copied to ${copy}`, logFile);
     } catch {}
@@ -503,7 +546,13 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
   })
   .addFlag({
     name: "reset",
-    description: "Wipe the existing deployment state for this module before deploying",
+    description: "Wipe the existing deployment state before deploying. Careful: the state is shared per deployment id, so this also forgets every OTHER group deployed under it",
+  })
+  .addOption({
+    name: "deploymentId",
+    description: "Ignition deployment folder to use (default: chain-<chainId>). Give a group its own id to redeploy it from scratch without touching the others",
+    type: ArgumentType.STRING_WITHOUT_DEFAULT,
+    defaultValue: undefined,
   })
   .addFlag({
     name: "verify",
@@ -521,7 +570,7 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
     type: ArgumentType.STRING_WITHOUT_DEFAULT,
     defaultValue: undefined,
   })
-  .setInlineAction(async ({ sc, parameters, reset, verify, maxClaims, reward }, hre) => {
+  .setInlineAction(async ({ sc, parameters, reset, verify, maxClaims, reward, deploymentId }, hre) => {
     const choices = DEPLOYABLE.join(", ");
 
     if (sc === undefined) {
@@ -535,8 +584,9 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
     }
 
     const networkName = hre.globalOptions.network as string;
+    const deployment = (deploymentId as string | undefined) ?? defaultDeploymentId();
     const logFile = deployLogFile(networkName, sc);
-    deployLog(`\n[deploy] Deploying contracts/${sc} via ignition/modules/${sc}.ts  network=${networkName}  reset=${String(reset)}  verify=${String(verify)}`, logFile);
+    deployLog(`\n[deploy] Deploying contracts/${sc} via ignition/modules/${sc}.ts  network=${networkName}  deploymentId=${deployment}  reset=${String(reset)}  verify=${String(verify)}`, logFile);
     if (parameters) deployLog(`[deploy] --parameters=${parameters}`, logFile);
     deployLog(`[deploy] logFile=${logFile}`, logFile);
     // Masked RPC for sanity-check (never logs secrets)
@@ -555,6 +605,7 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
       networkName,
       sc,
       logFile,
+      deployment,
     );
 
     // Hardhat Ignition caches strategyConfig in the journal at first run.
@@ -563,9 +614,24 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
     // after hardhat.config.ts is fixed. Detect that stale state and force
     // a reset so the new maxFeePerGas (500 gwei) is actually used.
     let effectiveReset = reset;
+
+    // --reset wipes the whole deployment folder, and that folder is shared by every group
+    // deployed under the same id. Say out loud what else is about to be forgotten: the
+    // contracts stay on chain, but Ignition loses their addresses and a later run of those
+    // groups would deploy fresh ones — which for an upgradeable proxy means a new proxy and
+    // an abandoned registry.
+    if (reset) {
+      const collateral = modulesInDeployment(deployment).filter((m) => m !== sc);
+      if (collateral.length > 0) {
+        deployLog(`[deploy] ⚠ --reset on deployment "${deployment}" also forgets: ${collateral.join(", ")}`, logFile);
+        deployLog(`[deploy]   Those contracts stay deployed, but Ignition will no longer know their addresses,`, logFile);
+        deployLog(`[deploy]   so a later "deploy --sc ${collateral[0]}" would deploy NEW ones.`, logFile);
+        deployLog(`[deploy]   To redeploy only ${sc}, cancel and use:  --deployment-id ${networkName}-${sc}`, logFile);
+      }
+    }
+
     {
-      const chainId = process.env.NURACHAIN_CHAIN_ID ?? "1020";
-      const jPath = resolve(process.cwd(), `ignition/deployments/chain-${chainId}/journal.jsonl`);
+      const jPath = journalPathFor(deployment);
       if (existsSync(jPath)) {
         const raw = readFileSync(jPath, "utf8");
         const hasDropped = raw.includes("ONCHAIN_INTERACTION_DROPPED");
@@ -580,12 +646,12 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
             deployLog(`[deploy] → auto-wiping stale deployment (equivalent to --reset) so new 500 gwei fees take effect`, logFile);
             try {
               const { rmSync } = await import("node:fs");
-              const deploymentDir = resolve(process.cwd(), `ignition/deployments/chain-${chainId}`);
-              rmSync(deploymentDir, { recursive: true, force: true });
-              deployLog(`[deploy]   wiped ${deploymentDir}`, logFile);
+              const dir = deploymentDir(deployment);
+              rmSync(dir, { recursive: true, force: true });
+              deployLog(`[deploy]   wiped ${dir}`, logFile);
               effectiveReset = true;
             } catch (e) {
-              deployLog(`[deploy]   wipe failed: ${String(e)} – please run manually: Remove-Item -Recurse -Force ignition/deployments/chain-${chainId}`, logFile);
+              deployLog(`[deploy]   wipe failed: ${String(e)} – please run manually: Remove-Item -Recurse -Force ignition/deployments/${deployment}`, logFile);
               deployLog(`[deploy]   → re-run with --reset:  npm run deploy:nurachain:${sc} -- --reset`, logFile);
             }
           } else {
@@ -624,12 +690,13 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
       });
     }
 
-    deployLog(`[deploy] → calling ignition deploy  module=ignition/modules/${sc}.ts  effectiveReset=${String(effectiveReset)}`, logFile);
+    deployLog(`[deploy] → calling ignition deploy  module=ignition/modules/${sc}.ts  deploymentId=${deployment}  effectiveReset=${String(effectiveReset)}`, logFile);
     const t0 = Date.now();
     try {
       await hre.tasks.getTask(["ignition", "deploy"]).run({
         modulePath: `ignition/modules/${sc}.ts`,
         parameters: resolvedParameters,
+        deploymentId: deployment,
         reset: effectiveReset,
         verify,
       });
@@ -648,11 +715,12 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
         deployLog(`[deploy] Common causes on Nurachain:`, logFile);
         deployLog(`[deploy]  1) fee < 47 gwei – node reports eth_gasPrice=0 but enforces floor. Check [rpc] eth_gasPrice above and that ignition.gasPrice=500_000_000_000n is in [config].`, logFile);
         deployLog(`[deploy]  2) stale journal with 0-fee tx – run with --reset:  npm run deploy:nurachain:${sc} -- --reset`, logFile);
+        deployLog(`[deploy]  5) nothing was sent at all and old addresses came back – that is reconciliation, not a failure. Use --deployment-id <new-id> for a fresh deploy.`, logFile);
         deployLog(`[deploy]  3) deployer balance 0 or nonce gap – check [diag] deployer line above.`, logFile);
         deployLog(`[deploy]  4) RPC mismatch (wrong NURACHAIN_RPC_URL / chainId) – compare eth_chainId vs NURACHAIN_CHAIN_ID.`, logFile);
-        dumpJournalOnFailure(networkName, logFile);
+        dumpJournalOnFailure(deployment, logFile);
       } else {
-        dumpJournalOnFailure(networkName, logFile);
+        dumpJournalOnFailure(deployment, logFile);
       }
 
       deployLog(`[deploy] full log saved to ${logFile}`, logFile);

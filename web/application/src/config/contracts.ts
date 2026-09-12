@@ -189,10 +189,10 @@ const MULTICALL3 = '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24' as Address;
 // Forecast (prediction market) – deployed 2026-08-26 via ignition/modules/forecast.ts
 // Batch #1: implementations + treasury, Batch #2: factory (clone deployer + registry).
 // See ignition/deployments/chain-1020/journal.jsonl and hardhat.config.ts:619 ignition fees.
-const PREDICTION_MARKET_IMPL = '0x4b94c8F32Ff506D31d79d21D94eC1d8AE3d1F145' as Address;
-const PREDICTION_POOL_IMPL = '0x675b24758B199c3A5674f0288dfdeaA217fB2A86' as Address;
-const PREDICTION_TREASURY = '0xDABEDD148F5AE5f3e130aB811a8975828Ea75AA8' as Address;
-const PREDICTION_FACTORY = '0x33fE315c8a7FeA10152dD2b21B5d87936aF9B79d' as Address;
+const PREDICTION_MARKET_IMPL = '0x5b24628a7bB7d9c7c091650A1737ab94Cc9496b3' as Address;
+const PREDICTION_POOL_IMPL = '0x18e35954D826565AD7E1d0bB95c743c883fB9aaf' as Address;
+const PREDICTION_TREASURY = '0x785090fF1b50EaB9943284FF835eD67a9ea617Ba' as Address;
+const PREDICTION_FACTORY = '0xf0Af7cb99605Ec40F217Dd9c80AF4AF8F86e21c0' as Address;
 // Profile registry – deployed 2026-09-05 via ignition/modules/profile.ts
 // (`npm run deploy:nurachain:profile`). The PROXY is the registry address every
 // caller uses; the implementation behind it (NuraProfile 1.0.0, currently
@@ -269,7 +269,7 @@ export const CONTRACTS: readonly ContractDef[] = [
         chainId: NURA_CHAIN_ID,
         address: PREDICTION_FACTORY,
         abi: PredictionFactoryAbi as Abi,
-        deploymentNote: 'Deployed 2026-08-26 by ignition/modules/forecast.ts (`npm run deploy:nurachain:forecast`) — Batch #2. Verified on Nurachain (1020) at 0x33fE315c8a7FeA10152dD2b21B5d87936aF9B79d.'
+        deploymentNote: 'Redeployed 2026-09-12 by ignition/modules/forecast.ts (`npm run deploy:nurachain:forecast`) on Nurachain (1020) at 0xf0Af7cb99605Ec40F217Dd9c80AF4AF8F86e21c0. Supersedes 0x33fE315c8a7FeA10152dD2b21B5d87936aF9B79d, which is still on chain but predates category ids, the claim window and the payout push — its markets are not readable with this ABI. Register categories with addCategory before creating any market here.'
     },
     {
         id: 'prediction-market',
@@ -280,7 +280,7 @@ export const CONTRACTS: readonly ContractDef[] = [
         chainId: NURA_CHAIN_ID,
         address: PREDICTION_MARKET_IMPL,
         abi: PredictionMarketAbi as Abi,
-        deploymentNote: 'Implementation deployed 2026-08-26 by forecast Batch #1 at 0x4b94c8F32Ff506D31d79d21D94eC1d8AE3d1F145 (clones via factory; paste a specific market address to interact as an instance).'
+        deploymentNote: 'Implementation redeployed 2026-09-12 at 0x5b24628a7bB7d9c7c091650A1737ab94Cc9496b3, superseding 0x4b94c8F32Ff506D31d79d21D94eC1d8AE3d1F145. Clones made by the current factory point here; markets cloned from the old factory still run the old code. Paste a specific market address to interact as an instance.'
     },
     {
         id: 'prediction-pool',
@@ -291,7 +291,7 @@ export const CONTRACTS: readonly ContractDef[] = [
         chainId: NURA_CHAIN_ID,
         address: PREDICTION_POOL_IMPL,
         abi: PredictionPoolAbi as Abi,
-        deploymentNote: 'Implementation deployed 2026-08-26 by forecast Batch #1 at 0x675b24758B199c3A5674f0288dfdeaA217fB2A86 (clones via factory; paste a specific market address to interact as an instance).'
+        deploymentNote: 'Implementation redeployed 2026-09-12 at 0x18e35954D826565AD7E1d0bB95c743c883fB9aaf, superseding 0x675b24758B199c3A5674f0288dfdeaA217fB2A86. Clones made by the current factory point here; pools cloned from the old factory still run the old code. Paste a specific market address to interact as an instance.'
     },
     {
         id: 'prediction-treasury',
@@ -302,7 +302,7 @@ export const CONTRACTS: readonly ContractDef[] = [
         chainId: NURA_CHAIN_ID,
         address: PREDICTION_TREASURY,
         abi: PredictionTreasuryAbi as Abi,
-        deploymentNote: 'Deployed 2026-08-26 by forecast Batch #1 at 0xDABEDD148F5AE5f3e130aB811a8975828Ea75AA8; repointable via PredictionFactory.setTreasury.'
+        deploymentNote: 'Redeployed 2026-09-12 at 0x785090fF1b50EaB9943284FF835eD67a9ea617Ba, and starts empty. Fees already collected sit in the previous treasury 0xDABEDD148F5AE5f3e130aB811a8975828Ea75AA8 and are still withdrawable by its owner. Repointable via PredictionFactory.setTreasury.'
     },
     {
         id: 'collateralized-nft',

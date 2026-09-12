@@ -125,10 +125,10 @@ Vault:
 | BridgeBNB | Nurachain 1020 | ‏0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc |
 | WNURA | Nurachain 1020 | ‏0xf0a4eC07916feBa4432121Ed5969887D9b939cD0 |
 | Multicall3 (زیرساخت زنجیره) | Nurachain 1020 | ‏0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24 |
-| PredictionFactory | Nurachain 1020 | ‏0x33fE315c8a7FeA10152dD2b21B5d87936aF9B79d |
-| PredictionMarket (پیاده‌سازی؛ بازارها کلون هستند) | Nurachain 1020 | ‏0x4b94c8F32Ff506D31d79d21D94eC1d8AE3d1F145 |
-| PredictionPool (پیاده‌سازی؛ پول‌ها کلون هستند) | Nurachain 1020 | ‏0x675b24758B199c3A5674f0288dfdeaA217fB2A86 |
-| PredictionTreasury | Nurachain 1020 | ‏0xDABEDD148F5AE5f3e130aB811a8975828Ea75AA8 |
+| PredictionFactory | Nurachain 1020 | ‏0xf0Af7cb99605Ec40F217Dd9c80AF4AF8F86e21c0 |
+| PredictionMarket (پیاده‌سازی؛ بازارها کلون هستند) | Nurachain 1020 | ‏0x5b24628a7bB7d9c7c091650A1737ab94Cc9496b3 |
+| PredictionPool (پیاده‌سازی؛ پول‌ها کلون هستند) | Nurachain 1020 | ‏0x18e35954D826565AD7E1d0bB95c743c883fB9aaf |
+| PredictionTreasury | Nurachain 1020 | ‏0x785090fF1b50EaB9943284FF835eD67a9ea617Ba |
 | NuraProfileProxy (رجیستری پروفایل — با ABI ‏`NuraProfile`) | Nurachain 1020 | ‏0x8CFbcEf737BE3C67A52A20Ae3DCC685ACF759460 |
 | NuraProfile (پیاده‌سازی 1.0.0 پشت پراکسی) | Nurachain 1020 | ‏0x8ff69542387343fe8a9e053779f23058fBbA7f71 |
 | NuraProfileLens | Nurachain 1020 | ‏0xE8BD8Fc19907274b3CF87Bd72F4cd92Ca3c62F05 |

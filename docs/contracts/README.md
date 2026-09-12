@@ -147,12 +147,19 @@ Airdrop:
 ## Main Admin Flows
 
 - Deploy groups via `npx hardhat deploy --sc <group> --network nurachain`.
+- Categories: register ids with `addCategory(id, langs, meanings)` before creating any
+  market; markets carry the id, the display name per language lives in the factory.
 - Create markets: `createMarket{value}` / `createMarket2`; drive lifecycle via
   `pauseMarket/unpauseMarket/closeMarket/voidMarket`; resolution itself is an N-of-M multisig (`confirmResolution` by `resolutionSigners` until `requiredConfirmations` agree).
+- Payouts: participants claim their own share by default. `distributeMarket(id, limit)`
+  pushes payouts out to them instead and is open to anyone;
+  `setMarketAutoDistribute(id, true)` additionally starts that push inside the
+  transaction that settles the market.
 - Fee policy: factory `setDefaultFees` (defaults for `feeBps=0` requests),
   treasury `setFeeRecipient`/`withdraw`.
 - Recovery paths: `rescueERC20` (tokens), `withdrawExcessTokens` (vault tail),
-  airdrop/treasury `withdraw`.
+  airdrop/treasury `withdraw`, forecast `sweepUnclaimed(marketId)` (a settled market's
+  leftover collateral, one year after it settled).
 
 ## Deployment Information (recorded in repository)
 

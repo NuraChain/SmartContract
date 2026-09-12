@@ -73,7 +73,17 @@
     },
     {
         "inputs": [],
+        "name": "BadCategoryInput",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "BadQuorum",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "CategoryExists",
         "type": "error"
     },
     {
@@ -119,6 +129,11 @@
     },
     {
         "inputs": [],
+        "name": "MissingDefaultMeaning",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "NotOwner",
         "type": "error"
     },
@@ -129,8 +144,70 @@
     },
     {
         "inputs": [],
+        "name": "UnknownCategory",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "ZeroAddress",
         "type": "error"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            }
+        ],
+        "name": "CategoryAdded",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "enabled",
+                "type": "bool"
+            }
+        ],
+        "name": "CategoryEnabledSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            },
+            {
+                "indexed": true,
+                "internalType": "bytes8",
+                "name": "lang",
+                "type": "bytes8"
+            },
+            {
+                "indexed": false,
+                "internalType": "string",
+                "name": "meaning",
+                "type": "string"
+            }
+        ],
+        "name": "CategoryMeaningSet",
+        "type": "event"
     },
     {
         "anonymous": false,
@@ -174,9 +251,9 @@
             },
             {
                 "indexed": false,
-                "internalType": "string",
-                "name": "category",
-                "type": "string"
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
             },
             {
                 "indexed": false,
@@ -398,6 +475,32 @@
     },
     {
         "inputs": [],
+        "name": "DEFAULT_LANG",
+        "outputs": [
+            {
+                "internalType": "bytes8",
+                "name": "",
+                "type": "bytes8"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "MAX_CATEGORY_LANGS",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "MAX_FEE_BPS",
         "outputs": [
             {
@@ -455,9 +558,9 @@
                         "type": "string"
                     },
                     {
-                        "internalType": "string",
-                        "name": "category",
-                        "type": "string"
+                        "internalType": "uint32",
+                        "name": "categoryId",
+                        "type": "uint32"
                     },
                     {
                         "internalType": "enum MarketStatus",
@@ -488,6 +591,146 @@
                 "internalType": "struct MarketRecord[]",
                 "name": "",
                 "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            },
+            {
+                "internalType": "bytes8[]",
+                "name": "langs",
+                "type": "bytes8[]"
+            },
+            {
+                "internalType": "string[]",
+                "name": "meanings",
+                "type": "string[]"
+            }
+        ],
+        "name": "addCategory",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "categoryCount",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "categoryIds",
+        "outputs": [
+            {
+                "internalType": "uint32[]",
+                "name": "",
+                "type": "uint32[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            }
+        ],
+        "name": "categoryLanguages",
+        "outputs": [
+            {
+                "internalType": "bytes8[]",
+                "name": "",
+                "type": "bytes8[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            },
+            {
+                "internalType": "bytes8",
+                "name": "lang",
+                "type": "bytes8"
+            }
+        ],
+        "name": "categoryMeaning",
+        "outputs": [
+            {
+                "internalType": "string",
+                "name": "",
+                "type": "string"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            }
+        ],
+        "name": "categoryMeanings",
+        "outputs": [
+            {
+                "internalType": "bytes8[]",
+                "name": "langs",
+                "type": "bytes8[]"
+            },
+            {
+                "internalType": "string[]",
+                "name": "meanings",
+                "type": "string[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            }
+        ],
+        "name": "categoryState",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "known",
+                "type": "bool"
+            },
+            {
+                "internalType": "bool",
+                "name": "enabled",
+                "type": "bool"
             }
         ],
         "stateMutability": "view",
@@ -539,9 +782,9 @@
                         "type": "string"
                     },
                     {
-                        "internalType": "string",
-                        "name": "category",
-                        "type": "string"
+                        "internalType": "uint32",
+                        "name": "categoryId",
+                        "type": "uint32"
                     },
                     {
                         "internalType": "enum MarketStatus",
@@ -646,6 +889,25 @@
     {
         "inputs": [
             {
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            }
+        ],
+        "name": "countByCategory",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "enum MarketStatus",
                 "name": "status",
                 "type": "uint8"
@@ -677,9 +939,9 @@
                         "type": "string"
                     },
                     {
-                        "internalType": "string",
-                        "name": "category",
-                        "type": "string"
+                        "internalType": "uint32",
+                        "name": "categoryId",
+                        "type": "uint32"
                     },
                     {
                         "internalType": "string",
@@ -753,9 +1015,9 @@
                         "type": "string"
                     },
                     {
-                        "internalType": "string",
-                        "name": "category",
-                        "type": "string"
+                        "internalType": "uint32",
+                        "name": "categoryId",
+                        "type": "uint32"
                     },
                     {
                         "internalType": "string",
@@ -838,6 +1100,30 @@
             }
         ],
         "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "marketId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "distributeMarket",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "paid",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {
@@ -967,9 +1253,9 @@
                         "type": "string"
                     },
                     {
-                        "internalType": "string",
-                        "name": "category",
-                        "type": "string"
+                        "internalType": "uint32",
+                        "name": "categoryId",
+                        "type": "uint32"
                     },
                     {
                         "internalType": "enum MarketStatus",
@@ -1053,6 +1339,82 @@
     {
         "inputs": [
             {
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "marketsByCategory",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "market",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "creator",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "title",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "uint32",
+                        "name": "categoryId",
+                        "type": "uint32"
+                    },
+                    {
+                        "internalType": "enum MarketStatus",
+                        "name": "status",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint64",
+                        "name": "createdAt",
+                        "type": "uint64"
+                    },
+                    {
+                        "internalType": "uint64",
+                        "name": "lockTime",
+                        "type": "uint64"
+                    },
+                    {
+                        "internalType": "uint64",
+                        "name": "resolveTime",
+                        "type": "uint64"
+                    },
+                    {
+                        "internalType": "uint32",
+                        "name": "outcomeCount",
+                        "type": "uint32"
+                    }
+                ],
+                "internalType": "struct MarketRecord[]",
+                "name": "page",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "enum MarketStatus",
                 "name": "status",
                 "type": "uint8"
@@ -1088,9 +1450,9 @@
                         "type": "string"
                     },
                     {
-                        "internalType": "string",
-                        "name": "category",
-                        "type": "string"
+                        "internalType": "uint32",
+                        "name": "categoryId",
+                        "type": "uint32"
                     },
                     {
                         "internalType": "enum MarketStatus",
@@ -1159,9 +1521,9 @@
                         "type": "string"
                     },
                     {
-                        "internalType": "string",
-                        "name": "category",
-                        "type": "string"
+                        "internalType": "uint32",
+                        "name": "categoryId",
+                        "type": "uint32"
                     },
                     {
                         "internalType": "enum MarketStatus",
@@ -1326,9 +1688,9 @@
                         "type": "string"
                     },
                     {
-                        "internalType": "string",
-                        "name": "category",
-                        "type": "string"
+                        "internalType": "uint32",
+                        "name": "categoryId",
+                        "type": "uint32"
                     },
                     {
                         "internalType": "enum MarketStatus",
@@ -1385,6 +1747,47 @@
     {
         "inputs": [
             {
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            },
+            {
+                "internalType": "bool",
+                "name": "enabled",
+                "type": "bool"
+            }
+        ],
+        "name": "setCategoryEnabled",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint32",
+                "name": "categoryId",
+                "type": "uint32"
+            },
+            {
+                "internalType": "bytes8[]",
+                "name": "langs",
+                "type": "bytes8[]"
+            },
+            {
+                "internalType": "string[]",
+                "name": "meanings",
+                "type": "string[]"
+            }
+        ],
+        "name": "setCategoryMeanings",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "uint16",
                 "name": "feeBps",
                 "type": "uint16"
@@ -1396,6 +1799,24 @@
             }
         ],
         "name": "setDefaultFees",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "marketId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bool",
+                "name": "enabled",
+                "type": "bool"
+            }
+        ],
+        "name": "setMarketAutoDistribute",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -1448,6 +1869,25 @@
             }
         ],
         "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "marketId",
+                "type": "uint256"
+            }
+        ],
+        "name": "sweepUnclaimed",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {

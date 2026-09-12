@@ -21,6 +21,11 @@
 هر عملیات خرید/فروش/نقدینگی مقدار یکسانی به جمع همهٔ خروجی‌ها اضافه/کم می‌کند، پس برابری
 بین خروجی‌ها حفظ می‌شود و سهامِ برنده همیشه ۱:۱ بازخرید می‌شود. رزروها مجازی‌اند.
 
+این ناوردا تا آخر عمر بازار برقرار است، از جمله در پنجرهٔ یک‌سالهٔ بازخرید که با
+تعیین‌تکلیف بازار باز می‌شود. ‏`sweepUnclaimed` آن را بازنشسته می‌کند: بعد از بسته‌شدن آن
+پنجره دیگر چیزی بازخرید نمی‌شود، پس باقیماندهٔ وثیقه و `totalSets` با هم صفر می‌شوند و
+موجودی سهام‌های باقی‌مانده صرفاً یک ثبتِ بی‌اثر است.
+
 ## وراثت
 
 ```text
@@ -38,12 +43,21 @@ PredictionMarket
 | `LP_TOKEN_ID` | `uint256` | public | constant | ‏id سهام LP. |
 | `MAX_OUTCOMES` | `uint256` | public | constant | ‏16؛ سقف حلقه‌های هر-خروجی. |
 | `MAX_FEE_BPS` | `uint16` | public | constant | ‏1000؛ حداکثر کارمزد کل ۱۰٪. |
+| `CLAIM_WINDOW` | `uint64` | public | constant | ‏365 روز؛ مهلت بازخرید برندگان پس از تعیین‌تکلیف بازار. |
+| `AUTO_DISTRIBUTE_BATCH` | `uint256` | public | constant | ‏20؛ تعداد پرداخت‌هایی که داخل خودِ تراکنش تعیین‌تکلیف push می‌شود. |
+| `PUSH_GAS` | `uint256` | private | constant | ‏50_000؛ گسی که به هر پرداختِ push‌شده داده می‌شود. |
 | `controller` / `treasury` / `status` | address/address/enum | public | mutable | کارخانه، خزانه، وضعیت چرخهٔ حیات. |
 | متادیتا + `creator` + سه timestamp | string/address/uint64 | public | set-once | در initialize نوشته می‌شوند؛ معامله نیازمند `block.timestamp < lockTime`. |
+| `categoryId` | uint32 | public | set-once | دستهٔ بازار در [رجیستری کارخانه](PredictionFactory.md#رجیستری-دسته‌ها)؛ خودِ بازار هیچ نامی برای دسته ذخیره نمی‌کند. |
+| `autoDistribute` | bool | public | mutable | آیا تعیین‌تکلیف خودش پرداخت‌ها را push می‌کند. **تا وقتی ادمین روشنش نکند خاموش است.** هرگز جلوی پول را نمی‌گیرد. |
 | `feeBps` / `protocolFeeShareBps` | uint16 | public | set-once | کارمزد کل و سهم خزانه؛ باقیمانده به LP می‌رسد. |
 | `outcomeCount` | uint256 | public | set-once | تعداد خروجی‌ها n. |
 | `_outcomeNames` / `_reserves` | string[] / uint256[] | private | set-once / mutable | نام‌ها / رزرو مجازی FPMM به wei. |
 | `totalSets` | uint256 | public | mutable | وثیقهٔ پشت ست‌های کامل؛ برابر موجودی بومی قرارداد. |
+| `endedAt` | uint64 | public | در resolve/void ثبت | زمان تعیین‌تکلیف؛ تا وقتی بازار زنده است صفر. مبدأ پنجرهٔ بازخرید. |
+| `_holders` / `_listed` (private) | address[] / mapping | فقط افزودنی | هر حسابی که تا حالا توکنی از این بازار گرفته، به ترتیب اولین دریافت؛ توزیع همین فهرست را می‌پیماید. موجودی صفر هنگام پرداخت رد می‌شود. |
+| `_cursor` / `_credited` (private) | uint256 / mapping | mutable | جای رسیدنِ push در فهرست؛ و پرداخت‌هایی که تحویل نشد و منتظر برداشت با `redeem` مانده‌اند. |
+| `_lpSupplyAtEnd` / `_lpPoolAtEnd` (private) | uint256 | در تعیین‌تکلیف ثبت | عرضهٔ LP و وثیقه‌ای که مجموعاً مال LPهاست (‏`reserves[win]` در resolve، میانگین رزروها در void). اسنپ‌شات گرفته می‌شود چون سوزاندن سهام LP حین پیمایش عرضهٔ زنده را جابه‌جا می‌کند. |
 | `_winningOutcome` | uint256 | private | در resolve ثبت | فقط وقتی Resolved معنی‌دار. |
 | `_entered` | uint256 | private | mutable | قفل reentrancy مبتنی بر storage (1 آزاد / 2 داخل)؛ در initialize =1. |
 
@@ -58,7 +72,10 @@ PredictionMarket
 
 اعلام مشترک در `PredictionEvents.sol`: ‏`LiquidityAdded`, `LiquidityRemoved`,
 `PredictionPlaced`, `PredictionSold`, `RewardClaimed`, ‏`MarketPaused/Unpaused/Closed/
-Resolved/Voided`. جزئیات در فایل انگلیسی همین سند.
+Resolved/Voided`، ‏`UnclaimedSwept(market, treasury, amount)` هنگام جاروی باقیمانده،
+`PayoutDeferred(market, account, amount)` وقتی پرداختِ push‌شده تحویل نشد و به اعتبار
+تبدیل شد، ‏`DistributionAdvanced(market, cursor, total, amount)` در هر دستهٔ توزیع، و
+`AutoDistributeSet(market, enabled)`. جزئیات در فایل انگلیسی همین سند.
 
 ## خطاها
 
@@ -66,18 +83,23 @@ Resolved/Voided`. جزئیات در فایل انگلیسی همین سند.
 InvalidFee، InvalidTiming، MarketNotOpen، TradingLocked، MarketNotResolved،
 MarketAlreadyEnded، DeadlineExpired، SlippageExceeded، InsufficientLiquidity،
 NothingToClaim، NotController، Reentrancy، TransferFailed) با شرط دقیق وقوع در جدول
-نسخهٔ انگلیسی آمده است.
+نسخهٔ انگلیسی آمده است. دو خطای پنجرهٔ بازخرید هم به این مجموعه اضافه شده‌اند:
+`ClaimWindowOpen()` وقتی جارو پیش از `endedAt + CLAIM_WINDOW` صدا زده شود، و
+`ClaimWindowClosed()` وقتی `redeem` در/پس از همان لحظه صدا زده شود.
 
 ## توابع
 
 ### طبقه‌بندی
 
 - **کاربر / مالی:** ‏`buy`, `sell`, `addFunding`, `removeFunding`, `mergeSets`, `redeem`
+- **کیپرِ بدون مجوز:** ‏`distribute`
 - **مدیریتی (فقط کارخانه):** ‏`pause`, `unpause`, `close`, `resolve`, `voidMarket`,
-  `setTreasury`, `initialize`
-- **View:** ‏`winningOutcome`, `getReserves`, `getPrices`, `calcBuy`, `calcSell`,
-  `outcomeName`, `totalSets` (+ سطح ERC-1155)
-- **Private:** ‏`_requireTradable`, `_requireNotEnded`, `_sendNative`
+  `setTreasury`, `setAutoDistribute`, `sweepUnclaimed`, `initialize`
+- **View:** ‏`winningOutcome`, `claimDeadline`, `distributionProgress`, `pendingPayout`,
+  `holderCount`, `getReserves`, `getPrices`, `calcBuy`, `calcSell`, `outcomeName`,
+  `totalSets` (+ سطح ERC-1155)
+- **Private:** ‏`_requireTradable`, `_requireNotEnded`, `_requireClaimWindowOpen`,
+  `_snapshotLp`, `_payoutOf`, `_settleAccount`, `_pushPayouts`, `_update`, `_sendNative`
 
 ---
 
@@ -169,11 +191,80 @@ function mergeSets(uint256 amount) external nonReentrant;
 function redeem() external nonReentrant returns (uint256 payout);
 ```
 
-بازخرید پس از پایان:
-- **Resolved:** سوزاندن کل موجودی توکن برنده و پرداخت ۱:۱.
+مسیر **pull**، و مسیر پیش‌فرض: بازار به‌درخواست پرداخت می‌کند، مگر ادمین push هنگام
+تعیین‌تکلیف را روشن کرده باشد (پایین‌تر). در آن حالت هم این همان راهی است که حساب وقتی
+push به او نرسیده استفاده می‌کند — یا هر وقت خودش ترجیح بدهد سهمش را بردارد.
+
+- **اعتبارِ منتظر** (push تلاش کرده و انتقال شکست خورده) اول و به‌طور کامل پرداخت می‌شود.
+- **Resolved:** سوزاندن کل موجودی توکن برنده و پرداخت ۱:۱، به‌علاوهٔ سهم تناسبی او از
+  استخر LP (‏`lpBalance · _lpPoolAtEnd / _lpSupplyAtEnd`) با سوزاندن سهام LP‌اش.
 - **Voided:** سوزاندن موجودی‌ها در همهٔ خروجی‌ها و پرداخت `floor(Σ balances / n)`
-  — دارایی‌ها را ست کامل کسری فرض می‌کند. گرد شدن به نفع استخر؛ payout به totalSets گیر
-  می‌کند (در حالت‌های حدی first-come-first-served).
+  — دارایی‌ها را ست کامل کسری فرض می‌کند — به‌علاوهٔ همان سهم LP.
+
+گرد شدن به نفع استخر؛ payout به totalSets گیر می‌کند. همین سوزاندن است که پرداخت را
+یک‌باره می‌کند: فراخوانی دوم موجودی صفر می‌بیند و `NothingToClaim` می‌دهد. یک سال پس از
+تعیین‌تکلیف بازار هم `ClaimWindowClosed` می‌دهد (به `sweepUnclaimed` نگاه کنید).
+
+---
+
+### distribute
+
+```solidity
+function distribute(uint256 limit) external nonReentrant returns (uint256 paid);
+```
+
+مسیر **push**: شرکت‌کننده‌ها بدون اینکه کاری بکنند پول‌شان را می‌گیرند.
+
+‏`distribute` **بدون مجوز** است: کیپر، فرانت‌اند، یا شرکت‌کننده‌ای که عجله دارد، هر سه
+می‌توانند صدایش بزنند — و روی بازاری که با پیش‌فرض‌هایش رها شده، تنها چیزی است که بدون
+درخواستِ خودِ شخص به او پول می‌دهد.
+
+اگر `autoDistribute` روشن شود، ‏`resolve` و `voidMarket` هم همین را برای
+`AUTO_DISTRIBUTE_BATCH` حساب، داخل همان تراکنشِ تعیین‌تکلیف صدا می‌زنند؛ پس بازاری با
+شرکت‌کنندهٔ کم، همان لحظه که ادمین تعیین‌تکلیفش می‌کند خالی می‌شود و `distribute` بقیه را
+ادامه می‌دهد.
+
+هر حساب پیش از انتقالش پرداخت‌شده علامت می‌خورد و با `PUSH_GAS` گس پرداخت می‌شود. انتقالی
+که شکست بخورد کل دسته را revert نمی‌کند: مبلغ به اعتبار (`_credited`) تبدیل می‌شود،
+`PayoutDeferred` ثبت می‌شود و پیمایش ادامه پیدا می‌کند. بنابراین یک گیرندهٔ خصمانه
+نمی‌تواند صف پشت سرش را بخواباند.
+
+---
+
+### setAutoDistribute
+
+```solidity
+function setAutoDistribute(bool enabled) external onlyController;
+```
+
+‏push هنگام تعیین‌تکلیف را روشن یا خاموش می‌کند. **بازارها با خاموش شروع می‌شوند**، پس این
+همان opt-in است. یک کلید راحتی است، نه گیتِ دسترسی: با خاموش‌بودنش هم `distribute` برای
+همه باز است و هم شرکت‌کننده می‌تواند سهم خودش را بردارد؛ فقط تعیین‌تکلیف خودبه‌خود شروع
+به پرداخت نمی‌کند. ‏`AutoDistributeSet` را emit می‌کند.
+
+---
+
+### sweepUnclaimed
+
+```solidity
+function sweepUnclaimed() external onlyController nonReentrant returns (uint256 amount);
+```
+
+تعیین‌تکلیف بازار (`resolve` یا `voidMarket`) زمان `endedAt` را ثبت می‌کند و پنجرهٔ
+`CLAIM_WINDOW` به طول یک سال از همان‌جا شروع می‌شود. در این یک سال `redeem` دقیقاً مثل
+قبل کار می‌کند و هیچ‌کس نمی‌تواند به وثیقهٔ بازار دست بزند. در `claimDeadline()` ورق
+برمی‌گردد: `redeem` برای همه `ClaimWindowClosed` می‌دهد و ادمین می‌تواند باقیمانده را
+بردارد.
+
+- تا وقتی `endedAt == 0` است `MarketNotResolved` می‌دهد (بازار زندهٔ هرگز جارو نمی‌شود).
+- پیش از مهلت `ClaimWindowOpen`، و وقتی چیزی نمانده باشد `ZeroAmount`.
+- کل `address(this).balance` را جارو می‌کند، نه فقط `totalSets`: هرچه به‌زور به قرارداد
+  فرستاده شده باشد قابل بازخرید نیست و بعد از پایان پنجره هم حسابداری‌ای برای محافظت
+  نمانده. `totalSets` را صفر می‌کند، کل مبلغ را با `IPredictionTreasury.depositFee` به
+  خزانه می‌فرستد و `UnclaimedSwept` را emit می‌کند.
+
+بریدگی روی خودِ مهلت است، نه روی تراکنش جارو؛ پس بازخرید برای همه در یک لحظهٔ واحد بسته
+می‌شود، چه ادمین باقیمانده را برداشته باشد چه نه.
 
 ---
 
@@ -181,7 +272,13 @@ function redeem() external nonReentrant returns (uint256 payout);
 
 `pause()/unpause()` توقف برگشت‌پذیر؛ ‏`close()` توقف دائمی؛
 `resolve(uint256 w)` اعلام برنده — **حتی قبل از lockTime ممکن است** (فرض اعتمادِ مستند؛
-موتور استخر این را بسته است)؛ ‏`voidMarket()` حالت بازگشت وجه؛ ‏`setTreasury`.
+موتور استخر این را بسته است)؛ ‏`voidMarket()` حالت بازگشت وجه؛ ‏`setTreasury`؛
+`setAutoDistribute(bool)`؛ ‏`sweepUnclaimed()` انتقال باقیمانده به خزانه، فقط بعد از
+`endedAt + CLAIM_WINDOW`.
+
+‏`removeFunding` دیگر بعد از تعیین‌تکلیف کار نمی‌کند (`MarketAlreadyEnded`): از آن به بعد
+سهام LP را خودِ توزیع به‌صورت وثیقه پرداخت می‌کند، و تبدیلش به توکن خروجی یعنی پرداخت
+دوبارهٔ همان رزروها.
 
 ---
 
@@ -189,7 +286,10 @@ function redeem() external nonReentrant returns (uint256 payout);
 
 `winningOutcome()` (خارج از Resolved revert)، ‏`getReserves()`، ‏`getPrices()`
 (قیمت‌های WAD با مجموع ≈1e18)، ‏`calcBuy(i,amountIn)` و `calcSell(i,returnAmount)`
-(کوت استاتیک)، ‏`outcomeName(i)`، ‏`totalSets()`.
+(کوت استاتیک)، ‏`outcomeName(i)`، ‏`totalSets()`، ‏`endedAt()`، ‏`claimDeadline()`
+(برابر `endedAt + CLAIM_WINDOW`، و تا وقتی بازار زنده است صفر)، ‏`distributionProgress()`
+(‏cursor و total پیمایش توزیع)، ‏`pendingPayout(account)` (اعتبار منتظر، وگرنه سهم آن
+حساب)، ‏`holderCount()`، ‏`autoDistribute()` و `categoryId()`.
 به‌علاوه سطح ERC-1155: ‏`balanceOf`, `balanceOfBatch`, `isApprovedForAll`,
 `safeTransferFrom`, `safeBatchTransferFrom`, `setApprovalForAll`, `totalSupply(id)`,
 `supportsInterface`.
@@ -210,7 +310,12 @@ function redeem() external nonReentrant returns (uint256 payout);
          │        └─ lpFee ── در رزروها می‌ماند (ارزش LP)
          └─ invest ──▶ رزروها ⇄ ضرب سهام برای خریدار
 فروشنده ──sell──◀ کوین (خالص کارمزد) ؛ ست‌ها سوزانده شدند
-برنده ──redeem──◀ 1:1 کوین از totalSets
+تعیین‌تکلیف ──┬─ برندگان ── ۱:۱ روی سهام برنده
+              └─ LPها    ── reserves[win] تناسبی
+   (با autoDistribute روشن) ──▶ دستهٔ اول همان‌جا به کیف پول‌شان push می‌شود
+هرکسی ──distribute(limit)──▶ همان فهرست را می‌پیماید، روشن باشد یا خاموش
+تحویل‌نشده ──▶ اعتبار ──▶ برنده ──redeem──◀ کوین      (تا claimDeadline())
+ADMIN ──sweepUnclaimed بعد از claimDeadline()──▶ کل باقیماندهٔ موجودی ──▶ Treasury
 ```
 
 ## تحلیل امنیتی
@@ -248,4 +353,7 @@ function redeem() external nonReentrant returns (uint256 payout);
 | `mergeSets(amount)` | external | nonpayable | عموم | ست کامل ← وثیقه |
 | `redeem()` | external | nonpayable | دارندگان توکن | پرداخت برنده/بازگشت |
 | `pause/unpause/close/voidMarket/resolve/setTreasury` | external | nonpayable | Controller | چرخهٔ حیات |
+| `setAutoDistribute(bool)` | external | nonpayable | Controller | روشن/خاموش کردن push هنگام تعیین‌تکلیف |
+| `distribute(limit)` | external | nonpayable | **همه** | پرداخت به حداکثر `limit` دارندهٔ بعدی |
+| `sweepUnclaimed()` | external | nonpayable | Controller | باقیمانده ← خزانه، بعد از پنجرهٔ بازخرید |
 | viewها | external | view | همه | قیمت/رزرو/کوت/نام |

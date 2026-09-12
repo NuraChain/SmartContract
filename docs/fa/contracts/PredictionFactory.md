@@ -60,7 +60,8 @@ PredictionFactory
 
 ```text
 MarketParams  (پارامترهای ساخت که به initializer کلون می‌رود)
-├── title, description, category, imageURI : string   -- متادیتا
+├── title, description, imageURI : string   -- متادیتا
+├── categoryId           : uint32   -- شناسهٔ غیرصفر در رجیستری دسته‌های کارخانه
 ├── creator              : address  -- حسابی که به‌عنوان سازنده/LP اول ثبت می‌شود
 ├── lockTime             : uint64   -- پایان معامله/شرط‌بندی
 ├── resolveTime          : uint64   -- زمان هدف حل (اطلاعاتی)
@@ -71,7 +72,8 @@ MarketParams  (پارامترهای ساخت که به initializer کلون می
 MarketRecord  (اسنپ‌شات رجیستری)
 ├── market      : address  -- آدرس کلون
 ├── creator     : address
-├── title, category : string
+├── title       : string
+├── categoryId  : uint32
 ├── status      : MarketStatus
 ├── createdAt, lockTime, resolveTime : uint64
 └── outcomeCount: uint32
@@ -100,7 +102,10 @@ MarketStatus:
 
 | رویداد | پارامترها | Indexed | محل صدور |
 | --- | --- | --- | --- |
-| `MarketCreated` | `marketId, market, creator, category, outcomeCount, initialFunding` | سه‌تای اول | `createMarket` (‏initialFunding = msg.value) یا `createMarket2` (۰) |
+| `MarketCreated` | `marketId, market, creator, categoryId, outcomeCount, initialFunding` | سه‌تای اول | `createMarket` (‏initialFunding = msg.value) یا `createMarket2` (۰) |
+| `CategoryAdded` | `categoryId` | indexed | `addCategory` |
+| `CategoryMeaningSet` | `categoryId, lang, meaning` | دوتای اول | `addCategory` و `setCategoryMeanings`، به‌ازای هر زبانِ نوشته‌شده |
+| `CategoryEnabledSet` | `categoryId, enabled` | categoryId | `addCategory` (true) و `setCategoryEnabled` |
 | `TreasuryUpdated` | `treasury` | indexed | `setTreasury` |
 | `FeesUpdated` | `feeBps, protocolFeeShareBps` | ندارد | `setDefaultFees` |
 
@@ -121,10 +126,14 @@ MarketStatus:
 ### طبقه‌بندی
 
 - **مدیریتی:** ‏`createMarket`, `createMarket2`, `pauseMarket`, `unpauseMarket`,
-  `closeMarket`, `voidMarket`, `setTreasury`, `repointTreasury`,
-  `setDefaultFees`
+  `closeMarket`, `voidMarket`, `sweepUnclaimed`, `setMarketAutoDistribute`,
+  `setTreasury`, `repointTreasury`, `setDefaultFees`, `addCategory`,
+  `setCategoryMeanings`, `setCategoryEnabled`
+- **بدون مجوز:** ‏`distributeMarket`
 - **مولتی‌سگ حل:** ‏confirmResolution (امضاکننده‌ها)، ‏setResolutionSigners (مالک)
-- **View:** ‏marketCount, marketAt, marketAddress, marketKind, 	reasury, esolutionSigners, equiredConfirmations, confirmationCount, confirmationOf, isResolutionSigner,
+- **View:** ‏marketCount, marketAt, marketAddress, marketKind, 	reasury, 
+esolutionSigners, 
+equiredConfirmations, confirmationCount, confirmationOf, isResolutionSigner,
   `marketsPaged`, `marketsByStatus`, `activeMarkets`, `closedMarkets`,
   `resolvedMarkets`, `countByStatus`
 - **Private:** ‏`_setStatus`
@@ -177,8 +186,61 @@ function createMarket2(MarketParams calldata params)
 | `closeMarket(id)` *(ADMIN_ROLE)* | `close()` | ← Closed |
 | `confirmResolution(id, winningOutcome)` *(امضاکننده)* | ثبت رای؛ در حد نصاب `resolve(winningOutcome)` را اجرا می‌کند | ← Resolved |
 | `voidMarket(id)` *(ADMIN_ROLE)* | `voidMarket()` | ← Voided |
+| `sweepUnclaimed(id)` *(ADMIN_ROLE)* | `sweepUnclaimed()` | ندارد — وضعیت پایانی دست‌نخورده می‌ماند |
+| `setMarketAutoDistribute(id, enabled)` *(ADMIN_ROLE)* | `setAutoDistribute(enabled)` | ندارد |
+| `distributeMarket(id, limit)` *(**همه**)* | `distribute(limit)` | ندارد |
 
 marketId خارج از محدوده panic اندیس آرایه می‌دهد.
+
+`sweepUnclaimed` تنها رله‌ای است که گذارِ رجیستری ندارد: وثیقه‌ای را که بازارِ
+تعیین‌تکلیف‌شده هنوز نگه داشته به خزانه می‌برد و مبلغ را برمی‌گرداند. کارخانه فقط گیتِ
+ادمین را فراهم می‌کند؛ زمان‌بندی را خودِ کلون اجرا می‌کند و تا وقتی بازار زنده است
+(`MarketNotResolved`) یا پنجرهٔ یک‌سالهٔ برداشتش باز است (`ClaimWindowOpen`) رد می‌کند، پس
+ادمین هرگز نمی‌تواند جلوی برنده را بگیرد. ‏`setMarketAutoDistribute` هم push هنگام
+تعیین‌تکلیف را روشن/خاموش می‌کند، و `distributeMarket` عمداً **بدون مجوز** است: فقط وثیقهٔ
+خودِ بازارِ تعیین‌تکلیف‌شده را به حساب‌هایی می‌برد که از قبل مستحق‌اند. هر سه روی هر دو
+موتور کار می‌کنند.
+
+## رجیستری دسته‌ها
+
+بازارها زیر یک `categoryId` عددی ثبت می‌شوند؛ کلمه‌ای که کاربر می‌بیند اینجا زندگی می‌کند،
+به‌ازای هر زبان یک‌بار. پس تغییر نام یا ترجمهٔ یک دسته، یک ویرایش در رجیستری است نه مهاجرت
+روی تک‌تک بازارهایی که از آن استفاده کرده‌اند.
+
+```solidity
+function addCategory(uint32 categoryId, bytes8[] langs, string[] meanings) external;   // ADMIN_ROLE
+function setCategoryMeanings(uint32 categoryId, bytes8[] langs, string[] meanings) external; // ADMIN_ROLE
+function setCategoryEnabled(uint32 categoryId, bool enabled) external;                // ADMIN_ROLE
+function categoryMeaning(uint32 categoryId, bytes8 lang) external view returns (string memory);
+function categoryMeanings(uint32 categoryId) external view returns (bytes8[] langs, string[] meanings);
+function categoryLanguages(uint32 categoryId) external view returns (bytes8[] memory);
+function categoryIds() external view returns (uint32[] memory);
+function categoryCount() external view returns (uint256);
+function categoryState(uint32 categoryId) external view returns (bool known, bool enabled);
+function marketsByCategory(uint32 categoryId, uint256 offset, uint256 limit) external view returns (MarketRecord[] memory);
+function countByCategory(uint32 categoryId) external view returns (uint256);
+```
+
+- **تگ زبان** کد کوتاهی است که از چپ در `bytes8` چیده می‌شود: `"en"`، `"fa"`، `"pt-BR"`.
+  تطبیق دقیق است و نرمال‌سازی ندارد؛ یک املا انتخاب کنید و به همان بمانید.
+- **شناسهٔ ۰ رزرو است**، تا بازاری که `categoryId` نگرفته با `UnknownCategory` بلند شکست
+  بخورد، نه اینکه در سطلی بی‌نام بیفتد.
+- **‏`addCategory` باید `DEFAULT_LANG` را داشته باشد** (وگرنه `MissingDefaultMeaning`)،
+  چون هر lookup به آن fallback می‌کند: دسته‌ای بدون آن، در هر زبانی که مترجم هنوز نرسیده
+  خالی خوانده می‌شود. دستهٔ تازه فعال شروع می‌شود.
+- **‏`setCategoryEnabled(id, false)`** دسته را فقط از بازارهای *جدید* بازنشسته می‌کند؛
+  بازارهایی که از قبل زیر آن ثبت شده‌اند همچنان فهرست و خوانده و معامله می‌شوند.
+- **خطاها:** ‏`UnknownCategory` (شناسهٔ ۰، ثبت‌نشده، یا بازنشسته هنگام ساخت بازار)،
+  `CategoryExists`، ‏`BadCategoryInput` (ناهم‌خوانی طول آرایه‌ها، دستهٔ خالی، تگ یا نام
+  خالی، یا عبور از `MAX_CATEGORY_LANGS`)، ‏`MissingDefaultMeaning`.
+
+```text
+addCategory(7, ["en", "fa"], ["Weather", "آب و هوا"])
+createMarket2({ ..., categoryId: 7 })
+categoryMeaning(7, "fa") -> "آب و هوا"
+categoryMeaning(7, "tr") -> "Weather"        // ترجمه‌نشده: fallback به DEFAULT_LANG
+marketsByCategory(7, 0, 20)                 // صفحه‌بندی‌شده، بدون اسکن رجیستری
+```
 
 ### مولتی‌سگ حل (N از M)
 
@@ -294,6 +356,11 @@ ADMIN ──createMarket{value}──▶ initialize روی کلون (seed = سه
 | viewهای مولتی‌سگ | external | view | همه | وضعیت رأی‌ها و امضاکننده‌ها |
 | `setTreasury(t)` | external | nonpayable | ADMIN_ROLE | خزانهٔ بازارهای آینده |
 | `repointTreasury(id)` | external | nonpayable | ADMIN_ROLE | همگام‌سازی خزانهٔ یک کلون |
+| `sweepUnclaimed(id)` | external | nonpayable | ADMIN_ROLE | انتقال باقیماندهٔ بازار تعیین‌تکلیف‌شده به خزانه، یک سال بعد |
+| `setMarketAutoDistribute(id, enabled)` | external | nonpayable | ADMIN_ROLE | روشن/خاموش کردن push هنگام تعیین‌تکلیف |
+| `distributeMarket(id, limit)` | external | nonpayable | **همه** | پرداخت به حداکثر `limit` حسابِ بعدیِ یک بازار تعیین‌تکلیف‌شده |
+| `addCategory/setCategoryMeanings/setCategoryEnabled` | external | nonpayable | ADMIN_ROLE | رجیستری دسته‌ها |
+| `categoryMeaning(s)/categoryLanguages/categoryIds/categoryCount/categoryState/marketsByCategory/countByCategory` | external | view | همه | خواندن دسته‌ها |
 | `setDefaultFees(f,s)` | external | nonpayable | ADMIN_ROLE | پیش‌فرض بازارهای feeBps=0 |
 | viewهای رجیستری | external/public | view | همه | فهرست و جستجو |
 

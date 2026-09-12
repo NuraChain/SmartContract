@@ -21,6 +21,8 @@ import {
     MarketAlreadyEnded,
     LockNotReached,
     NothingToClaim,
+    ClaimWindowOpen,
+    ClaimWindowClosed,
     TransferFailed,
     Reentrancy
 } from "./PredictionErrors.sol";
@@ -31,7 +33,11 @@ import {
     MarketUnpaused,
     MarketClosed,
     MarketResolved,
-    MarketVoided
+    MarketVoided,
+    UnclaimedSwept,
+    PayoutDeferred,
+    DistributionAdvanced,
+    AutoDistributeSet
 } from "./PredictionEvents.sol";
 
 /**
@@ -45,9 +51,14 @@ import {
  *
  *          payout(user) = (totalPool − fee) · stakeOnWinner(user) / totalStakedOnWinner
  *
- * @dev Bets are plain deposits accounted per (user, outcome); nothing is minted. Claims are
- *      pull-payment and one-shot (`_claimed` flag), so double claiming is impossible by
- *      construction. Resolution cannot happen before `lockTime` — the pool must be closed to
+ * @dev Bets are plain deposits accounted per (user, outcome); nothing is minted. Settlement
+ *      can pay bettors out by itself: with {autoDistribute} switched on, {resolve} and
+ *      {voidMarket} push the first {AUTO_DISTRIBUTE_BATCH} payouts in the same transaction,
+ *      and anyone can carry the rest with {distribute}. That push is off until an admin asks
+ *      for it ({setAutoDistribute}), and it is never the only way out either way, because
+ *      {distribute} is permissionless and {claim} always lets a bettor collect their own
+ *      share. Payment stays one-shot per account (`_claimed` flag), so nobody can be paid
+ *      twice. Resolution cannot happen before `lockTime` — the pool must be closed to
  *      new money before a winner can be declared. Rounding floors every payout; the sub-unit
  *      dust stays in the contract. `params.protocolFeeShareBps` is ignored here: the full fee
  *      goes to the treasury, because there are no LPs to retain the rest for.
@@ -59,6 +70,20 @@ contract PredictionPool is IPredictionPool, Initializable {
     /// @notice Maximum total fee (10%).
     uint16 public constant MAX_FEE_BPS = 1000;
 
+    /// @notice How long winners keep the right to claim after the pool settles. Once it
+    ///         elapses the leftover collateral is sweepable to the treasury.
+    uint64 public constant CLAIM_WINDOW = 365 days;
+
+    /// @notice Payouts pushed inside the settlement transaction itself. Small pools are
+    ///         therefore paid out in full the moment an admin resolves or voids them;
+    ///         anything larger is carried by {distribute} calls afterwards.
+    uint256 public constant AUTO_DISTRIBUTE_BATCH = 20;
+
+    /// @dev Gas forwarded to each pushed payout. Enough for an ordinary wallet or a plain
+    ///      `receive()`, and low enough that one hostile recipient cannot burn the batch.
+    ///      Whatever it cannot deliver becomes a pullable credit, so nobody loses money.
+    uint256 private constant PUSH_GAS = 50_000;
+
     /// @notice The factory; the only address allowed to drive lifecycle actions.
     address public controller;
 
@@ -68,10 +93,16 @@ contract PredictionPool is IPredictionPool, Initializable {
     /// @notice Current lifecycle status.
     MarketStatus public status;
 
+    /// @notice Whether settlement pushes the first batch of payouts by itself. Off until an
+    ///         admin turns it on, so a market pays out on request unless someone has decided
+    ///         it should pay out on its own. It never gates the money either way:
+    ///         {distribute} is open to anyone, and a participant can always collect their
+    ///         own share.
+    bool public autoDistribute;
+
     /// @notice Human-readable market metadata.
     string public title;
     string public description;
-    string public category;
     string public imageURI;
 
     /// @notice Account credited as the market's creator.
@@ -88,6 +119,12 @@ contract PredictionPool is IPredictionPool, Initializable {
     uint16 public feeBps;
     /// @notice Unused by pool markets (kept for parameter-shape parity with the CPMM).
     uint16 public protocolFeeShareBps;
+    /// @notice Category this market is filed under, in the factory's registry. The name a
+    ///         reader sees is looked up there, per language.
+    uint32 public categoryId;
+    /// @notice When the pool settled (Resolved or Voided); 0 while it is still live. The
+    ///         claim window runs for {CLAIM_WINDOW} from this instant.
+    uint64 public endedAt;
 
     /// @notice Number of outcomes.
     uint256 public outcomeCount;
@@ -108,8 +145,18 @@ contract PredictionPool is IPredictionPool, Initializable {
     mapping(uint256 outcome => uint256 staked) private _stakedFor;
     /// @dev Stake of each account per outcome.
     mapping(address account => mapping(uint256 outcome => uint256 stake)) private _stakeOf;
-    /// @dev True once an account has claimed (winner share or void refund).
+    /// @dev True once an account has been paid (pushed or pulled), or had nothing coming.
     mapping(address account => bool claimed) private _claimed;
+
+    /// @dev Every account that has ever bet, in first-bet order. The distribution walks it.
+    address[] private _participants;
+    /// @dev Stake of each account across all outcomes; doubles as the void-refund amount and
+    ///      as the "is this a first bet?" test that keeps `_participants` free of duplicates.
+    mapping(address account => uint256 staked) private _totalStakeOf;
+    /// @dev How far the push has walked `_participants`.
+    uint256 private _cursor;
+    /// @dev Payouts a push could not deliver, waiting to be pulled by {claim}.
+    mapping(address account => uint256 amount) private _credited;
 
     /// @dev Reentrancy lock: 1 = not entered, 2 = entered (storage-based; see PredictionMarket).
     ///      Set to 1 in {initialize}.
@@ -152,7 +199,7 @@ contract PredictionPool is IPredictionPool, Initializable {
         treasury = treasury_;
         title = params.title;
         description = params.description;
-        category = params.category;
+        categoryId = params.categoryId;
         imageURI = params.imageURI;
         creator = params.creator;
         createdAt = uint64(block.timestamp);
@@ -207,6 +254,7 @@ contract PredictionPool is IPredictionPool, Initializable {
 
         _winningOutcome = winningOutcome_;
         status = MarketStatus.Resolved;
+        endedAt = uint64(block.timestamp);
 
         uint256 pool = totalPool;
         uint256 fee = (pool * feeBps) / FeeMath.BPS;
@@ -216,13 +264,25 @@ contract PredictionPool is IPredictionPool, Initializable {
             IPredictionTreasury(treasury).depositFee{ value: fee }(address(this));
         }
         emit MarketResolved(address(this), winningOutcome_);
+
+        // Winners do not have to come and ask: start paying them right here, unless an admin
+        // has turned that off for this market.
+        if (autoDistribute) {
+            _pushPayouts(AUTO_DISTRIBUTE_BATCH);
+        }
     }
 
     /// @inheritdoc IPredictionPool
-    function voidMarket() external onlyController {
+    function voidMarket() external onlyController nonReentrant {
         _requireNotEnded();
         status = MarketStatus.Voided;
+        endedAt = uint64(block.timestamp);
         emit MarketVoided(address(this));
+
+        // Refunds go back out on their own, exactly like winnings do.
+        if (autoDistribute) {
+            _pushPayouts(AUTO_DISTRIBUTE_BATCH);
+        }
     }
 
     /// @inheritdoc IPredictionPool
@@ -230,6 +290,13 @@ contract PredictionPool is IPredictionPool, Initializable {
         if (treasury_ == address(0)) revert ZeroAddress();
         treasury = treasury_;
     }
+
+    /// @inheritdoc IPredictionPool
+    function setAutoDistribute(bool enabled) external onlyController {
+        autoDistribute = enabled;
+        emit AutoDistributeSet(address(this), enabled);
+    }
+
 
     // ----------------------------------------------------------------------------------------
     // Betting
@@ -249,6 +316,10 @@ contract PredictionPool is IPredictionPool, Initializable {
 
         // Effects only — no external call is made, but the guard costs little and keeps every
         // money path uniform.
+        if (_totalStakeOf[msg.sender] == 0) {
+            _participants.push(msg.sender);
+        }
+        _totalStakeOf[msg.sender] += staked;
         _stakeOf[msg.sender][outcomeIndex] += staked;
         _stakedFor[outcomeIndex] += staked;
         totalPool += staked;
@@ -267,28 +338,59 @@ contract PredictionPool is IPredictionPool, Initializable {
      * @return payout Collateral paid to the caller.
      */
     function claim() external nonReentrant returns (uint256 payout) {
-        if (_claimed[msg.sender]) revert NothingToClaim();
-        MarketStatus s = status;
+        _requireClaimWindowOpen();
 
-        if (s == MarketStatus.Resolved) {
-            uint256 win = _winningOutcome;
-            uint256 mine = _stakeOf[msg.sender][win];
-            uint256 total = _stakedFor[win];
-            if (mine == 0) revert NothingToClaim();
-            payout = (mine * _distributable) / total;
-        } else if (s == MarketStatus.Voided) {
-            uint256 n = outcomeCount;
-            for (uint256 j = 0; j < n; ++j) {
-                payout += _stakeOf[msg.sender][j];
-            }
-            if (payout == 0) revert NothingToClaim();
+        uint256 credit = _credited[msg.sender];
+        if (credit > 0) {
+            // A push already set this money aside; it just could not be delivered.
+            _credited[msg.sender] = 0;
+            payout = credit;
         } else {
-            revert MarketNotResolved();
+            if (_claimed[msg.sender]) revert NothingToClaim();
+            MarketStatus s = status;
+            if (s != MarketStatus.Resolved && s != MarketStatus.Voided) revert MarketNotResolved();
+            payout = _payoutOf(msg.sender);
+            if (payout == 0) revert NothingToClaim();
+            _claimed[msg.sender] = true;
         }
 
-        _claimed[msg.sender] = true;
         _sendNative(msg.sender, payout);
         emit RewardClaimed(address(this), msg.sender, payout);
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Automatic distribution
+    // ----------------------------------------------------------------------------------------
+
+    /// @inheritdoc IPredictionPool
+    function distribute(uint256 limit) external nonReentrant returns (uint256 paid) {
+        if (endedAt == 0) revert MarketNotResolved();
+        if (limit == 0) revert ZeroAmount();
+        _requireClaimWindowOpen();
+        paid = _pushPayouts(limit);
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Residue sweep
+    // ----------------------------------------------------------------------------------------
+
+    /// @inheritdoc IPredictionPool
+    function sweepUnclaimed() external onlyController nonReentrant returns (uint256 amount) {
+        uint64 deadline = claimDeadline();
+        if (deadline == 0) revert MarketNotResolved();
+        if (block.timestamp < deadline) revert ClaimWindowOpen();
+
+        // Everything still here: unclaimed winner shares, void refunds nobody came back for,
+        // and the sub-unit rounding dust every pro-rata payout leaves behind.
+        amount = address(this).balance;
+        if (amount == 0) revert ZeroAmount();
+
+        // Effects: nothing is distributable any more and {claim} is already shut by the deadline.
+        _distributable = 0;
+
+        address to = treasury;
+        IPredictionTreasury(to).depositFee{ value: amount }(address(this));
+        emit UnclaimedSwept(address(this), to, amount);
     }
 
     /// @notice Receives native collateral sent directly to the contract. Reverts to prevent
@@ -305,6 +407,34 @@ contract PredictionPool is IPredictionPool, Initializable {
     // ----------------------------------------------------------------------------------------
     // Views
     // ----------------------------------------------------------------------------------------
+
+    /// @inheritdoc IPredictionPool
+    function claimDeadline() public view returns (uint64) {
+        uint64 ended = endedAt;
+        return ended == 0 ? 0 : ended + CLAIM_WINDOW;
+    }
+
+    /// @inheritdoc IPredictionPool
+    function distributionProgress() external view returns (uint256 cursor, uint256 total) {
+        return (_cursor, _participants.length);
+    }
+
+    /// @inheritdoc IPredictionPool
+    function pendingPayout(address account) external view returns (uint256) {
+        uint256 credit = _credited[account];
+        if (credit > 0) {
+            return credit;
+        }
+        if (_claimed[account] || endedAt == 0) {
+            return 0;
+        }
+        return _payoutOf(account);
+    }
+
+    /// @notice Total accounts that have ever bet on this pool (the distribution's length).
+    function participantCount() external view returns (uint256) {
+        return _participants.length;
+    }
 
     /// @inheritdoc IPredictionPool
     function winningOutcome() external view returns (uint256) {
@@ -368,6 +498,65 @@ contract PredictionPool is IPredictionPool, Initializable {
     /// @dev Reverts if the market has already reached a terminal status.
     function _requireNotEnded() private view {
         if (status == MarketStatus.Resolved || status == MarketStatus.Voided) revert MarketAlreadyEnded();
+    }
+
+    /// @dev Reverts once the claim window has elapsed. The cut-off is the deadline itself,
+    ///      not the sweep transaction, so claiming stops at the same instant for everyone
+    ///      whether or not an admin has already collected the residue.
+    function _requireClaimWindowOpen() private view {
+        uint64 deadline = claimDeadline();
+        if (deadline != 0 && block.timestamp >= deadline) revert ClaimWindowClosed();
+    }
+
+    /// @dev What `account` is owed at the current settlement, before any payment. Returns 0
+    ///      for a losing bettor, and for a winning outcome nobody backed (the pool then has
+    ///      no one to pay; {sweepUnclaimed} recovers it a year on).
+    function _payoutOf(address account) private view returns (uint256) {
+        if (status == MarketStatus.Resolved) {
+            uint256 win = _winningOutcome;
+            uint256 total = _stakedFor[win];
+            if (total == 0) {
+                return 0;
+            }
+            return (_stakeOf[account][win] * _distributable) / total;
+        }
+        // Voided: every bettor gets their own stake back, fee-free.
+        return _totalStakeOf[account];
+    }
+
+    /// @dev Pays up to `limit` further participants and advances the cursor. Each account is
+    ///      marked paid before its transfer, and a transfer that fails becomes a credit
+    ///      rather than a revert, so one recipient can never stall the queue behind it.
+    function _pushPayouts(uint256 limit) private returns (uint256 paid) {
+        uint256 i = _cursor;
+        uint256 total = _participants.length;
+        uint256 end = i + limit;
+        if (end > total) {
+            end = total;
+        }
+
+        for (; i < end; ++i) {
+            address account = _participants[i];
+            if (_claimed[account]) {
+                continue;
+            }
+            uint256 payout = _payoutOf(account);
+            _claimed[account] = true;
+            if (payout == 0) {
+                continue;
+            }
+            (bool ok, ) = payable(account).call{ value: payout, gas: PUSH_GAS }("");
+            if (ok) {
+                paid += payout;
+                emit RewardClaimed(address(this), account, payout);
+            } else {
+                _credited[account] += payout;
+                emit PayoutDeferred(address(this), account, payout);
+            }
+        }
+
+        _cursor = i;
+        emit DistributionAdvanced(address(this), i, total, paid);
     }
 
     /// @dev Native transfer with an explicit success check.

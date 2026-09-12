@@ -119,7 +119,10 @@ function setFeeRecipient(address recipient) external onlyOwner;
 ## راهنمای یکپارچه‌سازی
 
 خواندن: `totalCollected()`, `collectedFor(market)` برای تحلیل درآمد.
-گوش دهید به: `FeeCollected` (به تفکیک بازار) و `FeeWithdrawn`.
+گوش دهید به: `FeeCollected` (به تفکیک بازار) و `FeeWithdrawn`. توجه: جاروی باقیماندهٔ
+یک بازار (`sweepUnclaimed`) هم از مسیر `depositFee` می‌آید و اینجا `FeeCollected` دیده
+می‌شود؛ خودِ بازار آن را جداگانه با `UnclaimedSwept` ثبت می‌کند — همان رویدادی که برای
+گزارش درآمد خالصِ معاملات باید کم شود.
 
 ## مرجع سریع توابع
 

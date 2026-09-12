@@ -36,12 +36,15 @@ enum MarketStatus {
 /**
  * @notice Immutable creation parameters passed from the factory into a market clone's
  *         initializer. `outcomeNames.length` defines the outcome count (2..MAX_OUTCOMES).
- * @dev Timestamps are uint64 (seconds); fees are basis points (1e4 = 100%).
+ * @dev Timestamps are uint64 (seconds); fees are basis points (1e4 = 100%). `categoryId`
+ *      refers to the factory's category registry rather than carrying a name of its own: the
+ *      display text lives there, once per language, so renaming or translating a category
+ *      never means touching a market.
  */
 struct MarketParams {
     string title;
     string description;
-    string category;
+    uint32 categoryId;
     string imageURI;
     address creator;
     uint64 lockTime;
@@ -59,7 +62,7 @@ struct MarketRecord {
     address market;
     address creator;
     string title;
-    string category;
+    uint32 categoryId;
     MarketStatus status;
     uint64 createdAt;
     uint64 lockTime;

@@ -15,10 +15,22 @@ event MarketCreated(
     uint256 indexed marketId,
     address indexed market,
     address indexed creator,
-    string category,
+    uint32 categoryId,
     uint256 outcomeCount,
     uint256 initialFunding
 );
+
+/// @notice A category was registered on the factory. Markets refer to it by this id; the
+///         text shown to a reader comes from {CategoryMeaningSet}, one entry per language.
+event CategoryAdded(uint32 indexed categoryId);
+
+/// @notice What category `categoryId` means in `lang` (a short tag such as "en" or "fa",
+///         left-aligned in bytes8). Setting it again replaces the previous text.
+event CategoryMeaningSet(uint32 indexed categoryId, bytes8 indexed lang, string meaning);
+
+/// @notice A category was opened for, or retired from, new markets. Retiring never touches
+///         the markets already filed under it.
+event CategoryEnabledSet(uint32 indexed categoryId, bool enabled);
 
 /// @notice A market was paused by an admin (trading halted, reversible).
 event MarketPaused(address indexed market);
@@ -62,11 +74,32 @@ event LiquidityAdded(address indexed market, address indexed funder, uint256 amo
 /// @notice Liquidity removed; `provider` burned `lpShares`.
 event LiquidityRemoved(address indexed market, address indexed provider, uint256 lpShares);
 
-/// @notice A winner (or refund) claim: `amount` collateral paid to `claimant`.
+/// @notice A winner (or refund) claim: `amount` collateral paid to `claimant`. Emitted for
+///         payouts the market pushes out on its own as well as for pulled ones, so an
+///         indexer sees one settlement log per account either way.
 event RewardClaimed(address indexed market, address indexed claimant, uint256 amount);
+
+/// @notice A pushed payout could not be delivered (the recipient reverted or ran past the
+///         forwarded gas), so `amount` was credited for `account` to pull instead. The
+///         collateral is already accounted as theirs; only delivery failed.
+event PayoutDeferred(address indexed market, address indexed account, uint256 amount);
+
+/// @notice Automatic distribution advanced to `cursor` of `total` recipients on `market`,
+///         paying out `amount` in this batch.
+event DistributionAdvanced(address indexed market, uint256 cursor, uint256 total, uint256 amount);
+
+/// @notice Whether `market` pushes payouts itself at settlement was changed. With it off,
+///         collateral still leaves the same way — through {distribute} or a participant's
+///         own claim — it just is not started automatically.
+event AutoDistributeSet(address indexed market, bool enabled);
 
 /// @notice Protocol fee forwarded to the treasury from `market`.
 event FeeCollected(address indexed market, uint256 amount);
+
+/// @notice Collateral left unclaimed after a market's claim window expired was swept to
+///         `treasury`. Logged separately from {FeeCollected} so residue never reads as
+///         trading revenue in fee reporting.
+event UnclaimedSwept(address indexed market, address indexed treasury, uint256 amount);
 
 /// @notice Treasury withdrew `amount` to the fee recipient.
 event FeeWithdrawn(address indexed to, uint256 amount);

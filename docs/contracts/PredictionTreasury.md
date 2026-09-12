@@ -168,7 +168,10 @@ to deployer, `feeRecipient` defaults to admin and is fixable later via
 ## Integration Guide
 
 Reads: `totalCollected()`, `collectedFor(market)` for analytics. Listen:
-`FeeCollected` per market for revenue tracking, `FeeWithdrawn` for outflows.
+`FeeCollected` per market for revenue tracking, `FeeWithdrawn` for outflows. Note that
+a market's post-claim-window `sweepUnclaimed` also arrives through `depositFee`, so it
+shows up here as `FeeCollected`; the market logs it separately as `UnclaimedSwept`,
+which is the event to subtract when reporting trading revenue alone.
 
 ## Function Reference
 

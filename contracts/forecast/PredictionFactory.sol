@@ -16,7 +16,11 @@ import {
     NotSigner,
     NotOwner,
     DuplicateSigner,
-    BadQuorum
+    BadQuorum,
+    UnknownCategory,
+    CategoryExists,
+    BadCategoryInput,
+    MissingDefaultMeaning
 } from "./PredictionErrors.sol";
 import {
     MarketCreated,
@@ -24,7 +28,10 @@ import {
     FeesUpdated,
     ResolutionConfirmed,
     ResolutionExecuted,
-    ResolutionSignersUpdated
+    ResolutionSignersUpdated,
+    CategoryAdded,
+    CategoryMeaningSet,
+    CategoryEnabledSet
 } from "./PredictionEvents.sol";
 
 /**
@@ -49,6 +56,13 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
     /// @notice Maximum number of resolution signers the owner can appoint (bounds loops/gas).
     uint256 public constant MAX_SIGNERS = 10;
 
+    /// @notice The language every category must be named in, and the one any lookup falls
+    ///         back to. Tags are short codes left-aligned in bytes8: "en", "fa", "pt-BR".
+    bytes8 public constant DEFAULT_LANG = bytes8(bytes2("en"));
+
+    /// @notice Maximum languages a single category may carry (bounds {categoryMeanings}).
+    uint256 public constant MAX_CATEGORY_LANGS = 32;
+
     /// @notice The market implementation cloned for every new market.
     address public immutable marketImplementation;
 
@@ -69,6 +83,22 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
     mapping(uint256 marketId => MarketKind kind) private _kinds;
     /// @dev marketId sets bucketed by current status (for O(1) transitions + paged filters).
     mapping(MarketStatus => EnumerableSet.UintSet) private _byStatus;
+    /// @dev marketId sets bucketed by category, so a category page never scans the registry.
+    mapping(uint32 categoryId => EnumerableSet.UintSet ids) private _byCategory;
+
+    /// @dev Registered category ids, in registration order.
+    uint32[] private _categoryIds;
+    /// @dev Whether a category id has ever been registered.
+    mapping(uint32 categoryId => bool known) private _categoryKnown;
+    /// @dev Whether a category still accepts new markets. Retiring one leaves the markets
+    ///      already filed under it alone.
+    mapping(uint32 categoryId => bool enabled) private _categoryEnabled;
+    /// @dev What a category is called, per language tag.
+    mapping(uint32 categoryId => mapping(bytes8 lang => string meaning)) private _meaning;
+    /// @dev Which languages a category has been named in, in first-set order.
+    mapping(uint32 categoryId => bytes8[] langs) private _langsOf;
+    /// @dev Membership test that keeps `_langsOf` free of duplicates.
+    mapping(uint32 categoryId => mapping(bytes8 lang => bool present)) private _hasLang;
 
     /// @notice The account allowed to appoint/remove resolution signers and set the quorum.
     address public owner;
@@ -180,6 +210,8 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
             effective.protocolFeeShareBps = defaultProtocolFeeShareBps;
         }
 
+        if (!_categoryEnabled[effective.categoryId]) revert UnknownCategory();
+
         market = Clones.clone(marketImplementation);
         IPredictionMarket(market).initialize{ value: msg.value }(address(this), _treasury, effective);
 
@@ -189,7 +221,7 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
                 market: market,
                 creator: effective.creator,
                 title: effective.title,
-                category: effective.category,
+                categoryId: effective.categoryId,
                 status: MarketStatus.Open,
                 createdAt: uint64(block.timestamp),
                 lockTime: effective.lockTime,
@@ -198,9 +230,10 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
             })
         );
         _byStatus[MarketStatus.Open].add(marketId);
+        _byCategory[effective.categoryId].add(marketId);
 
         emit MarketCreated(
-            marketId, market, effective.creator, effective.category, effective.outcomeNames.length, msg.value
+            marketId, market, effective.creator, effective.categoryId, effective.outcomeNames.length, msg.value
         );
     }
 
@@ -227,6 +260,8 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
             effective.feeBps = defaultFeeBps;
         }
 
+        if (!_categoryEnabled[effective.categoryId]) revert UnknownCategory();
+
         market = Clones.clone(poolImplementation);
         IPredictionMarket(market).initialize(address(this), _treasury, effective);
 
@@ -237,7 +272,7 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
                 market: market,
                 creator: effective.creator,
                 title: effective.title,
-                category: effective.category,
+                categoryId: effective.categoryId,
                 status: MarketStatus.Open,
                 createdAt: uint64(block.timestamp),
                 lockTime: effective.lockTime,
@@ -246,8 +281,9 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
             })
         );
         _byStatus[MarketStatus.Open].add(marketId);
+        _byCategory[effective.categoryId].add(marketId);
 
-        emit MarketCreated(marketId, market, effective.creator, effective.category, effective.outcomeNames.length, 0);
+        emit MarketCreated(marketId, market, effective.creator, effective.categoryId, effective.outcomeNames.length, 0);
     }
 
     /// @inheritdoc IPredictionFactory
@@ -367,6 +403,31 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
         _setStatus(marketId, MarketStatus.Voided);
     }
 
+    /**
+     * @inheritdoc IPredictionFactory
+     * @dev The market enforces the timing itself; the factory only supplies the admin gate.
+     *      Nothing is sweepable until a market has settled (Resolved or Voided) and its
+     *      one-year claim window has run out, so this can never front-run a winner.
+     */
+    function sweepUnclaimed(uint256 marketId) external onlyRole(ADMIN_ROLE) returns (uint256 amount) {
+        amount = IPredictionMarket(_records[marketId].market).sweepUnclaimed();
+    }
+
+    /// @inheritdoc IPredictionFactory
+    function setMarketAutoDistribute(uint256 marketId, bool enabled) external onlyRole(ADMIN_ROLE) {
+        IPredictionMarket(_records[marketId].market).setAutoDistribute(enabled);
+    }
+
+    /**
+     * @inheritdoc IPredictionFactory
+     * @dev Deliberately permissionless: it only moves a settled market's own collateral to
+     *      the accounts already entitled to it, so anyone — a keeper, a frontend, a user
+     *      impatient for their neighbours — may push it along.
+     */
+    function distributeMarket(uint256 marketId, uint256 limit) external returns (uint256 paid) {
+        paid = IPredictionMarket(_records[marketId].market).distribute(limit);
+    }
+
     /// @inheritdoc IPredictionFactory
     function setTreasury(address treasury_) external onlyRole(ADMIN_ROLE) {
         if (treasury_ == address(0)) revert ZeroAddress();
@@ -389,6 +450,122 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
         defaultFeeBps = feeBps;
         defaultProtocolFeeShareBps = protocolFeeShareBps;
         emit FeesUpdated(feeBps, protocolFeeShareBps);
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Category registry
+    // ----------------------------------------------------------------------------------------
+
+    /// @inheritdoc IPredictionFactory
+    function addCategory(uint32 categoryId, bytes8[] calldata langs, string[] calldata meanings)
+        external
+        onlyRole(ADMIN_ROLE)
+    {
+        // Id zero is reserved so a market created with an unset category fails loudly.
+        if (categoryId == 0) revert UnknownCategory();
+        if (_categoryKnown[categoryId]) revert CategoryExists();
+
+        _categoryKnown[categoryId] = true;
+        _categoryEnabled[categoryId] = true;
+        _categoryIds.push(categoryId);
+        emit CategoryAdded(categoryId);
+        emit CategoryEnabledSet(categoryId, true);
+
+        _setMeanings(categoryId, langs, meanings);
+        // Every lookup falls back to the default language, so a category without one could
+        // read as blank in every language a translator has not reached yet.
+        if (bytes(_meaning[categoryId][DEFAULT_LANG]).length == 0) revert MissingDefaultMeaning();
+    }
+
+    /// @inheritdoc IPredictionFactory
+    function setCategoryMeanings(uint32 categoryId, bytes8[] calldata langs, string[] calldata meanings)
+        external
+        onlyRole(ADMIN_ROLE)
+    {
+        if (!_categoryKnown[categoryId]) revert UnknownCategory();
+        _setMeanings(categoryId, langs, meanings);
+    }
+
+    /// @inheritdoc IPredictionFactory
+    function setCategoryEnabled(uint32 categoryId, bool enabled) external onlyRole(ADMIN_ROLE) {
+        if (!_categoryKnown[categoryId]) revert UnknownCategory();
+        _categoryEnabled[categoryId] = enabled;
+        emit CategoryEnabledSet(categoryId, enabled);
+    }
+
+    /// @inheritdoc IPredictionFactory
+    function categoryMeaning(uint32 categoryId, bytes8 lang) public view returns (string memory) {
+        string memory text = _meaning[categoryId][lang];
+        if (bytes(text).length == 0) {
+            text = _meaning[categoryId][DEFAULT_LANG];
+        }
+        return text;
+    }
+
+    /// @inheritdoc IPredictionFactory
+    function categoryMeanings(uint32 categoryId)
+        external
+        view
+        returns (bytes8[] memory langs, string[] memory meanings)
+    {
+        langs = _langsOf[categoryId];
+        meanings = new string[](langs.length);
+        for (uint256 i = 0; i < langs.length; ++i) {
+            meanings[i] = _meaning[categoryId][langs[i]];
+        }
+    }
+
+    /// @inheritdoc IPredictionFactory
+    function categoryLanguages(uint32 categoryId) external view returns (bytes8[] memory) {
+        return _langsOf[categoryId];
+    }
+
+    /// @inheritdoc IPredictionFactory
+    function categoryIds() external view returns (uint32[] memory) {
+        return _categoryIds;
+    }
+
+    /// @inheritdoc IPredictionFactory
+    function categoryCount() external view returns (uint256) {
+        return _categoryIds.length;
+    }
+
+    /// @inheritdoc IPredictionFactory
+    function categoryState(uint32 categoryId) external view returns (bool known, bool enabled) {
+        return (_categoryKnown[categoryId], _categoryEnabled[categoryId]);
+    }
+
+    /// @inheritdoc IPredictionFactory
+    function marketsByCategory(uint32 categoryId, uint256 offset, uint256 limit)
+        external
+        view
+        returns (MarketRecord[] memory page)
+    {
+        return _page(_byCategory[categoryId], offset, limit);
+    }
+
+    /// @inheritdoc IPredictionFactory
+    function countByCategory(uint32 categoryId) external view returns (uint256) {
+        return _byCategory[categoryId].length();
+    }
+
+    /// @dev Writes one batch of translations, appending any language seen for the first time.
+    function _setMeanings(uint32 categoryId, bytes8[] calldata langs, string[] calldata meanings) private {
+        uint256 n = langs.length;
+        if (n == 0 || n != meanings.length) revert BadCategoryInput();
+
+        for (uint256 i = 0; i < n; ++i) {
+            bytes8 lang = langs[i];
+            if (lang == bytes8(0) || bytes(meanings[i]).length == 0) revert BadCategoryInput();
+
+            if (!_hasLang[categoryId][lang]) {
+                if (_langsOf[categoryId].length >= MAX_CATEGORY_LANGS) revert BadCategoryInput();
+                _hasLang[categoryId][lang] = true;
+                _langsOf[categoryId].push(lang);
+            }
+            _meaning[categoryId][lang] = meanings[i];
+            emit CategoryMeaningSet(categoryId, lang, meanings[i]);
+        }
     }
 
     // ----------------------------------------------------------------------------------------
@@ -442,7 +619,15 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
         view
         returns (MarketRecord[] memory page)
     {
-        EnumerableSet.UintSet storage ids = _byStatus[status];
+        return _page(_byStatus[status], offset, limit);
+    }
+
+    /// @dev One page of the records behind a marketId bucket.
+    function _page(EnumerableSet.UintSet storage ids, uint256 offset, uint256 limit)
+        private
+        view
+        returns (MarketRecord[] memory page)
+    {
         uint256 total = ids.length();
         if (offset >= total) {
             return new MarketRecord[](0);

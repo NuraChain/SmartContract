@@ -46,6 +46,8 @@ Also uses OpenZeppelin `Clones` (library) and `EnumerableSet` (status buckets).
 | `ADMIN_ROLE` | `bytes32` | public | constant | Role that creates and administers markets. |
 | `BPS` | `uint16` | public | constant | `1e4` basis-point denominator. |
 | `MAX_FEE_BPS` | `uint16` | public | constant | `1000`; caps total fee for new markets at 10%. |
+| `DEFAULT_LANG` | `bytes8` | public | constant | `"en"`; the language every category must be named in, and the one any lookup falls back to. |
+| `MAX_CATEGORY_LANGS` | `uint256` | public | constant | `32`; languages one category may carry (bounds `categoryMeanings`). |
 | `marketImplementation` | `address` | public | **immutable** | CPMM implementation cloned by `createMarket`. |
 | `poolImplementation` | `address` | public | **immutable** | Parimutuel implementation cloned by `createMarket2`. |
 | `_treasury` | `address` | private | mutable | Treasury applied to newly created markets. |
@@ -54,12 +56,18 @@ Also uses OpenZeppelin `Clones` (library) and `EnumerableSet` (status buckets).
 | `_records` | `MarketRecord[]` | private | mutable | Registry indexed by marketId. |
 | `_kinds` | `mapping(uint256 => MarketKind)` | private | mutable | marketId → engine (`Amm`=0 default, `Pool`=1). |
 | `_byStatus` | `mapping(MarketStatus => EnumerableSet.UintSet)` | private | mutable | O(1) status transitions + paged filters per status. |
+| `_byCategory` | `mapping(uint32 => EnumerableSet.UintSet)` | private | mutable | Same bucketing per category, so a category page never scans the registry. |
+| `_categoryIds` | `uint32[]` | private | append-only | Registered category ids, in registration order. |
+| `_categoryKnown` / `_categoryEnabled` | `mapping(uint32 => bool)` | private | mutable | Ever registered / still takes new markets. |
+| `_meaning` | `mapping(uint32 => mapping(bytes8 => string))` | private | mutable | Keys: category id → language tag → display name. |
+| `_langsOf` / `_hasLang` | `mapping(uint32 => bytes8[])` / `mapping(uint32 => mapping(bytes8 => bool))` | private | mutable | Which languages a category carries, in first-set order, plus the duplicate test. |
 
 ## Structs (declared in `PredictionTypes.sol`)
 
 ```text
 MarketParams  (creation parameters passed into a clone's initializer)
-├── title, description, category, imageURI : string   -- metadata
+├── title, description, imageURI : string   -- metadata
+├── categoryId           : uint32   -- non-zero id in the factory's category registry
 ├── creator              : address  -- account credited as creator/first LP
 ├── lockTime             : uint64   -- trading/betting closes at this timestamp
 ├── resolveTime          : uint64   -- informational target resolution time
@@ -70,7 +78,8 @@ MarketParams  (creation parameters passed into a clone's initializer)
 MarketRecord  (registry snapshot kept by the factory)
 ├── market      : address  -- clone address
 ├── creator     : address
-├── title, category : string
+├── title       : string
+├── categoryId  : uint32
 ├── status      : MarketStatus
 ├── createdAt, lockTime, resolveTime : uint64
 └── outcomeCount: uint32
@@ -103,9 +112,12 @@ Status values drive the registry buckets and what users may do on a clone.
 
 | Event | Parameters | Indexed | Trigger |
 | --- | --- | --- | --- |
-| `MarketCreated` | `marketId, market, creator, category, outcomeCount, initialFunding` | first three | Successful `createMarket` (`initialFunding = msg.value`) or `createMarket2` (0) |
+| `MarketCreated` | `marketId, market, creator, categoryId, outcomeCount, initialFunding` | first three | Successful `createMarket` (`initialFunding = msg.value`) or `createMarket2` (0) |
 | `TreasuryUpdated` | `treasury` | indexed | `setTreasury` |
 | `FeesUpdated` | `feeBps, protocolFeeShareBps` | none | `setDefaultFees` |
+| `CategoryAdded` | `categoryId` | indexed | `addCategory` |
+| `CategoryMeaningSet` | `categoryId, lang, meaning` | categoryId, lang | `addCategory` and `setCategoryMeanings`, once per language written |
+| `CategoryEnabledSet` | `categoryId, enabled` | categoryId | `addCategory` (true) and `setCategoryEnabled` |
 
 Trade/lifecycle events are emitted by the clones themselves (shared declarations in
 `PredictionEvents.sol`); indexers should key off the clone address.
@@ -124,10 +136,14 @@ Trade/lifecycle events are emitted by the clones themselves (shared declarations
 ### Classification
 
 - **Administrative:** `createMarket`, `createMarket2`, `pauseMarket`, `unpauseMarket`,
-  `closeMarket`, `voidMarket`, `setTreasury`, `repointTreasury`,
-  `setDefaultFees`
+  `closeMarket`, `voidMarket`, `sweepUnclaimed`, `setMarketAutoDistribute`,
+  `setTreasury`, `repointTreasury`, `setDefaultFees`, `addCategory`,
+  `setCategoryMeanings`, `setCategoryEnabled`
+- **Permissionless:** `distributeMarket`
 - **Resolution multisig:** confirmResolution (signers), setResolutionSigners (owner)
-- **View:** marketCount, marketAt, marketAddress, marketKind, 	reasury, esolutionSigners, equiredConfirmations, confirmationCount, confirmationOf, isResolutionSigner,
+- **View:** marketCount, marketAt, marketAddress, marketKind, 	reasury, 
+esolutionSigners, 
+equiredConfirmations, confirmationCount, confirmationOf, isResolutionSigner,
   `marketsPaged`, `marketsByStatus`, `activeMarkets`, `closedMarkets`,
   `resolvedMarkets`, `countByStatus`
 - **Private:** `_setStatus`
@@ -152,7 +168,10 @@ address. external / payable / ADMIN_ROLE.
 `market = Clones.clone(marketImplementation)`. 3.
 `IPredictionMarket(market).initialize{value: msg.value}(address(this), _treasury, effective)`
 (validates 2..16 outcomes, `now < lockTime <= resolveTime`, fees ≤ caps; mints LP shares
-to `params.creator`). 4. append `MarketRecord`, add to Open bucket. 5. emit `MarketCreated`.
+to `params.creator`). 4. append `MarketRecord`, add to the Open and category buckets.
+5. emit `MarketCreated`. The category is checked first: `params.categoryId` must name an
+enabled entry in the [category registry](#category-registry) or the call reverts
+`UnknownCategory`.
 
 **State changes:** `_records`, `_byStatus[Open]`. **Events:** `MarketCreated` (+ clone's
 `LiquidityAdded`). **Errors:** see table; also any clone-init revert.
@@ -188,8 +207,61 @@ transition is illegal, so registry and clone can never disagree:
 | `closeMarket(marketId)` *(ADMIN_ROLE)* | `close()` | → Closed (from not-ended states) |
 | `confirmResolution(marketId, winningOutcome)` *(signer)* | records a vote; at quorum calls `resolve(winningOutcome)` | → Resolved |
 | `voidMarket(marketId)` *(ADMIN_ROLE)* | `voidMarket()` | → Voided |
+| `sweepUnclaimed(marketId)` *(ADMIN_ROLE)* | `sweepUnclaimed()` | none — terminal status is unchanged |
+| `setMarketAutoDistribute(marketId, enabled)` *(ADMIN_ROLE)* | `setAutoDistribute(enabled)` | none |
+| `distributeMarket(marketId, limit)` *(**anyone**)* | `distribute(limit)` | none |
 
 `marketId` out of range reverts with array-index panic.
+
+The last three relays carry no registry transition. `sweepUnclaimed` moves the collateral
+a settled market still holds into the treasury; the factory supplies only the admin gate,
+while the clone enforces the timing, refusing whilst it is live (`MarketNotResolved`) or
+whilst its one-year claim window is still open (`ClaimWindowOpen`), so an admin can never
+front-run a winner. `setMarketAutoDistribute` switches a market's push-at-settlement on
+or off. `distributeMarket` is deliberately **permissionless**: it only moves a settled
+market's own collateral to the accounts already entitled to it, so a keeper, a frontend,
+or an impatient participant may all push it along. All three work on either engine.
+
+## Category registry
+
+Markets file themselves under a numeric `categoryId`; the words a reader sees live here,
+once per language. Renaming or translating a category is therefore a registry edit, not a
+migration over every market that used it.
+
+```solidity
+function addCategory(uint32 categoryId, bytes8[] langs, string[] meanings) external;   // ADMIN_ROLE
+function setCategoryMeanings(uint32 categoryId, bytes8[] langs, string[] meanings) external; // ADMIN_ROLE
+function setCategoryEnabled(uint32 categoryId, bool enabled) external;                // ADMIN_ROLE
+function categoryMeaning(uint32 categoryId, bytes8 lang) external view returns (string memory);
+function categoryMeanings(uint32 categoryId) external view returns (bytes8[] langs, string[] meanings);
+function categoryLanguages(uint32 categoryId) external view returns (bytes8[] memory);
+function categoryIds() external view returns (uint32[] memory);
+function categoryCount() external view returns (uint256);
+function categoryState(uint32 categoryId) external view returns (bool known, bool enabled);
+function marketsByCategory(uint32 categoryId, uint256 offset, uint256 limit) external view returns (MarketRecord[] memory);
+function countByCategory(uint32 categoryId) external view returns (uint256);
+```
+
+- **Language tags** are short codes left-aligned in `bytes8` — `"en"`, `"fa"`, `"pt-BR"`.
+  Exact match, no normalisation: pick one spelling and keep to it.
+- **Id 0 is reserved**, so a market created with an unset `categoryId` fails loudly with
+  `UnknownCategory` rather than landing in a nameless bucket.
+- **`addCategory` must include `DEFAULT_LANG`** (`MissingDefaultMeaning` otherwise),
+  because every lookup falls back to it — a category without one would read as blank in
+  each language a translator has not reached yet. New categories start enabled.
+- **`setCategoryEnabled(id, false)` retires** a category from *new* markets only. The
+  markets already filed under it stay listed, readable, and tradeable.
+- **Errors:** `UnknownCategory` (id 0, unregistered, or retired at creation time),
+  `CategoryExists` (duplicate `addCategory`), `BadCategoryInput` (array lengths disagree,
+  empty batch, empty tag or name, or past `MAX_CATEGORY_LANGS`), `MissingDefaultMeaning`.
+
+```text
+addCategory(7, ["en", "fa"], ["Weather", "آب و هوا"])
+createMarket2({ ..., categoryId: 7 })
+categoryMeaning(7, "fa") -> "آب و هوا"
+categoryMeaning(7, "tr") -> "Weather"        // untranslated: falls back to DEFAULT_LANG
+marketsByCategory(7, 0, 20)                 // paged, no registry scan
+```
 
 ### Resolution multisig (N-of-M)
 
@@ -264,7 +336,10 @@ Moves `marketId` between status buckets and writes the record's status. No-op wh
 | all views | none | Anyone |
 
 **CRITICAL ADMIN POWERS:** market creation (incl. choosing fees up to 10%), voiding,
-treasury re-pointing, and — owner-only — replacing the resolution signer set/quorum.
+treasury re-pointing, sweeping year-old unclaimed collateral, managing the category
+registry, and — owner-only — replacing the resolution signer set/quorum. Note what is
+*not* an admin power: `distributeMarket` is permissionless, and no admin action can stop
+a participant from collecting their own share.
 Resolution itself requires the N-of-M signer quorum (e.g. 3-of-5), not a single key; a
 colluding quorum is still a trusted assumption. See
 [PredictionPool](PredictionPool.md)/[PredictionMarket](PredictionMarket.md)
@@ -335,6 +410,11 @@ creation (`InvalidTiming`).
 | `resolutionSigners/isResolutionSigner/requiredConfirmations/confirmationCount/confirmationOf` | external | view | Anyone | Multisig state reads |
 | `setTreasury(t)` | external | nonpayable | ADMIN_ROLE | Treasury for future markets |
 | `repointTreasury(id)` | external | nonpayable | ADMIN_ROLE | Sync one clone's treasury |
+| `sweepUnclaimed(id)` | external | nonpayable | ADMIN_ROLE | Move a settled market's leftover collateral to the treasury, one year on |
+| `setMarketAutoDistribute(id, enabled)` | external | nonpayable | ADMIN_ROLE | Push payouts at settlement, or leave them to be asked for |
+| `distributeMarket(id, limit)` | external | nonpayable | **Anyone** | Pay up to `limit` more of a settled market's accounts |
+| `addCategory/setCategoryMeanings/setCategoryEnabled` | external | nonpayable | ADMIN_ROLE | Category registry |
+| `categoryMeaning(s)/categoryLanguages/categoryIds/categoryCount/categoryState/marketsByCategory/countByCategory` | external | view | Anyone | Category reads |
 | `setDefaultFees(f,s)` | external | nonpayable | ADMIN_ROLE | Defaults for feeBps=0 markets |
 | `marketCount/marketAt/marketAddress/marketKind/treasury` | external | view | Anyone | Registry reads |
 | `marketsPaged/marketsByStatus/activeMarkets/closedMarkets/resolvedMarkets/countByStatus` | external/public | view | Anyone | Paged listing |

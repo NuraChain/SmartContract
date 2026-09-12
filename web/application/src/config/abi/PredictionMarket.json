@@ -6,6 +6,16 @@
     },
     {
         "inputs": [],
+        "name": "ClaimWindowClosed",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ClaimWindowOpen",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "DeadlineExpired",
         "type": "error"
     },
@@ -230,6 +240,56 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": true,
+                "internalType": "address",
+                "name": "market",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "enabled",
+                "type": "bool"
+            }
+        ],
+        "name": "AutoDistributeSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "market",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "cursor",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "total",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "DistributionAdvanced",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": false,
                 "internalType": "uint64",
                 "name": "version",
@@ -364,6 +424,31 @@
             }
         ],
         "name": "MarketVoided",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "market",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "PayoutDeferred",
         "type": "event"
     },
     {
@@ -559,6 +644,57 @@
         "type": "event"
     },
     {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "market",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "treasury",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "UnclaimedSwept",
+        "type": "event"
+    },
+    {
+        "inputs": [],
+        "name": "AUTO_DISTRIBUTE_BATCH",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "CLAIM_WINDOW",
+        "outputs": [
+            {
+                "internalType": "uint64",
+                "name": "",
+                "type": "uint64"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [],
         "name": "LP_TOKEN_ID",
         "outputs": [
@@ -614,6 +750,19 @@
             }
         ],
         "stateMutability": "payable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "autoDistribute",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
         "type": "function"
     },
     {
@@ -743,12 +892,25 @@
     },
     {
         "inputs": [],
-        "name": "category",
+        "name": "categoryId",
         "outputs": [
             {
-                "internalType": "string",
+                "internalType": "uint32",
                 "name": "",
-                "type": "string"
+                "type": "uint32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "claimDeadline",
+        "outputs": [
+            {
+                "internalType": "uint64",
+                "name": "",
+                "type": "uint64"
             }
         ],
         "stateMutability": "view",
@@ -817,6 +979,56 @@
         "inputs": [
             {
                 "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "distribute",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "paid",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "distributionProgress",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "cursor",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "total",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "endedAt",
+        "outputs": [
+            {
+                "internalType": "uint64",
+                "name": "",
+                "type": "uint64"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
                 "name": "id",
                 "type": "uint256"
             }
@@ -873,6 +1085,19 @@
     },
     {
         "inputs": [],
+        "name": "holderCount",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "imageURI",
         "outputs": [
             {
@@ -909,9 +1134,9 @@
                         "type": "string"
                     },
                     {
-                        "internalType": "string",
-                        "name": "category",
-                        "type": "string"
+                        "internalType": "uint32",
+                        "name": "categoryId",
+                        "type": "uint32"
                     },
                     {
                         "internalType": "string",
@@ -1046,6 +1271,25 @@
         "name": "pause",
         "outputs": [],
         "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "pendingPayout",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
         "type": "function"
     },
     {
@@ -1234,6 +1478,19 @@
     {
         "inputs": [
             {
+                "internalType": "bool",
+                "name": "enabled",
+                "type": "bool"
+            }
+        ],
+        "name": "setAutoDistribute",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "treasury_",
                 "type": "address"
@@ -1274,6 +1531,19 @@
             }
         ],
         "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "sweepUnclaimed",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {

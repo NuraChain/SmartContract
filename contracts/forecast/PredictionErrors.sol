@@ -25,6 +25,16 @@ error ZeroAddress();
 /// @dev A zero amount was supplied where a positive value is required.
 error ZeroAmount();
 
+/// @dev Category id is zero, unregistered, or retired from new markets.
+error UnknownCategory();
+/// @dev A category with this id is already registered.
+error CategoryExists();
+/// @dev Category languages and meanings do not line up, are empty, or exceed the per-category
+///      language cap.
+error BadCategoryInput();
+/// @dev A category must carry a meaning in the registry's default language.
+error MissingDefaultMeaning();
+
 /// @dev Outcome count is outside the supported range [2, MAX_OUTCOMES].
 error InvalidOutcomeCount();
 /// @dev Outcome index does not exist in this market.
@@ -54,6 +64,10 @@ error InsufficientLiquidity();
 
 /// @dev Caller has no winning/refundable balance to redeem.
 error NothingToClaim();
+/// @dev The post-settlement claim window is still open, so residue cannot be swept yet.
+error ClaimWindowOpen();
+/// @dev The post-settlement claim window has closed; the residue belongs to the treasury.
+error ClaimWindowClosed();
 /// @dev Native-token transfer via call() returned false.
 error TransferFailed();
 /// @dev A reentrant call into a guarded function was detected.

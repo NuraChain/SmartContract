@@ -76,6 +76,33 @@ interface IPredictionFactory {
     /// @notice Voids a market for equal refunds (admin only).
     function voidMarket(uint256 marketId) external;
 
+    /**
+     * @notice Sweeps whatever collateral a settled market still holds into the treasury,
+     *        once its claim window has expired (admin only).
+     * @param marketId Market to sweep.
+     * @return amount Collateral moved to the treasury.
+     */
+    function sweepUnclaimed(uint256 marketId) external returns (uint256 amount);
+
+    /**
+     * @notice Turns a market's push-at-settlement on or off (admin only). Markets start with
+     *        it off. Payouts themselves are never gated by it: {distributeMarket} stays open
+     *        to anyone and participants can always collect their own share.
+     * @param marketId Market to configure.
+     * @param enabled Whether settlement should push the first batch of payouts.
+     */
+    function setMarketAutoDistribute(uint256 marketId, bool enabled) external;
+
+    /**
+     * @notice Carries a settled market's automatic payout forward by up to `limit` accounts.
+     *        Callable by anyone — settlement pushes the first batch itself, and this finishes
+     *        markets with more recipients than one transaction can hold.
+     * @param marketId Market to pay out.
+     * @param limit Maximum accounts to pay in this call.
+     * @return paid Collateral actually delivered in this batch.
+     */
+    function distributeMarket(uint256 marketId, uint256 limit) external returns (uint256 paid);
+
     /// @notice Updates the treasury applied to newly created markets (admin only). Existing
     ///         markets are re-pointed individually to keep gas bounded.
     function setTreasury(address treasury) external;
@@ -86,6 +113,83 @@ interface IPredictionFactory {
      * @param protocolFeeShareBps Protocol share of each fee in basis points.
      */
     function setDefaultFees(uint16 feeBps, uint16 protocolFeeShareBps) external;
+
+    // --- category registry ---
+
+    /**
+     * @notice Registers a category id and what it means, in one language or several (admin
+     *        only). Markets carry the id; every name a reader sees is looked up here, so
+     *        translating or renaming a category never touches a market.
+     * @dev Id 0 is reserved, so a market created with an unset category fails loudly. The
+     *      batch must include the default language, because that is what every lookup falls
+     *      back to. New categories start enabled.
+     * @param categoryId Non-zero id to register.
+     * @param langs Language tags, short codes left-aligned in bytes8 ("en", "fa", "pt-BR").
+     * @param meanings What the category is called in each of those languages, same order.
+     */
+    function addCategory(uint32 categoryId, bytes8[] calldata langs, string[] calldata meanings) external;
+
+    /**
+     * @notice Adds or replaces translations for a registered category (admin only).
+     * @param categoryId Category to translate.
+     * @param langs Language tags.
+     * @param meanings What the category is called in each, same order.
+     */
+    function setCategoryMeanings(uint32 categoryId, bytes8[] calldata langs, string[] calldata meanings) external;
+
+    /**
+     * @notice Opens a category for new markets, or retires it (admin only). Retiring leaves
+     *        the markets already filed under it untouched and still listable.
+     * @param categoryId Category to configure.
+     * @param enabled Whether new markets may use it.
+     */
+    function setCategoryEnabled(uint32 categoryId, bool enabled) external;
+
+    /**
+     * @notice What a category is called in `lang`, falling back to the default language when
+     *        that one has not been translated yet.
+     * @param categoryId Category to read.
+     * @param lang Language tag.
+     * @return The display name; empty only for an unregistered category.
+     */
+    function categoryMeaning(uint32 categoryId, bytes8 lang) external view returns (string memory);
+
+    /**
+     * @notice Every translation a category carries.
+     * @param categoryId Category to read.
+     * @return langs Language tags, in the order they were first set.
+     * @return meanings The name in each of those languages.
+     */
+    function categoryMeanings(uint32 categoryId)
+        external
+        view
+        returns (bytes8[] memory langs, string[] memory meanings);
+
+    /// @notice The language tags a category has been named in.
+    function categoryLanguages(uint32 categoryId) external view returns (bytes8[] memory);
+
+    /// @notice Every registered category id, in registration order.
+    function categoryIds() external view returns (uint32[] memory);
+
+    /// @notice How many categories are registered.
+    function categoryCount() external view returns (uint256);
+
+    /// @notice Whether a category was ever registered, and whether it still takes new markets.
+    function categoryState(uint32 categoryId) external view returns (bool known, bool enabled);
+
+    /**
+     * @notice A page of markets filed under one category.
+     * @param categoryId Category to list.
+     * @param offset Number of matching records to skip.
+     * @param limit Maximum records to return.
+     */
+    function marketsByCategory(uint32 categoryId, uint256 offset, uint256 limit)
+        external
+        view
+        returns (MarketRecord[] memory);
+
+    /// @notice Number of markets filed under a category.
+    function countByCategory(uint32 categoryId) external view returns (uint256);
 
     // --- registry views ---
 

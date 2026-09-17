@@ -73,7 +73,7 @@ room for a V2. Moving projections into the lens makes the core **21 502 bytes wi
 headroom**, shrinks the upgradeable (and therefore auditable) surface to state + rules, and means
 a new item kind can get a typed getter by redeploying a 7 KB stateless contract instead of
 upgrading the registry. Wallets talk to two addresses: the proxy for writes and primitive reads,
-the lens for rich reads. Both are in `web/application/src/config/contracts.ts`.
+the lens for rich reads.
 
 ---
 
@@ -488,8 +488,7 @@ Not audited. Treat the owner key as production-critical.
 ## 14. Frontend integration
 
 Two addresses: **proxy** (writes + primitive reads, ABI = `NuraProfile`) and **lens** (rich reads).
-Both are registered in the admin panel (`web/application/src/config/contracts.ts`, category
-*Identity*); the ABIs are extracted by `node web/application/scripts/extract-abi.mjs`.
+The ABIs are the `abi` arrays of the Hardhat artifacts under `artifacts/contracts/profile/`.
 
 ### viem
 
@@ -621,9 +620,9 @@ proxy, the lens, the verifier), compiler 0.8.28, optimizer on / 200 runs, **viaI
 cancun. Blockscout detects the EIP-1967 proxy automatically once both the proxy and the
 implementation are verified.
 
-**What to record.** The proxy address is the registry. Put it (and the lens) into
-`web/application/src/config/contracts.ts`; the implementation address changes on every upgrade
-and matters only to the verifier.
+**What to record.** The proxy address is the registry. Record it (and the lens) wherever your
+client keeps addresses; the implementation address changes on every upgrade and matters only to
+the verifier.
 
 ---
 

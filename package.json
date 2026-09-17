@@ -2,7 +2,6 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npm run dev --prefix web/application",
     "build": "hardhat compile && node scripts/write-init-code-hash.ts && hardhat compile",
     "initcodehash": "node scripts/write-init-code-hash.ts",
     "test": "hardhat test",

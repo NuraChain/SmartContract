@@ -33,10 +33,9 @@ constructor(address admin) BridgeToken("Bridge BNB", "BNB", 18, admin) {}
 
 - شبکه: Nurachain، شناسهٔ 1020
 - آدرس: `0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc`
-  (ثبت‌شده در `web/application/src/config/contracts.ts`)
 - اسکریپت دیپلوی: `ignition/modules/token.ts`
 - بلاک/تراکنش دیپلوی: Not found in repository
 
 ## یکپارچه‌سازی
 
-ABI در `web/application/src/config/abi/BridgeBNB.json`.
+ABI:‏ آرایهٔ `abi` در `artifacts/contracts/token/BridgeBNB.sol/BridgeBNB.json`.

@@ -44,11 +44,10 @@ constructor(address admin) BridgeToken("Bridge USDT", "USDT", 18, admin) {}
 
 - شبکه: Nurachain، شناسهٔ 1020
 - آدرس: `0x4E0DB0B1Da408faF5637202CF48b0bc7733bE6dC`
-  (ثبت‌شده در `web/application/src/config/contracts.ts`)
 - اسکریپت دیپلوی: `ignition/modules/token.ts` (`npm run deploy:nurachain:token`)
 - بلاک/تراکنش دیپلوی: Not found in repository
 
 ## یکپارچه‌سازی
 
-ABI در `web/application/src/config/abi/BridgeUSDT.json`. برای جریان‌ها و رویدادها
-[BridgeToken](BridgeToken.md) را ببینید.
+ABI:‏ آرایهٔ `abi` در `artifacts/contracts/token/BridgeUSDT.sol/BridgeUSDT.json`. برای
+جریان‌ها و رویدادها [BridgeToken](BridgeToken.md) را ببینید.

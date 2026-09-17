@@ -44,12 +44,11 @@ ERC20 surface (`name`, `symbol`, `totalSupply`, `balanceOf`, `transfer`, `allowa
 ## Deployment Information
 
 - Network: Nurachain, chain ID 1020
-- Address: `0x4E0DB0B1Da408faF5637202CF48b0bc7733bE6dC` (recorded in
-  `web/application/src/config/contracts.ts`)
+- Address: `0x4E0DB0B1Da408faF5637202CF48b0bc7733bE6dC`
 - Deployment script: `ignition/modules/token.ts` (`npm run deploy:nurachain:token`)
 - Deployment block / tx: Not found in repository
 
 ## Integration
 
-ABI at `web/application/src/config/abi/BridgeUSDT.json`. See [BridgeToken](BridgeToken.md)
-for flows and events.
+ABI: the `abi` array of `artifacts/contracts/token/BridgeUSDT.sol/BridgeUSDT.json`. See
+[BridgeToken](BridgeToken.md) for flows and events.

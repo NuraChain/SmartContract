@@ -81,8 +81,7 @@ Both return bool.
 ## Deployment Information
 
 - Canonical Nurachain address: `0xf0a4eC07916feBa4432121Ed5969887D9b939cD0`
-  (recorded in `web/application/src/config/contracts.ts`; consumed by
-  `ignition/modules/univ3.ts` as the default `wnura` parameter).
+  (consumed by `ignition/modules/univ3.ts` as the default `wnura` parameter).
 - Local/test deployments: `ethers.deployContract("WNURA")`.
 
 ## Integration Guide

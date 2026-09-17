@@ -294,7 +294,7 @@ BURNER_ROLE ‏adminBurn()‎ می‌زند → رله دارایی را در ز
 
 ## راهنمای یکپارچه‌سازی
 
-- ABI:‏ `web/application/src/config/abi/BridgeUSDT.json` / `BridgeBNB.json`.
+- ABI:‏ آرایهٔ `abi` در artifact هاردهت زیر `artifacts/contracts/token/`.
 - خواندنی‌ها: `balanceOf`, `allowance`, `paused`, `decimals`, `nonces`, `DOMAIN_SEPARATOR`.
 - نوشتنی‌ها (کاربر): `approve`, `transfer`, `permit`؛ (رله): `mint`, `mintBatch`, `adminBurn`؛
   (ادمین): `pause`, `rescueERC20`, مدیریت نقش‌ها.

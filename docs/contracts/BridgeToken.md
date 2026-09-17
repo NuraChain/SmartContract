@@ -325,7 +325,7 @@ See [BridgeUSDT](BridgeUSDT.md) / [BridgeBNB](BridgeBNB.md). Deployed via
 
 ## Integration Guide
 
-- ABI: `web/application/src/config/abi/BridgeUSDT.json` / `BridgeBNB.json`.
+- ABI: the `abi` array of the Hardhat artifact under `artifacts/contracts/token/`.
 - Reads: `balanceOf`, `allowance`, `paused`, `decimals`, `nonces`, `DOMAIN_SEPARATOR`.
 - Writes (users): `approve`, `transfer`, `permit`; (relayer): `mint`, `mintBatch`, `adminBurn`;
   (admin): `pause`, `rescueERC20`, role grants.

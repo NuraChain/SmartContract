@@ -30,11 +30,10 @@ No additional functions. Full API = [`BridgeToken`](BridgeToken.md) + standard E
 ## Deployment Information
 
 - Network: Nurachain, chain ID 1020
-- Address: `0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc` (recorded in
-  `web/application/src/config/contracts.ts`)
+- Address: `0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc`
 - Deployment script: `ignition/modules/token.ts`
 - Deployment block / tx: Not found in repository
 
 ## Integration
 
-ABI at `web/application/src/config/abi/BridgeBNB.json`.
+ABI: the `abi` array of `artifacts/contracts/token/BridgeBNB.sol/BridgeBNB.json`.

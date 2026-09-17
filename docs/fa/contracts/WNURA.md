@@ -74,8 +74,7 @@ function withdraw(uint wad) public;
 ## اطلاعات دیپلوی
 
 - آدرس canonical روی Nurachain: ‏`0xf0a4eC07916feBa4432121Ed5969887D9b939cD0`
-  (در `web/application/src/config/contracts.ts` ثبت شده و مقدار پیش‌فرض `wnura` در
-  `ignition/modules/univ3.ts` است).
+  (مقدار پیش‌فرض `wnura` در `ignition/modules/univ3.ts`).
 - دیپلوی محلی/تست: ‏`ethers.deployContract("WNURA")`.
 
 ## راهنمای یکپارچه‌سازی

@@ -335,21 +335,44 @@ async function logDeployDiagnostics(
       }
     };
 
-    // Chain / gas oracle – Nurachain is known to return 0 for gasPrice
+    // Chain / gas oracle
     await rpcCall("eth_chainId");
     await rpcCall("net_version");
     const gasPrice = await rpcCall("eth_gasPrice");
-    await rpcCall("eth_maxPriorityFeePerGas");
+    const priorityFee = await rpcCall("eth_maxPriorityFeePerGas");
     await rpcCall("eth_feeHistory", ["0x5", "latest", [25, 75]]);
     await rpcCall("eth_blockNumber");
 
+    // The fees pinned in networks.<net>.ignition are a floor, not a forecast. Nurachain's
+    // base fee moves – it has run at 47 gwei and at 45_000 gwei – and Ignition treats a
+    // configured maxFeePerGas as a hard cap, so a pin the chain has outgrown gets every tx
+    // rejected with "max fee per gas is lower than the base fee". Raise the pin to the live
+    // oracle whenever the chain asks for more; the pin still carries a node that reports 0.
     if (gasPrice !== undefined) {
       deployLog(`[diag] eth_gasPrice raw=${String(gasPrice)}  decoded=${fmtWei(gasPrice)}`, logFile);
       try {
-        if (BigInt(String(gasPrice)) === 0n) {
-          deployLog(`[diag] ⚠ eth_gasPrice is 0 – Ignition would send 0-fee tx if networks.${networkName}.ignition.gasPrice is not set. Expected 500_000_000_000n (500 gwei) per hardhat.config.ts:400`, logFile);
+        const live = BigInt(String(gasPrice));
+        const ign = (hre.config.networks as Record<string, Record<string, unknown>>)[networkName]?.ignition as
+          | Record<string, bigint>
+          | undefined;
+        const pinned = ign?.maxFeePerGas;
+        if (live === 0n) {
+          deployLog(`[diag] ⚠ eth_gasPrice is 0 – Ignition would send 0-fee tx if networks.${networkName}.ignition.gasPrice is not set; the pin (${fmtWei(pinned ?? 0n)}) carries this deploy.`, logFile);
+        } else if (ign && pinned !== undefined && live > pinned) {
+          // 2x the oracle so a base fee still climbing mid-deploy does not strand the run.
+          const raised = live * 2n;
+          ign.gasPrice = raised;
+          ign.maxFeePerGas = raised;
+          deployLog(`[diag] ⚠ pinned maxFeePerGas ${fmtWei(pinned)} is below live ${fmtWei(live)} – raised to ${fmtWei(raised)} for this run. Bump the pin in hardhat.config.ts if the chain stays here.`, logFile);
         }
-      } catch {}
+        const tip = priorityFee === undefined ? 0n : BigInt(String(priorityFee));
+        if (ign && tip > (ign.maxPriorityFeePerGas ?? 0n)) {
+          deployLog(`[diag] raising maxPriorityFeePerGas ${fmtWei(ign.maxPriorityFeePerGas ?? 0n)} → ${fmtWei(tip)} (node suggestion)`, logFile);
+          ign.maxPriorityFeePerGas = tip;
+        }
+      } catch (e) {
+        deployLog(`[diag] fee reconciliation failed: ${String(e)}`, logFile);
+      }
     }
 
     // Deployer account
@@ -392,7 +415,7 @@ async function logDeployDiagnostics(
       deployLog(`[diag] journal ${journalPath}  lines=${lines.length}\n[last 8 lines]\n${last}`, logFile);
       // surface 0-fee pattern that causes HHE10400
       const zeroFee = lines.filter((l) => l.includes('"value":"0"') && l.includes("maxFeePerGas")).length;
-      if (zeroFee > 0) deployLog(`[diag] ⚠ journal contains ${zeroFee} tx(s) with maxFeePerGas=0 – they will be dropped by Nurachain (floor ~47 gwei). Use --reset after fixing ignition.gasPrice.`, logFile);
+      if (zeroFee > 0) deployLog(`[diag] ⚠ journal contains ${zeroFee} tx(s) with maxFeePerGas=0 – they will be dropped by Nurachain. Use --reset after fixing ignition.gasPrice.`, logFile);
     } else {
       deployLog(`[diag] no journal yet at ${journalPath} (first deploy)`, logFile);
     }
@@ -713,7 +736,7 @@ const deployTask = task("deploy", "Deploy one contracts/<folder> group to the se
         deployLog(`\n[deploy] ── HHE10400 diagnosis ──`, logFile);
         deployLog(`[deploy] All txs in the batch were dropped by the node mempool.`, logFile);
         deployLog(`[deploy] Common causes on Nurachain:`, logFile);
-        deployLog(`[deploy]  1) fee < 47 gwei – node reports eth_gasPrice=0 but enforces floor. Check [rpc] eth_gasPrice above and that ignition.gasPrice=500_000_000_000n is in [config].`, logFile);
+        deployLog(`[deploy]  1) fee below the chain's base fee – compare [rpc] eth_gasPrice above against ignition.maxFeePerGas in [config].`, logFile);
         deployLog(`[deploy]  2) stale journal with 0-fee tx – run with --reset:  npm run deploy:nurachain:${sc} -- --reset`, logFile);
         deployLog(`[deploy]  5) nothing was sent at all and old addresses came back – that is reconciliation, not a failure. Use --deployment-id <new-id> for a fresh deploy.`, logFile);
         deployLog(`[deploy]  3) deployer balance 0 or nonce gap – check [diag] deployer line above.`, logFile);
@@ -787,17 +810,22 @@ export default defineConfig({
       url: configVariable("NURACHAIN_RPC_URL"),
       accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
 
-      // The node rejects any tx priced below ~47 gwei (every mined tx pays exactly
-      // that), yet its RPC reports eth_gasPrice and eth_maxPriorityFeePerGas as 0.
-      // Left alone, Ignition prices deploys off those zeros and the node drops the
-      // txs from the mempool — HHE10400, "all transactions were dropped". Pin fees
-      // above the floor instead of trusting the fee oracle. Both legacy and EIP-1559
-      // fields are set because Ignition sends type-2 on this network (see journal
-      // maxFeePerGas=0) and would otherwise ignore a lone gasPrice.
+      // The node has reported eth_gasPrice and eth_maxPriorityFeePerGas as 0 while still
+      // rejecting anything under its floor; left alone, Ignition prices deploys off those
+      // zeros and the node drops the txs — HHE10400, "all transactions were dropped". So
+      // the fees are pinned rather than taken on trust. Both legacy and EIP-1559 fields are
+      // set because Ignition sends type-2 here and would otherwise ignore a lone gasPrice.
+      //
+      // These are a FLOOR. The base fee has climbed from 47 gwei to 45_000 gwei, and a pin
+      // below it makes the node reject the tx outright ("max fee per gas is lower than the
+      // base fee"), so `hardhat deploy` raises these to the live oracle when the chain asks
+      // for more (see logDeployDiagnostics). 200_000 gwei is ~4x the base fee as of block
+      // 985_109; nothing is overpaid by setting it high, since EIP-1559 charges base + tip
+      // and refunds the rest — the cap only has to be affordable against the gas limit.
       ignition: {
-        gasPrice: 500_000_000_000n,
-        maxFeePerGas: 500_000_000_000n,
-        maxPriorityFeePerGas: 5_000_000_000n,
+        gasPrice: 200_000_000_000_000n,
+        maxFeePerGas: 200_000_000_000_000n,
+        maxPriorityFeePerGas: 6_000_000_000_000n,
       },
     },
   },

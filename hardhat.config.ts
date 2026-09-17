@@ -50,9 +50,9 @@ const DEPLOYABLE = ["token", "airdrop", "univ3", "vault", "forecast", "profile"]
 // with, so the build needs three compilers. Hardhat picks one per file from the pragma;
 // none of this is a free choice:
 //
-//   0.6.6   testing/WNURA.sol       pinned by the vendored Dapphub WETH9 source
+//   0.6.6   token/WNURA.sol         pinned by the vendored Dapphub WETH9 source
 //   0.7.6   univ3/**                pinned by the vendored source (=0.7.6 exactly)
-//   0.8.28  everything of ours, plus testing/MockToken.sol (^0.8.20)
+//   0.8.28  everything of ours, plus mocks/MockToken.sol (^0.8.20)
 //
 // 0.7.6 is UniswapV3's, and its settings are copied from upstream's own hardhat configs
 // rather than chosen. Two reasons, and the second is the hard one:

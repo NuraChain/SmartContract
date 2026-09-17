@@ -19,8 +19,8 @@
 | `PredictionTreasury` | forecast/PredictionTreasury.sol | казначейство комиссий |
 | `NuraProfile` | profile/NuraProfile.sol | реестр профилей (UUPS): уникальные имена, многоязычные поля, расширения |
 | `FeeMath` / `MarketMath` | forecast/libraries | математические библиотеки |
-| `WNURA` | testing/WNURA.sol | обёртка нативной монеты (WETH9) |
-| `MockToken` | testing/MockToken.sol | тестовый токен |
+| `WNURA` | token/WNURA.sol | обёртка нативной монеты (WETH9) |
+| `MockToken` | mocks/MockToken.sol | тестовый токен |
 | Uniswap V3 (vendored) | contracts/univ3 | стороннее дерево, описано на уровне группы |
 
 Интерфейсы (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,

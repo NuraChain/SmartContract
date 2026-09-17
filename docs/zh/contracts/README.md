@@ -19,8 +19,8 @@
 | `PredictionTreasury` | forecast/PredictionTreasury.sol | 手续费金库 |
 | `NuraProfile` | profile/NuraProfile.sol | 个人资料注册表（UUPS）：唯一用户名、多语言字段、扩展 |
 | `FeeMath` / `MarketMath` | forecast/libraries | 数学库 |
-| `WNURA` | testing/WNURA.sol | 原生币封装 (WETH9) |
-| `MockToken` | testing/MockToken.sol | 测试代币 |
+| `WNURA` | token/WNURA.sol | 原生币封装 (WETH9) |
+| `MockToken` | mocks/MockToken.sol | 测试代币 |
 | Uniswap V3（第三方引入） | contracts/univ3 | 以组为单位记录的外部代码树 |
 
 接口（`IPredictionFactory`、`IPredictionMarket`、`IPredictionPool`、

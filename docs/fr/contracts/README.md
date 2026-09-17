@@ -19,8 +19,8 @@ Documentation de tous les contrats du dépôt, générée à partir du code sour
 | `PredictionTreasury` | forecast/PredictionTreasury.sol | trésorerie des frais |
 | `NuraProfile` | profile/NuraProfile.sol | registre de profils (UUPS) : nom unique, champs multilingues, extensions |
 | `FeeMath` / `MarketMath` | forecast/libraries | bibliothèques mathématiques |
-| `WNURA` | testing/WNURA.sol | natif enveloppé (WETH9) |
-| `MockToken` | testing/MockToken.sol | jeton de test |
+| `WNURA` | token/WNURA.sol | natif enveloppé (WETH9) |
+| `MockToken` | mocks/MockToken.sol | jeton de test |
 | Uniswap V3 (vendored) | contracts/univ3 | arborescence tierce documentée au niveau du groupe |
 
 Les interfaces (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,

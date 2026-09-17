@@ -19,8 +19,8 @@
 | `PredictionTreasury` | forecast/PredictionTreasury.sol | शुल्क कोष |
 | `NuraProfile` | profile/NuraProfile.sol | प्रोफ़ाइल रजिस्ट्री (UUPS): अद्वितीय यूज़रनेम, बहुभाषी फ़ील्ड, एक्सटेंशन |
 | `FeeMath` / `MarketMath` | forecast/libraries | गणित लाइब्रेरीज़ |
-| `WNURA` | testing/WNURA.sol | रैप्ड नेटिव कॉइन (WETH9) |
-| `MockToken` | testing/MockToken.sol | टेस्ट टोकन |
+| `WNURA` | token/WNURA.sol | रैप्ड नेटिव कॉइन (WETH9) |
+| `MockToken` | mocks/MockToken.sol | टेस्ट टोकन |
 | Uniswap V3 (vendored) | contracts/univ3 | थर्ड-पार्टी ट्री, समूह-स्तर पर दस्तावेज़ित |
 
 इंटरफेस (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,

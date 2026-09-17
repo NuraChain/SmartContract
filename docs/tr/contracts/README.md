@@ -19,8 +19,8 @@ Depodaki tüm sözleşmelerin belgeleri, `contracts/` altındaki gerçek kaynakt
 | `PredictionTreasury` | forecast/PredictionTreasury.sol | komisyon hazinesi |
 | `NuraProfile` | profile/NuraProfile.sol | profil kaydı (UUPS): benzersiz kullanıcı adı, çok dilli alanlar, uzantılar |
 | `FeeMath` / `MarketMath` | forecast/libraries | matematik kütüphaneleri |
-| `WNURA` | testing/WNURA.sol | sarmalanmış yerel coin (WETH9) |
-| `MockToken` | testing/MockToken.sol | test tokeni |
+| `WNURA` | token/WNURA.sol | sarmalanmış yerel coin (WETH9) |
+| `MockToken` | mocks/MockToken.sol | test tokeni |
 | Uniswap V3 (vendored) | contracts/univ3 | grup düzeyinde belgelenmiş üçüncü taraf ağacı |
 
 Arayüzler (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,

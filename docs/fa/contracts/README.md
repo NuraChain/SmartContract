@@ -21,8 +21,8 @@
 | [PredictionTreasury.md](PredictionTreasury.md) | ‏`PredictionTreasury` | forecast/PredictionTreasury.sol | مخزن کارمزد |
 | [FeeMath.md](FeeMath.md) / [MarketMath.md](MarketMath.md) | کتابخانه‌ها | forecast/libraries | library |
 | [NuraProfile.md](NuraProfile.md) | ‏`NuraProfile` (+ `NuraProfileProxy`، `NuraProfileLens`، `SocialVerifier`) | profile/NuraProfile.sol | رجیستری پروفایل UUPS |
-| [WNURA.md](WNURA.md) | ‏`WNURA` | testing/WNURA.sol | wrapped-native |
-| [MockToken.md](MockToken.md) | ‏`MockToken` | testing/MockToken.sol | توکن dev/test |
+| [WNURA.md](WNURA.md) | ‏`WNURA` | token/WNURA.sol | wrapped-native |
+| [MockToken.md](MockToken.md) | ‏`MockToken` | mocks/MockToken.sol | توکن dev/test |
 | [TestAndVendoredContracts.md](TestAndVendoredContracts.md) | ماک‌ها + یونی‌سواپ V3 | various | تستی/vendored |
 
 اینترفیس‌ها (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,

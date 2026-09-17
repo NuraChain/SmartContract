@@ -20,8 +20,8 @@
 | `PredictionTreasury` | forecast/PredictionTreasury.sol | خزانة الرسوم |
 | `NuraProfile` | profile/NuraProfile.sol | سجل الملفات الشخصية (UUPS): اسم مستخدم فريد، حقول متعددة اللغات، إضافات |
 | `FeeMath` / `MarketMath` | forecast/libraries | مكتبات رياضية |
-| `WNURA` | testing/WNURA.sol | العملة الأصلية المغلّفة (WETH9) |
-| `MockToken` | testing/MockToken.sol | رمز تجريبي للاختبار |
+| `WNURA` | token/WNURA.sol | العملة الأصلية المغلّفة (WETH9) |
+| `MockToken` | mocks/MockToken.sol | رمز تجريبي للاختبار |
 | Uniswap V3 (مُورَّد) | contracts/univ3 | شجرة طرف ثالث موثقة كمجموعة |
 
 الواجهات (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,

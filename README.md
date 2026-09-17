@@ -805,6 +805,8 @@ contracts/token/
   BridgeToken.sol            shared base: roles, mint, burn, pause, permit, rescue
   BridgeUSDT.sol             Bridge USDT / USDT, 18 decimals
   BridgeBNB.sol              Bridge BNB / BNB, 18 decimals
+  WNURA.sol                  wrapped native coin (Dapphub WETH9, renamed); already live
+                             on Nurachain, deployed here only by tests
 contracts/airdrop/
   Airdrop.sol                capped native-coin airdrop, EIP-712 signature gated
 contracts/univ3/
@@ -813,8 +815,7 @@ contracts/univ3/
   vendor/**                  OpenZeppelin 3.4.2 subset, @uniswap/lib, base64-sol
   test/**                    v3-core's own callback harnesses, dev-chain only
   VENDORED.md, LICENSE       upstream versions, the GPL-2.0, and the expired BUSL
-contracts/testing/
-  WNURA.sol                  wrapped native coin (Dapphub WETH9, renamed), tests use it
+contracts/mocks/
   MockToken.sol              dev-chain stand-in asset with optional faucet, tests only
 contracts/vault/
   CollateralizedNFT.sol      ERC721 backed 1:1 by a reserve of one ERC20

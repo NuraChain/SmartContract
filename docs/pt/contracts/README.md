@@ -19,8 +19,8 @@ Documentação de todos os contratos do repositório, gerada a partir do código
 | `PredictionTreasury` | forecast/PredictionTreasury.sol | tesouraria de taxas |
 | `NuraProfile` | profile/NuraProfile.sol | registro de perfis (UUPS): nome de usuário único, campos multilíngues, extensões |
 | `FeeMath` / `MarketMath` | forecast/libraries | bibliotecas matemáticas |
-| `WNURA` | testing/WNURA.sol | nativo embrulhado (WETH9) |
-| `MockToken` | testing/MockToken.sol | token de teste |
+| `WNURA` | token/WNURA.sol | nativo embrulhado (WETH9) |
+| `MockToken` | mocks/MockToken.sol | token de teste |
 | Uniswap V3 (vendored) | contracts/univ3 | árvore de terceiros documentada como grupo |
 
 As interfaces (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,

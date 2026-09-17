@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Contract name | `MockToken` |
-| Solidity file | `contracts/testing/MockToken.sol` |
+| Solidity file | `contracts/mocks/MockToken.sol` |
 | Solidity version | `^0.8.20` (compiled with solc 0.8.28) |
 | Contract type | Concrete ERC20 dev/test token |
 | Purpose | Dev-chain stand-in for real assets (mUSDT/mUSDC/mDAI/mWBTC style); used by the Uniswap V3 test suite and available for local experiments |

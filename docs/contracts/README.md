@@ -35,8 +35,8 @@ vendored code are covered by dedicated files as noted below.
 | [FeeMath.md](FeeMath.md) | `FeeMath` | `contracts/forecast/libraries/FeeMath.sol` | library |
 | [MarketMath.md](MarketMath.md) | `MarketMath` | `contracts/forecast/libraries/MarketMath.sol` | library |
 | [NuraProfile.md](NuraProfile.md) | `NuraProfile` (+ `NuraProfileProxy`, `NuraProfileLens`, `SocialVerifier`) | `contracts/profile/NuraProfile.sol` | UUPS profile registry |
-| [WNURA.md](WNURA.md) | `WNURA` | `contracts/testing/WNURA.sol` | wrapped-native token |
-| [MockToken.md](MockToken.md) | `MockToken` | `contracts/testing/MockToken.sol` | dev/test token |
+| [WNURA.md](WNURA.md) | `WNURA` | `contracts/token/WNURA.sol` | wrapped-native token |
+| [MockToken.md](MockToken.md) | `MockToken` | `contracts/mocks/MockToken.sol` | dev/test token |
 | [TestAndVendoredContracts.md](TestAndVendoredContracts.md) | mocks + Uniswap V3 tree | various | test-only / vendored |
 
 Interfaces (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,
@@ -195,7 +195,7 @@ Airdrop:
 
 ## Verification Record
 
-Scanned: all `.sol` under `contracts/` (first-party + testing + vendored univ3),
+Scanned: all `.sol` under `contracts/` (first-party + mocks + vendored univ3),
 interfaces, libraries, mocks, Ignition modules, Hardhat config, tests, ABI extracts.
 First-party concrete contracts/interfaces/libraries/mocks: **all documented above**;
 vendored Uniswap V3 is documented at group level with provenance pointers

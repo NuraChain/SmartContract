@@ -5,15 +5,15 @@
 | Property | Value |
 | --- | --- |
 | Contract name | `WNURA` |
-| Solidity file | `contracts/testing/WNURA.sol` |
+| Solidity file | `contracts/token/WNURA.sol` |
 | Solidity version | `=0.6.6` (pinned; compiled with solc 0.6.6, istanbul) |
 | Contract type | Concrete ERC20-compatible wrapped-native-coin contract |
 | Purpose | Wrapped NURA: deposit native coin to mint `WNURA`, withdraw to unwrap. Needed by the Uniswap V3 periphery (routers trade an ERC20, not native value) and used as a test fixture |
 | License | GPL-3.0 (Dapphub WETH9 lineage, renamed) |
 
 Upstream ships this as WETH9 (BNB forks rename it WBNB); here it is renamed so wallets
-show "WNURA". The on-chain canonical deployment **predates** this file's move to
-`contracts/testing/` and is unaffected. Note: unlike stock WETH9, the payable fallback is
+show "WNURA". The on-chain canonical deployment **predates** this file's moves within the
+repo and is unaffected by them. Note: unlike stock WETH9, the payable fallback is
 commented out in this copy — wrapping requires an explicit `deposit()` call.
 
 ## Inheritance / Interfaces

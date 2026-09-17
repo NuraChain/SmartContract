@@ -8,13 +8,13 @@
 | Solidity file | `contracts/forecast/libraries/FeeMath.sol` |
 | Solidity version | `0.8.24` |
 | Contract type | `library` (internal pure; inlined; never deployed) |
-| Purpose | Basis-point fee helpers shared by CPMM buy/sell; a trade's fee splits into a protocol cut (forwarded to treasury) and an LP cut (retained in the pool as extra liquidity, lifting LP share value without a per-share accumulator) |
+| Purpose | Basis-point fee helpers shared by CPMM buy/sell; the whole trade fee is forwarded to the treasury, nothing is retained in the pool |
 
 ## State Variables
 
 | Name | Type | Value | Purpose |
 | --- | --- | --- | --- |
-| `BPS` | `uint256` internal constant | `1e4` | Basis-point denominator (100%). Also used as the upper bound when validating `protocolFeeShareBps`. |
+| `BPS` | `uint256` internal constant | `1e4` | Basis-point denominator (100%). |
 
 ## Functions
 
@@ -41,15 +41,6 @@ function grossFromNet(uint256 net, uint16 feeBps) internal pure returns (uint256
 sell must pull from the pool so the seller nets `net`; rounded up so the fee is never
 understated. Used by `sell`, `calcSell`.
 
-### protocolCut
-
-```solidity
-function protocolCut(uint256 fee, uint16 protocolShareBps) internal pure returns (uint256 cut);
-```
-
-`cut = fee · protocolShareBps / 1e4` (floored); remainder stays with LPs.
-Used by `buy`, `sell`, and ignored by parimutuel pools.
-
 ## Security Analysis
 
 - Rounding always favours fee integrity (never understates fees).
@@ -63,4 +54,3 @@ Used by `buy`, `sell`, and ignored by parimutuel pools.
 | --- | --- | --- | --- | --- |
 | `feeOnAmount(amount,bps)` | internal | pure | compile-time | Fee on a buy input |
 | `grossFromNet(net,bps)` | internal | pure | compile-time | Gross-of-fee sell amount |
-| `protocolCut(fee,shareBps)` | internal | pure | compile-time | Treasury slice of a fee |

@@ -6,7 +6,7 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  *
  * Four contracts:
  *
- *   PredictionTreasury   sink for protocol fees (Ownable2Step)
+ *   PredictionTreasury   sink for trade fees (Ownable2Step)
  *   PredictionMarket     CPMM implementation, cloned per market by createMarket
  *   PredictionPool       parimutuel implementation, cloned per market by createMarket2
  *   PredictionFactory    clone factory + ADMIN_ROLE registry control plane
@@ -23,7 +23,6 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  *       "owner":                     "0xYourMultisig",
  *       "feeRecipient":              "0xWhereFeesGo",
  *       "defaultFeeBps":             "300n",
- *       "defaultProtocolFeeShareBps": "2000n",
  *       "resolutionSigners":         ["0xSigner1", "0xSigner2", "0xSigner3", "0xSigner4", "0xSigner5"],
  *       "requiredConfirmations":     "3n"
  *     }
@@ -50,8 +49,7 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  *
  * `defaultFeeBps` (3%) is the total trade/bet fee a market inherits when its params pass
  * 0 — this is where the fee percentage per market type comes from. Cap is 1000 bps (10%).
- * `defaultProtocolFeeShareBps` (20% of each fee) only affects CPMM markets; pool markets
- * always send the whole fee to the treasury.
+ * Both engines send the whole fee to the treasury.
  */
 export default buildModule("forecast", (m) => {
   const admin = m.getParameter("admin", m.getAccount(0));
@@ -59,7 +57,6 @@ export default buildModule("forecast", (m) => {
   const owner = m.getParameter("owner", "0x0000000000000000000000000000000000000000");
   const feeRecipient = m.getParameter("feeRecipient", m.getAccount(0));
   const defaultFeeBps = m.getParameter<bigint>("defaultFeeBps", 300n);
-  const defaultProtocolFeeShareBps = m.getParameter<bigint>("defaultProtocolFeeShareBps", 2000n);
 
   // Signer list comes straight from --parameters ("resolutionSigners": [addr, ...],
   // "requiredConfirmations": "3n"). With nothing configured the factory falls back to a
@@ -79,7 +76,6 @@ export default buildModule("forecast", (m) => {
     marketImplementation,
     poolImplementation,
     defaultFeeBps,
-    defaultProtocolFeeShareBps,
     owner,
     resolutionSigners,
     requiredConfirmations,

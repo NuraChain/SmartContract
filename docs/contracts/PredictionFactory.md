@@ -44,7 +44,6 @@ Also uses OpenZeppelin `Clones` (library) and `EnumerableSet` (status buckets).
 | Variable | Type | Visibility | Mutability | Purpose |
 | --- | --- | --- | --- | --- |
 | `ADMIN_ROLE` | `bytes32` | public | constant | Role that creates and administers markets. |
-| `BPS` | `uint16` | public | constant | `1e4` basis-point denominator. |
 | `MAX_FEE_BPS` | `uint16` | public | constant | `1000`; caps total fee for new markets at 10%. |
 | `DEFAULT_LANG` | `bytes8` | public | constant | `"en"`; the language every category must be named in, and the one any lookup falls back to. |
 | `MAX_CATEGORY_LANGS` | `uint256` | public | constant | `32`; languages one category may carry (bounds `categoryMeanings`). |
@@ -52,7 +51,6 @@ Also uses OpenZeppelin `Clones` (library) and `EnumerableSet` (status buckets).
 | `poolImplementation` | `address` | public | **immutable** | Parimutuel implementation cloned by `createMarket2`. |
 | `_treasury` | `address` | private | mutable | Treasury applied to newly created markets. |
 | `defaultFeeBps` | `uint16` | public | mutable | Total fee inherited when market params pass `feeBps == 0`. This is how the fee percentage gets matched to a market's type/category. |
-| `defaultProtocolFeeShareBps` | `uint16` | public | mutable | Protocol fee share inherited likewise (CPMM only; pools ignore it). |
 | `_records` | `MarketRecord[]` | private | mutable | Registry indexed by marketId. |
 | `_kinds` | `mapping(uint256 => MarketKind)` | private | mutable | marketId → engine (`Amm`=0 default, `Pool`=1). |
 | `_byStatus` | `mapping(MarketStatus => EnumerableSet.UintSet)` | private | mutable | O(1) status transitions + paged filters per status. |
@@ -71,8 +69,7 @@ MarketParams  (creation parameters passed into a clone's initializer)
 ├── creator              : address  -- account credited as creator/first LP
 ├── lockTime             : uint64   -- trading/betting closes at this timestamp
 ├── resolveTime          : uint64   -- informational target resolution time
-├── feeBps               : uint16   -- total fee; 0 ⇒ inherit factory default
-├── protocolFeeShareBps  : uint16   -- treasury cut of each fee; 0 ⇒ inherit default
+├── feeBps               : uint16   -- total fee (all of it to treasury); 0 ⇒ inherit default
 └── outcomeNames         : string[] -- 2..16 names; length defines outcome count
 
 MarketRecord  (registry snapshot kept by the factory)
@@ -114,7 +111,7 @@ Status values drive the registry buckets and what users may do on a clone.
 | --- | --- | --- | --- |
 | `MarketCreated` | `marketId, market, creator, categoryId, outcomeCount, initialFunding` | first three | Successful `createMarket` (`initialFunding = msg.value`) or `createMarket2` (0) |
 | `TreasuryUpdated` | `treasury` | indexed | `setTreasury` |
-| `FeesUpdated` | `feeBps, protocolFeeShareBps` | none | `setDefaultFees` |
+| `FeesUpdated` | `feeBps` | none | `setDefaultFees` |
 | `CategoryAdded` | `categoryId` | indexed | `addCategory` |
 | `CategoryMeaningSet` | `categoryId, lang, meaning` | categoryId, lang | `addCategory` and `setCategoryMeanings`, once per language written |
 | `CategoryEnabledSet` | `categoryId, enabled` | categoryId | `addCategory` (true) and `setCategoryEnabled` |
@@ -127,7 +124,7 @@ Trade/lifecycle events are emitted by the clones themselves (shared declarations
 | Error | Trigger condition | Paths |
 | --- | --- | --- |
 | `ZeroAddress()` | constructor: zero admin/treasury/either implementation; `setTreasury(0)` | constructor, `setTreasury` |
-| `InvalidFee()` | `feeBps > MAX_FEE_BPS` or share > BPS | constructor, `setDefaultFees` |
+| `InvalidFee()` | `feeBps > MAX_FEE_BPS` | constructor, `setDefaultFees` |
 | `AccessControlUnauthorizedAccount` *(OZ)* | missing ADMIN_ROLE | all guarded functions |
 | clone validation errors bubble up | bad params rejected inside clone `initialize` (`InvalidOutcomeCount`, `InvalidTiming`, `InvalidFee`, ...) | `createMarket`, `createMarket2` (whole tx reverts atomically) |
 
@@ -160,11 +157,10 @@ function createMarket(MarketParams calldata params)
 **Purpose:** Deploys a CPMM market clone, initializes it with `msg.value` as seed
 liquidity, registers it.
 
-**Parameters:** `params` — see struct above. `feeBps == 0` ⇒ inherits `defaultFeeBps`;
-`protocolFeeShareBps == 0` ⇒ inherits default. **Returns:** new registry index and clone
-address. external / payable / ADMIN_ROLE.
+**Parameters:** `params` — see struct above. `feeBps == 0` ⇒ inherits `defaultFeeBps`.
+**Returns:** new registry index and clone address. external / payable / ADMIN_ROLE.
 
-**Flow:** 1. copy params to memory, apply defaults for zero fields. 2.
+**Flow:** 1. copy params to memory, apply the default when `feeBps` is zero. 2.
 `market = Clones.clone(marketImplementation)`. 3.
 `IPredictionMarket(market).initialize{value: msg.value}(address(this), _treasury, effective)`
 (validates 2..16 outcomes, `now < lockTime <= resolveTime`, fees ≤ caps; mints LP shares
@@ -189,8 +185,7 @@ function createMarket2(MarketParams calldata params)
 ```
 
 Same as `createMarket` but: clones `poolImplementation`; **not payable** (reverts if value
-attached — a pool needs no seed liquidity); only `feeBps == 0` default applies (pool
-ignores `protocolFeeShareBps`); sets `_kinds[marketId] = MarketKind.Pool`.
+attached — a pool needs no seed liquidity); sets `_kinds[marketId] = MarketKind.Pool`.
 Emits `MarketCreated(..., initialFunding = 0)`.
 
 ---
@@ -292,14 +287,14 @@ signer set instead of a single admin key:
 ```solidity
 function setTreasury(address treasury_) external;              // ADMIN_ROLE
 function repointTreasury(uint256 marketId) external;           // ADMIN_ROLE
-function setDefaultFees(uint16 feeBps, uint16 protocolFeeShareBps) external; // ADMIN_ROLE
+function setDefaultFees(uint16 feeBps) external;                   // ADMIN_ROLE
 ```
 
 - `setTreasury`: changes the treasury applied to *future* markets; zero check; emits
   `TreasuryUpdated`.
 - `repointTreasury`: calls `setTreasury(_treasury)` on one existing clone so existing
   markets follow the factory's current treasury. Per-market (not a loop) to keep gas bounded.
-- `setDefaultFees`: validates against `MAX_FEE_BPS`/`BPS`; affects markets that pass 0
+- `setDefaultFees`: validates against `MAX_FEE_BPS`; affects markets that pass 0
   afterwards. Emits `FeesUpdated`.
 
 ---
@@ -349,7 +344,7 @@ for per-action consequences.
 
 ```text
 ADMIN ──createMarket{value}──▶ clone.initialize (seed = LP shares to creator)
-Users ──buy/sell/bet──▶ clone ──protocol cut──▶ Treasury
+Users ──buy/sell/bet──▶ clone ──whole trade fee──▶ Treasury
 Signers ×N ──confirmResolution(id,outcome)──▶ quorum? ──▶ clone.resolve ──fee──▶ Treasury
 Winners ──redeem()/claim()──◀ clone balance
 ```
@@ -415,7 +410,7 @@ creation (`InvalidTiming`).
 | `distributeMarket(id, limit)` | external | nonpayable | **Anyone** | Pay up to `limit` more of a settled market's accounts |
 | `addCategory/setCategoryMeanings/setCategoryEnabled` | external | nonpayable | ADMIN_ROLE | Category registry |
 | `categoryMeaning(s)/categoryLanguages/categoryIds/categoryCount/categoryState/marketsByCategory/countByCategory` | external | view | Anyone | Category reads |
-| `setDefaultFees(f,s)` | external | nonpayable | ADMIN_ROLE | Defaults for feeBps=0 markets |
+| `setDefaultFees(f)` | external | nonpayable | ADMIN_ROLE | Default for feeBps=0 markets |
 | `marketCount/marketAt/marketAddress/marketKind/treasury` | external | view | Anyone | Registry reads |
 | `marketsPaged/marketsByStatus/activeMarkets/closedMarkets/resolvedMarkets/countByStatus` | external/public | view | Anyone | Paged listing |
 

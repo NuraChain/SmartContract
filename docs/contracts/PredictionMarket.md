@@ -42,7 +42,7 @@ PredictionMarket
 | Interface | Interaction |
 | --- | --- |
 | `IPredictionMarket` | Implemented surface (`initialize`, trading, liquidity, lifecycle, views). |
-| `IPredictionTreasury` | `depositFee{value}(address(this))` forwards the protocol cut after buys/sells. |
+| `IPredictionTreasury` | `depositFee{value}(address(this))` forwards the whole trade fee after buys/sells. |
 
 ## State Variables
 
@@ -65,7 +65,6 @@ PredictionMarket
 | `creator` | `address` | public | set-once | Account credited as creator/first LP. |
 | `createdAt/lockTime/resolveTime` | `uint64` | public | set-once | Timestamps; trading requires `block.timestamp < lockTime`. |
 | `feeBps` | `uint16` | public | set-once | Total trade fee (bps). |
-| `protocolFeeShareBps` | `uint16` | public | set-once | Treasury share of each fee; remainder accrues to LPs via re-injection. |
 | `endedAt` | `uint64` | public | set at resolve/void | Settlement timestamp; `0` while live. Anchors the claim window. |
 | `outcomeCount` | `uint256` | public | set-once | Number of outcomes n. |
 | `_outcomeNames` | `string[]` | private | set-once | Display names per index. |
@@ -197,11 +196,11 @@ function buy(uint256 outcomeIndex, uint256 minSharesOut, uint256 deadline)
 
 **Access:** anyone while Open and pre-lockTime.
 
-**Flow:** deadline check → `_requireTradable` → fee split via `FeeMath`
-(`fee`, protocol `cut`, `lpFee`, `invest = amountIn - fee`) →
+**Flow:** deadline check → `_requireTradable` → `fee = FeeMath.feeOnAmount(amountIn, feeBps)`,
+`invest = amountIn - fee` →
 `sharesOut = MarketMath.calcBuyShares(_reserves, i, invest)` → slippage check →
-effects: every reserve += `invest+lpFee`; bought reserve -= sharesOut;
-`totalSets += invest+lpFee`; mint shares → interaction: forward `cut` to treasury.
+effects: every reserve += `invest`; bought reserve -= sharesOut;
+`totalSets += invest`; mint shares → interaction: forward the whole `fee` to the treasury.
 
 **Events:** `PredictionPlaced`. **Errors:** listed above.
 **Security:** MEV-protected by `minSharesOut`+`deadline`; reentrancy-guarded; CEI respected
@@ -218,9 +217,8 @@ function sell(uint256 outcomeIndex, uint256 returnAmount, uint256 maxSharesIn, u
 
 Inverse: burn `sharesIn` outcome tokens, receive `returnAmount` collateral net of fee.
 `grossFromNet` rounds the fee up (`FeeMath.grossFromNet`). Effects: burn; every other
-reserve -= gross; bought-outcome reserve += sharesIn − gross; `totalSets -= gross`;
-LP fee re-injected into all reserves (+ totalSets) so LPs keep their cut. Interactions:
-protocol cut to treasury, then `_sendNative(seller)`.
+reserve -= gross; bought-outcome reserve += sharesIn − gross; `totalSets -= gross`.
+Interactions: the whole fee to the treasury, then `_sendNative(seller)`.
 Slippage bound is `maxSharesIn` (max tokens you give up).
 
 ---
@@ -414,8 +412,7 @@ Plus ERC-1155 surface: `balanceOf`, `balanceOfBatch`, `isApprovedForAll`,
 
 ```text
 Buyer ──buy{value}──▶ market
-         ├─ fee ─┬─ protocol cut ──▶ Treasury.depositFee
-         │        └─ lpFee ── stays in reserves (LP value)
+         ├─ fee ──▶ Treasury.depositFee (all of it)
          └─ invest ──▶ reserves ⇄ shares minted to buyer
 Seller ──sell(shares)──◀ native (net of fee) ; sets burned
 Settlement ──┬─ winners  ── 1:1 on their winning shares

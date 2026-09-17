@@ -60,8 +60,7 @@ import {
  *      share. Payment stays one-shot per account (`_claimed` flag), so nobody can be paid
  *      twice. Resolution cannot happen before `lockTime` — the pool must be closed to
  *      new money before a winner can be declared. Rounding floors every payout; the sub-unit
- *      dust stays in the contract. `params.protocolFeeShareBps` is ignored here: the full fee
- *      goes to the treasury, because there are no LPs to retain the rest for.
+ *      dust stays in the contract. The whole house fee goes to the treasury.
  */
 contract PredictionPool is IPredictionPool, Initializable {
     /// @notice Maximum supported outcomes (bounds every per-outcome loop).
@@ -117,8 +116,6 @@ contract PredictionPool is IPredictionPool, Initializable {
 
     /// @notice House fee in basis points, deducted once from the pool at resolution.
     uint16 public feeBps;
-    /// @notice Unused by pool markets (kept for parameter-shape parity with the CPMM).
-    uint16 public protocolFeeShareBps;
     /// @notice Category this market is filed under, in the factory's registry. The name a
     ///         reader sees is looked up there, per language.
     uint32 public categoryId;
@@ -188,7 +185,7 @@ contract PredictionPool is IPredictionPool, Initializable {
         }
         uint256 n = params.outcomeNames.length;
         if (n < 2 || n > MAX_OUTCOMES) revert InvalidOutcomeCount();
-        if (params.feeBps > MAX_FEE_BPS || params.protocolFeeShareBps > FeeMath.BPS) revert InvalidFee();
+        if (params.feeBps > MAX_FEE_BPS) revert InvalidFee();
         if (!(block.timestamp < params.lockTime && params.lockTime <= params.resolveTime)) {
             revert InvalidTiming();
         }
@@ -206,7 +203,6 @@ contract PredictionPool is IPredictionPool, Initializable {
         lockTime = params.lockTime;
         resolveTime = params.resolveTime;
         feeBps = params.feeBps;
-        protocolFeeShareBps = params.protocolFeeShareBps;
         outcomeCount = n;
         status = MarketStatus.Open;
 

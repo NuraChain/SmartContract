@@ -141,24 +141,19 @@ Previews exist off-chain-friendly: `calcBuy(index, amountIn)` and `calcSell(inde
 
 ## 5. Fees
 
-Two parameters per market, set at creation, both hard-capped:
+One parameter per market, set at creation and hard-capped:
 
 - `feeBps` — total trade fee, max `MAX_FEE_BPS = 1000` (10%), taken on every buy and sell.
-- `protocolFeeShareBps` — how much of each fee goes to the treasury (max 100%);
-  **the remainder stays with liquidity providers**.
 
 On a sell, the fee is computed by grossing up: `gross = net · BPS / (BPS − feeBps)` (rounded
 up), so the fee is never understated.
 
-Where the two cuts go:
+**The whole fee goes to the treasury**, forwarded immediately via `depositFee{value}` on both
+engines. Nothing is retained in the pool, so liquidity providers earn no trading revenue —
+their return comes only from the reserves they hold at settlement.
 
-- **Protocol cut** → forwarded immediately to the `PredictionTreasury` via `depositFee{value}`.
-- **LP cut** → re-injected into the reserves as fresh liquidity. This lifts the value of every
-  LP share without needing a per-share fee accumulator — LPs earn implicitly because their
-  proportional claim of the reserves grows.
-
-A market created with `feeBps = 0` / `protocolFeeShareBps = 0` inherits the factory defaults
-(`defaultFeeBps`, `defaultProtocolFeeShareBps`); explicit values pass through unchanged.
+A market created with `feeBps = 0` inherits the factory default (`defaultFeeBps`); an explicit
+value passes through unchanged.
 
 ---
 
@@ -188,8 +183,8 @@ for every outcome i:   reserve[i] + totalUserSupply(i)  ==  totalSets  ==  addre
 ```
 
 Why it holds: buys/sells/funding move identical amounts into/out of *every* outcome's total,
-fees either stay in the pool (LP cut) or leave through the treasury (protocol cut) which
-`totalSets` excludes, and `totalSets` always equals the contract's native balance. Consequence:
+fees leave through the treasury, which `totalSets` excludes, and `totalSets` always equals the
+contract's native balance. Consequence:
 **winning shares can always redeem 1:1 — the pool cannot go insolvent.**
 
 **Redemption** (`redeem()`, pull-payment — the market never pushes funds to anyone):
@@ -312,8 +307,7 @@ AMM, no shares, and no liquidity providers. How it works:
 
 Both engines share the factory registry, status buckets, pagination, treasury, and event
 surface; `marketKind(marketId)` reports which engine a registered market runs on
-(`MarketKind.Amm` or `MarketKind.Pool`). Pool markets ignore `protocolFeeShareBps` — there are
-no LPs to retain a cut for, so the entire fee goes to the treasury.
+(`MarketKind.Amm` or `MarketKind.Pool`). Both engines send the entire fee to the treasury.
 
 ---
 
@@ -324,7 +318,7 @@ contracts/forecast/
 ├── PredictionFactory.sol        # Clone factory (createMarket + createMarket2), ADMIN_ROLE registry
 ├── PredictionMarket.sol         # CPMM market: ERC-1155 shares, trading, settlement
 ├── PredictionPool.sol           # Parimutuel market: bets, resolve-after-lock, pro-rata claims
-├── PredictionTreasury.sol       # Protocol-fee sink (Ownable2Step)
+├── PredictionTreasury.sol       # Trade-fee sink (Ownable2Step)
 ├── PredictionTypes.sol          # MarketStatus/MarketKind enums, MarketParams/MarketRecord structs
 ├── PredictionErrors.sol         # Shared custom errors
 ├── PredictionEvents.sol         # Shared events
@@ -335,7 +329,7 @@ contracts/forecast/
 │   └── IPredictionTreasury.sol
 ├── libraries/
 │   ├── MarketMath.sol           # FPMM trade/pricing math (mulDiv only)
-│   └── FeeMath.sol              # bps fee split: protocol vs LP retention
+│   └── FeeMath.sol              # bps fee helpers for buy/sell
 └── mocks/
     └── ReentrantBuyer.sol       # Test-suite reentrancy attacker
 ```

@@ -155,7 +155,8 @@ Airdrop:
   pushes payouts out to them instead and is open to anyone;
   `setMarketAutoDistribute(id, true)` additionally starts that push inside the
   transaction that settles the market.
-- Fee policy: factory `setDefaultFees` (defaults for `feeBps=0` requests),
+- Fee policy: factory `setDefaultFees(feeBps)` (default for `feeBps=0` requests; the whole
+  fee goes to the treasury),
   treasury `setFeeRecipient`/`withdraw`.
 - Recovery paths: `rescueERC20` (tokens), `withdrawExcessTokens` (vault tail),
   airdrop/treasury `withdraw`, forecast `sweepUnclaimed(marketId)` (a settled market's

@@ -5,9 +5,8 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title FeeMath
- * @notice Basis-point fee helpers shared by buy and sell. A trade's fee splits into a
- *         protocol cut (forwarded to the treasury) and an LP cut (retained in the pool as
- *         extra liquidity, which lifts the value of LP shares without a per-share accumulator).
+ * @notice Basis-point fee helpers shared by buy and sell. The whole trade fee is forwarded
+ *         to the treasury; nothing is retained in the pool.
  */
 library FeeMath {
     /// @dev Basis-point denominator (1e4 = 100%).
@@ -32,15 +31,5 @@ library FeeMath {
      */
     function grossFromNet(uint256 net, uint16 feeBps) internal pure returns (uint256 gross) {
         gross = Math.mulDiv(net, BPS, BPS - feeBps, Math.Rounding.Ceil);
-    }
-
-    /**
-     * @notice The protocol's share of a fee.
-     * @param fee Total fee.
-     * @param protocolShareBps Protocol share of the fee in basis points.
-     * @return cut Portion routed to the treasury (remainder stays with LPs).
-     */
-    function protocolCut(uint256 fee, uint16 protocolShareBps) internal pure returns (uint256 cut) {
-        cut = (fee * protocolShareBps) / BPS;
     }
 }

@@ -111,7 +111,7 @@ event FeeRecipientChanged(address indexed recipient);
 event TreasuryUpdated(address indexed treasury);
 
 /// @notice The factory's default fee configuration changed.
-event FeesUpdated(uint16 feeBps, uint16 protocolFeeShareBps);
+event FeesUpdated(uint16 feeBps);
 
 /// @notice A resolution signer voted `outcome` for market `marketId`; `count` is that
 ///         outcome's tally after the vote (a changed vote removes it from the old one).

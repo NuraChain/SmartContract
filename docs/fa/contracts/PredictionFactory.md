@@ -45,13 +45,11 @@ PredictionFactory
 | متغیر | نوع | دید | تغییرپذیری | هدف |
 | --- | --- | --- | --- | --- |
 | `ADMIN_ROLE` | `bytes32` | public | constant | نقش ساخت و مدیریت بازارها. |
-| `BPS` | `uint16` | public | constant | مخرج بیس‌پوینت `1e4`. |
 | `MAX_FEE_BPS` | `uint16` | public | constant | ‏`1000`؛ سقف کارمزد ۱۰٪ برای بازارهای جدید. |
 | `marketImplementation` | `address` | public | **immutable** | پیاده‌سازی CPMM که `createMarket` کلون می‌کند. |
 | `poolImplementation` | `address` | public | **immutable** | پیاده‌سازی پاری‌موچل که `createMarket2` کلون می‌کند. |
 | `_treasury` | `address` | private | mutable | خزانه‌ای که به بازارهای جدید اعمال می‌شود. |
 | `defaultFeeBps` | `uint16` | public | mutable | کارمزدی که وقتی پارامترها `feeBps == 0` بدهند به ارث می‌رسد؛ همین‌جا درصد کارمزد به نوع/دستهٔ بازار گره می‌خورد. |
-| `defaultProtocolFeeShareBps` | `uint16` | public | mutable | سهم خزانه به همین شکل (فقط CPMM؛ استخرها نادیده می‌گیرند). |
 | `_records` | `MarketRecord[]` | private | mutable | رجیستری بر اساس marketId. |
 | `_kinds` | `mapping(uint256 => MarketKind)` | private | mutable | marketId ← نوع موتور (`Amm`=0 پیش‌فرض، ‏`Pool`=1). |
 | `_byStatus` | `mapping(MarketStatus => EnumerableSet.UintSet)` | private | mutable | گذار O(1) وضعیت + فیلتر صفحه‌بندی‌شده. |
@@ -66,7 +64,6 @@ MarketParams  (پارامترهای ساخت که به initializer کلون می
 ├── lockTime             : uint64   -- پایان معامله/شرط‌بندی
 ├── resolveTime          : uint64   -- زمان هدف حل (اطلاعاتی)
 ├── feeBps               : uint16   -- کارمزد کل؛ صفر ⇒ پیش‌فرض کارخانه
-├── protocolFeeShareBps  : uint16   -- سهم خزانه؛ صفر ⇒ پیش‌فرض
 └── outcomeNames         : string[] -- بین ۲ تا ۱۶ نام؛ طول = تعداد خروجی‌ها
 
 MarketRecord  (اسنپ‌شات رجیستری)
@@ -107,7 +104,7 @@ MarketStatus:
 | `CategoryMeaningSet` | `categoryId, lang, meaning` | دوتای اول | `addCategory` و `setCategoryMeanings`، به‌ازای هر زبانِ نوشته‌شده |
 | `CategoryEnabledSet` | `categoryId, enabled` | categoryId | `addCategory` (true) و `setCategoryEnabled` |
 | `TreasuryUpdated` | `treasury` | indexed | `setTreasury` |
-| `FeesUpdated` | `feeBps, protocolFeeShareBps` | ندارد | `setDefaultFees` |
+| `FeesUpdated` | `feeBps` | ندارد | `setDefaultFees` |
 
 رویدادهای معامله/چرخهٔ حیات را خود کلون‌ها صادر می‌کنند (اعلام مشترک در
 `PredictionEvents.sol`)؛ ایندکسرها باید به آدرس کلون گوش دهند.
@@ -117,7 +114,7 @@ MarketStatus:
 | خطا | شرط وقوع | مسیر |
 | --- | --- | --- |
 | `ZeroAddress()` | سازنده: admin/treasury/هر implementation صفر؛ ‏`setTreasury(0)` | سازنده، setTreasury |
-| `InvalidFee()` | ‏`feeBps > MAX_FEE_BPS` یا share > BPS | سازنده، setDefaultFees |
+| `InvalidFee()` | ‏`feeBps > MAX_FEE_BPS` | سازنده، setDefaultFees |
 | `AccessControlUnauthorizedAccount` (OZ) | نبود ADMIN_ROLE | همهٔ توابع محافظت‌شده |
 | خطاهای اعتبارسنجی کلون | پارامترهای بد داخل `initialize` کلون رد می‌شود (`InvalidOutcomeCount`, `InvalidTiming`, ... ) | createMarket/createMarket2 (revert اتمیک کل تراکنش) |
 
@@ -270,7 +267,7 @@ marketsByCategory(7, 0, 20)                 // صفحه‌بندی‌شده، ب
 - `setTreasury`: خزانهٔ بازارهای *آینده* را عوض می‌کند؛ چک صفر + رویداد.
 - `repointTreasury`: ‏`setTreasury(_treasury)` را روی یک کلون موجود صدا می‌زند تا
   بازارهای فعلی هم از خزانهٔ فعلی کارخانه پیروی کنند. تک‌بازاری است (نه حلقه) تا گاس محدود بماند.
-- `setDefaultFees`: اعتبارسنجی با `MAX_FEE_BPS`/`BPS`؛ فقط بازارهای بعدی که صفر بدهند.
+- `setDefaultFees`: اعتبارسنجی با `MAX_FEE_BPS`؛ فقط بازارهای بعدی که صفر بدهند.
 
 ---
 
@@ -361,6 +358,6 @@ ADMIN ──createMarket{value}──▶ initialize روی کلون (seed = سه
 | `distributeMarket(id, limit)` | external | nonpayable | **همه** | پرداخت به حداکثر `limit` حسابِ بعدیِ یک بازار تعیین‌تکلیف‌شده |
 | `addCategory/setCategoryMeanings/setCategoryEnabled` | external | nonpayable | ADMIN_ROLE | رجیستری دسته‌ها |
 | `categoryMeaning(s)/categoryLanguages/categoryIds/categoryCount/categoryState/marketsByCategory/countByCategory` | external | view | همه | خواندن دسته‌ها |
-| `setDefaultFees(f,s)` | external | nonpayable | ADMIN_ROLE | پیش‌فرض بازارهای feeBps=0 |
+| `setDefaultFees(f)` | external | nonpayable | ADMIN_ROLE | پیش‌فرض بازارهای feeBps=0 |
 | viewهای رجیستری | external/public | view | همه | فهرست و جستجو |
 

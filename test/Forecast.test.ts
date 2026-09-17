@@ -21,7 +21,6 @@ type Params = {
   lockTime: bigint;
   resolveTime: bigint;
   feeBps: number;
-  protocolFeeShareBps: number;
   outcomeNames: string[];
 };
 
@@ -49,7 +48,6 @@ async function deployForecast() {
       await marketImpl.getAddress(),
       await poolImpl.getAddress(),
       300n,
-      2000n,
       deployer.address,
       signers.map((s) => s.address),
       3n,
@@ -72,7 +70,6 @@ async function marketParams(creator: string): Promise<Params> {
     lockTime: BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 3600),
     resolveTime: BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 7200),
     feeBps: 0, // inherit the factory default
-    protocolFeeShareBps: 2000,
     outcomeNames: ["Yes", "No"],
   };
 }
@@ -148,7 +145,6 @@ describe("Forecast resolution multisig", () => {
         await m.getAddress(),
         await p.getAddress(),
         300n,
-        2000n,
       ];
 
       const factory = await ethers.getContractFactory("PredictionFactory");

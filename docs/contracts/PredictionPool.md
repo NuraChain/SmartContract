@@ -14,8 +14,7 @@
 payout(user) = (totalPool − fee) · stakeOnWinner(user) / totalStakedOnWinner
 ```
 
-No trading, no shares, no liquidity providers. `params.protocolFeeShareBps` is ignored:
-the full fee goes to the treasury because there are no LPs to retain a cut for.
+No trading, no shares, no liquidity providers. The full fee goes to the treasury.
 
 ## Inheritance
 
@@ -41,7 +40,7 @@ PredictionPool
 | `CLAIM_WINDOW` | `uint64` | public | constant | `365 days`; how long after settlement winners may still `claim`. |
 | `AUTO_DISTRIBUTE_BATCH` | `uint256` | public | constant | `20`; payouts pushed inside the settling transaction itself. |
 | `PUSH_GAS` | `uint256` | private | constant | `50_000`; gas forwarded to each pushed payout. |
-| `controller` / `treasury` / `status` / metadata / `creator` / timestamps / `feeBps` | — | public | set-once | Same shapes as [PredictionMarket](PredictionMarket.md); `protocolFeeShareBps` stored for parameter-shape parity but unused. |
+| `controller` / `treasury` / `status` / metadata / `creator` / timestamps / `feeBps` | — | public | set-once | Same shapes as [PredictionMarket](PredictionMarket.md). |
 | `categoryId` | `uint32` | public | set-once | Category this market is filed under, in the [factory's registry](PredictionFactory.md#category-registry). The market stores no category name of its own. |
 | `autoDistribute` | `bool` | public | mutable | Whether settlement pushes payouts by itself. **`false` until an admin turns it on.** Never gates the money. |
 | `endedAt` | `uint64` | public | set at resolve/void | Settlement timestamp; `0` while live. Anchors the claim window. |

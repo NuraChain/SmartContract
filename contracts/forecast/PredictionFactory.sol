@@ -48,8 +48,6 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
     /// @notice Role permitted to create and administer markets.
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
-    /// @notice Basis-point denominator.
-    uint16 public constant BPS = 1e4;
     /// @notice Maximum total trade fee (10%).
     uint16 public constant MAX_FEE_BPS = 1000;
 
@@ -74,8 +72,6 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
 
     /// @notice Default total fee (bps) applied when a market requests 0.
     uint16 public defaultFeeBps;
-    /// @notice Default protocol fee share (bps) applied when a market requests 0.
-    uint16 public defaultProtocolFeeShareBps;
 
     /// @dev Registry of every market, indexed by marketId.
     MarketRecord[] private _records;
@@ -121,8 +117,7 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
      * @param treasury_ Treasury for protocol fees.
      * @param marketImplementation_ Deployed {PredictionMarket} implementation to clone.
      * @param poolImplementation_ Deployed {PredictionPool} implementation to clone.
-     * @param defaultFeeBps_ Default trade fee (bps).
-     * @param defaultProtocolFeeShareBps_ Default protocol share of fees (bps).
+     * @param defaultFeeBps_ Default trade fee (bps); the whole fee goes to the treasury.
      * @param owner_ Account allowed to re-appoint the resolution signers and quorum. Zero
      *        means "same as admin".
      * @param initialSigners_ The N-of-M resolution signer set. Resolving a market needs
@@ -136,7 +131,6 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
         address marketImplementation_,
         address poolImplementation_,
         uint16 defaultFeeBps_,
-        uint16 defaultProtocolFeeShareBps_,
         address owner_,
         address[] memory initialSigners_,
         uint256 requiredConfirmations_
@@ -147,7 +141,7 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
         ) {
             revert ZeroAddress();
         }
-        if (defaultFeeBps_ > MAX_FEE_BPS || defaultProtocolFeeShareBps_ > BPS) revert InvalidFee();
+        if (defaultFeeBps_ > MAX_FEE_BPS) revert InvalidFee();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(ADMIN_ROLE, admin);
@@ -155,7 +149,6 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
         marketImplementation = marketImplementation_;
         poolImplementation = poolImplementation_;
         defaultFeeBps = defaultFeeBps_;
-        defaultProtocolFeeShareBps = defaultProtocolFeeShareBps_;
 
         owner = owner_ == address(0) ? admin : owner_;
 
@@ -201,13 +194,10 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
         onlyRole(ADMIN_ROLE)
         returns (uint256 marketId, address market)
     {
-        // A market requesting 0 fees inherits the factory defaults; explicit values pass through.
+        // A market requesting 0 fees inherits the factory default; an explicit value passes through.
         MarketParams memory effective = params;
         if (effective.feeBps == 0) {
             effective.feeBps = defaultFeeBps;
-        }
-        if (effective.protocolFeeShareBps == 0) {
-            effective.protocolFeeShareBps = defaultProtocolFeeShareBps;
         }
 
         if (!_categoryEnabled[effective.categoryId]) revert UnknownCategory();
@@ -244,8 +234,7 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
      *         outcome's backers.
      * @dev Not payable on purpose: a pool needs no seed liquidity, so attached value would be
      *      unrecoverable — fail loudly instead. A `feeBps` of 0 inherits the factory default,
-     *      which is how a fee percentage gets matched to the market's type/category; the pool
-     *      ignores `protocolFeeShareBps` (there are no LPs).
+     *      which is how a fee percentage gets matched to the market's type/category.
      * @param params Market configuration.
      * @return marketId The market's registry index.
      * @return market The deployed clone address.
@@ -445,11 +434,10 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
     }
 
     /// @inheritdoc IPredictionFactory
-    function setDefaultFees(uint16 feeBps, uint16 protocolFeeShareBps) external onlyRole(ADMIN_ROLE) {
-        if (feeBps > MAX_FEE_BPS || protocolFeeShareBps > BPS) revert InvalidFee();
+    function setDefaultFees(uint16 feeBps) external onlyRole(ADMIN_ROLE) {
+        if (feeBps > MAX_FEE_BPS) revert InvalidFee();
         defaultFeeBps = feeBps;
-        defaultProtocolFeeShareBps = protocolFeeShareBps;
-        emit FeesUpdated(feeBps, protocolFeeShareBps);
+        emit FeesUpdated(feeBps);
     }
 
     // ----------------------------------------------------------------------------------------

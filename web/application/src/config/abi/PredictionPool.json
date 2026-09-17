@@ -688,11 +688,6 @@
                         "type": "uint16"
                     },
                     {
-                        "internalType": "uint16",
-                        "name": "protocolFeeShareBps",
-                        "type": "uint16"
-                    },
-                    {
                         "internalType": "string[]",
                         "name": "outcomeNames",
                         "type": "string[]"
@@ -825,19 +820,6 @@
                 "internalType": "uint256",
                 "name": "",
                 "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "protocolFeeShareBps",
-        "outputs": [
-            {
-                "internalType": "uint16",
-                "name": "",
-                "type": "uint16"
             }
         ],
         "stateMutability": "view",

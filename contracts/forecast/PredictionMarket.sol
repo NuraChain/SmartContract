@@ -65,8 +65,8 @@ import {
  *
  *      A buy/sell/funding operation adds or removes the same amount from every outcome's total,
  *      so the equality across outcomes is preserved, and `totalSets` always equals the contract's
- *      native balance (protocol fees leave, LP fees are re-injected as liquidity). Winning shares
- *      therefore always redeem 1:1 without the pool going insolvent.
+ *      native balance (the whole trade fee leaves for the treasury). Winning shares therefore
+ *      always redeem 1:1 without the pool going insolvent.
  *
  *      The invariant holds for the whole life of the market, right through the one-year claim
  *      window that starts at settlement. {sweepUnclaimed} retires it: once the window has
@@ -137,10 +137,8 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     /// @notice Intended resolution timestamp (informational; admin resolves).
     uint64 public resolveTime;
 
-    /// @notice Total trade fee in basis points.
+    /// @notice Total trade fee in basis points; the whole of it goes to the treasury.
     uint16 public feeBps;
-    /// @notice Protocol share of each fee in basis points (remainder accrues to LPs).
-    uint16 public protocolFeeShareBps;
     /// @notice Category this market is filed under, in the factory's registry. The name a
     ///         reader sees is looked up there, per language.
     uint32 public categoryId;
@@ -212,7 +210,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         }
         uint256 n = params.outcomeNames.length;
         if (n < 2 || n > MAX_OUTCOMES) revert InvalidOutcomeCount();
-        if (params.feeBps > MAX_FEE_BPS || params.protocolFeeShareBps > FeeMath.BPS) revert InvalidFee();
+        if (params.feeBps > MAX_FEE_BPS) revert InvalidFee();
         if (!(block.timestamp < params.lockTime && params.lockTime <= params.resolveTime)) {
             revert InvalidTiming();
         }
@@ -233,7 +231,6 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         lockTime = params.lockTime;
         resolveTime = params.resolveTime;
         feeBps = params.feeBps;
-        protocolFeeShareBps = params.protocolFeeShareBps;
         outcomeCount = n;
         status = MarketStatus.Open;
 
@@ -343,27 +340,24 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         if (amountIn == 0) revert ZeroAmount();
 
         uint256 fee = FeeMath.feeOnAmount(amountIn, feeBps);
-        uint256 cut = FeeMath.protocolCut(fee, protocolFeeShareBps);
-        uint256 lpFee = fee - cut;
         uint256 invest = amountIn - fee;
 
         sharesOut = MarketMath.calcBuyShares(_reserves, outcomeIndex, invest);
         if (sharesOut < minSharesOut) revert SlippageExceeded();
 
-        // Effects: add (invest + lpFee) to every reserve, then hand the buyer their shares out
-        // of the bought outcome. Both amounts of collateral stay in the contract.
-        uint256 addAll = invest + lpFee;
+        // Effects: add `invest` to every reserve, then hand the buyer their shares out of the
+        // bought outcome. That collateral stays in the contract; the fee does not.
         uint256 n = outcomeCount;
         for (uint256 j = 0; j < n; ++j) {
-            _reserves[j] += addAll;
+            _reserves[j] += invest;
         }
         _reserves[outcomeIndex] -= sharesOut;
-        totalSets += addAll;
+        totalSets += invest;
         _mint(msg.sender, outcomeIndex, sharesOut, "");
 
-        // Interaction: forward the protocol cut.
-        if (cut > 0) {
-            IPredictionTreasury(treasury).depositFee{ value: cut }(address(this));
+        // Interaction: forward the whole fee.
+        if (fee > 0) {
+            IPredictionTreasury(treasury).depositFee{ value: fee }(address(this));
         }
         emit PredictionPlaced(address(this), msg.sender, outcomeIndex, amountIn, sharesOut);
     }
@@ -380,14 +374,11 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
 
         uint256 gross = FeeMath.grossFromNet(returnAmount, feeBps);
         uint256 fee = gross - returnAmount;
-        uint256 cut = FeeMath.protocolCut(fee, protocolFeeShareBps);
-        uint256 lpFee = fee - cut;
 
         sharesIn = MarketMath.calcSellShares(_reserves, outcomeIndex, gross);
         if (sharesIn > maxSharesIn) revert SlippageExceeded();
 
-        // Effects: burn the seller's shares, merge `gross` complete sets out of the pool, then
-        // re-inject the LP fee as fresh liquidity.
+        // Effects: burn the seller's shares and merge `gross` complete sets out of the pool.
         _burn(msg.sender, outcomeIndex, sharesIn);
         uint256 n = outcomeCount;
         for (uint256 j = 0; j < n; ++j) {
@@ -397,16 +388,10 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         }
         _reserves[outcomeIndex] = _reserves[outcomeIndex] + sharesIn - gross;
         totalSets -= gross;
-        if (lpFee > 0) {
-            for (uint256 j = 0; j < n; ++j) {
-                _reserves[j] += lpFee;
-            }
-            totalSets += lpFee;
-        }
 
-        // Interactions: protocol cut out, then pay the seller.
-        if (cut > 0) {
-            IPredictionTreasury(treasury).depositFee{ value: cut }(address(this));
+        // Interactions: fee out, then pay the seller.
+        if (fee > 0) {
+            IPredictionTreasury(treasury).depositFee{ value: fee }(address(this));
         }
         _sendNative(msg.sender, returnAmount);
         emit PredictionSold(address(this), msg.sender, outcomeIndex, sharesIn, returnAmount);

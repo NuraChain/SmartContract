@@ -16,8 +16,7 @@
 payout(user) = (totalPool − fee) · stakeOnWinner(user) / totalStakedOnWinner
 ```
 
-معامله ندارد، سهام ضرب نمی‌شود، LP وجود ندارد. ‏`protocolFeeShareBps` نادیده گرفته
-می‌شود: کل کارمزد به خزانه می‌رود.
+معامله ندارد، سهام ضرب نمی‌شود، LP وجود ندارد. کل کارمزد به خزانه می‌رود.
 
 ## متغیرهای State
 
@@ -28,7 +27,7 @@ payout(user) = (totalPool − fee) · stakeOnWinner(user) / totalStakedOnWinner
 | `CLAIM_WINDOW = 365 days` | مهلت برداشت برندگان پس از تعیین‌تکلیف بازار. |
 | `AUTO_DISTRIBUTE_BATCH = 20` | تعداد پرداخت‌هایی که داخل خودِ تراکنش تعیین‌تکلیف push می‌شود. |
 | `PUSH_GAS = 50_000` (private) | گسی که به هر پرداختِ push‌شده داده می‌شود. |
-| `controller/treasury/status/متادیتا/creator/timestamps/feeBps` | همان شکل PredictionMarket؛ ‏`protocolFeeShareBps` فقط برای هم‌شکلی ذخیره و بلااستفاده. |
+| `controller/treasury/status/متادیتا/creator/timestamps/feeBps` | همان شکل PredictionMarket. |
 | `totalPool` | مجموع شرط‌های همهٔ خروجی‌ها. |
 | `_distributable` (private) | استخر منهای کارمزد؛ قابل تقسیم بین برندگان. |
 | `endedAt` | زمان تعیین‌تکلیف؛ تا وقتی بازار زنده است صفر. مبدأ پنجرهٔ برداشت. |

@@ -10,13 +10,13 @@
 | فایل | `contracts/forecast/libraries/FeeMath.sol` |
 | نسخه | ‏0.8.24 |
 | نوع | ‏`library` (internal pure) |
-| هدف | ابزارهای کارمزد بیس‌پوینت مشترک buy/sell؛ کارمزد هر معامله به «سهم پروتکل» (به خزانه) و «سهم LP» (به‌عنوان نقدینگی اضافه در استخر می‌ماند و ارزش سهام LP را بالا می‌برد) تفکیک می‌شود |
+| هدف | ابزارهای کارمزد بیس‌پوینت مشترک buy/sell؛ کل کارمزد هر معامله به خزانه فرستاده می‌شود و چیزی در استخر نمی‌ماند |
 
 ## ثابت‌ها
 
 | نام | نوع | مقدار | هدف |
 | --- | --- | --- | --- |
-| `BPS` | uint256 internal constant | ‏1e4 | مخرج بیس‌پوینت (۱۰۰٪). کران بالای اعتبارسنجی `protocolFeeShareBps`. |
+| `BPS` | uint256 internal constant | ‏1e4 | مخرج بیس‌پوینت (۱۰۰٪). |
 
 ## توابع
 
@@ -37,14 +37,6 @@ grossFromNet(net, feeBps) -> gross    // gross = ceil(net·1e4/(1e4−feeBps))
 وثیقه‌ای که فروش باید از استخر بکشد تا فروشنده `net` دریافت کند؛ به بالا گرد می‌شود تا
 کارمزد هرگز کم‌برآورد نشود. مصرف‌کنندگان: ‏`sell`, `calcSell`.
 
-### protocolCut
-
-```solidity
-protocolCut(fee, protocolShareBps) -> cut   // cut = fee·share/1e4 (floor)
-```
-
-سهم خزانه؛ باقیمانده مال LPها. توسط موتور استخر پاری‌موچل نادیده گرفته می‌شود.
-
 ## تحلیل امنیتی
 
 - گرد کردن همیشه به سلامت کارمزد کمک می‌کند (کارمزد هرگز کم‌برآورد نمی‌شود).
@@ -58,4 +50,3 @@ protocolCut(fee, protocolShareBps) -> cut   // cut = fee·share/1e4 (floor)
 | --- | --- | --- | --- |
 | `feeOnAmount(amount,bps)` | internal | pure | کارمزد ورودی خرید |
 | `grossFromNet(net,bps)` | internal | pure | مبلغ فروش ناخالص |
-| `protocolCut(fee,shareBps)` | internal | pure | سهم خزانه |

@@ -50,7 +50,6 @@ struct MarketParams {
     uint64 lockTime;
     uint64 resolveTime;
     uint16 feeBps;
-    uint16 protocolFeeShareBps;
     string[] outcomeNames;
 }
 

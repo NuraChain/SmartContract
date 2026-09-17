@@ -13,8 +13,7 @@ interface IPredictionFactory {
 
     /**
      * @notice Deploys a new market clone, seeding it with the attached native value.
-     * @param params Market configuration; `feeBps`/`protocolFeeShareBps` of 0 inherit the
-     *        factory defaults.
+     * @param params Market configuration; a `feeBps` of 0 inherits the factory default.
      * @return marketId The market's registry index.
      * @return market The deployed clone address.
      */
@@ -109,10 +108,9 @@ interface IPredictionFactory {
 
     /**
      * @notice Updates the default fee configuration applied to new markets (admin only).
-     * @param feeBps Total trade fee in basis points.
-     * @param protocolFeeShareBps Protocol share of each fee in basis points.
+     * @param feeBps Total trade fee in basis points; the whole fee goes to the treasury.
      */
-    function setDefaultFees(uint16 feeBps, uint16 protocolFeeShareBps) external;
+    function setDefaultFees(uint16 feeBps) external;
 
     // --- category registry ---
 

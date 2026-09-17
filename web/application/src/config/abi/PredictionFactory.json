@@ -27,11 +27,6 @@
                 "type": "uint16"
             },
             {
-                "internalType": "uint16",
-                "name": "defaultProtocolFeeShareBps_",
-                "type": "uint16"
-            },
-            {
                 "internalType": "address",
                 "name": "owner_",
                 "type": "address"
@@ -216,12 +211,6 @@
                 "indexed": false,
                 "internalType": "uint16",
                 "name": "feeBps",
-                "type": "uint16"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint16",
-                "name": "protocolFeeShareBps",
                 "type": "uint16"
             }
         ],
@@ -442,19 +431,6 @@
                 "internalType": "bytes32",
                 "name": "",
                 "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "BPS",
-        "outputs": [
-            {
-                "internalType": "uint16",
-                "name": "",
-                "type": "uint16"
             }
         ],
         "stateMutability": "view",
@@ -969,11 +945,6 @@
                         "type": "uint16"
                     },
                     {
-                        "internalType": "uint16",
-                        "name": "protocolFeeShareBps",
-                        "type": "uint16"
-                    },
-                    {
                         "internalType": "string[]",
                         "name": "outcomeNames",
                         "type": "string[]"
@@ -1045,11 +1016,6 @@
                         "type": "uint16"
                     },
                     {
-                        "internalType": "uint16",
-                        "name": "protocolFeeShareBps",
-                        "type": "uint16"
-                    },
-                    {
                         "internalType": "string[]",
                         "name": "outcomeNames",
                         "type": "string[]"
@@ -1079,19 +1045,6 @@
     {
         "inputs": [],
         "name": "defaultFeeBps",
-        "outputs": [
-            {
-                "internalType": "uint16",
-                "name": "",
-                "type": "uint16"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "defaultProtocolFeeShareBps",
         "outputs": [
             {
                 "internalType": "uint16",
@@ -1790,11 +1743,6 @@
             {
                 "internalType": "uint16",
                 "name": "feeBps",
-                "type": "uint16"
-            },
-            {
-                "internalType": "uint16",
-                "name": "protocolFeeShareBps",
                 "type": "uint16"
             }
         ],

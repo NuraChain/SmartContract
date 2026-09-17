@@ -50,7 +50,7 @@ PredictionMarket
 | متادیتا + `creator` + سه timestamp | string/address/uint64 | public | set-once | در initialize نوشته می‌شوند؛ معامله نیازمند `block.timestamp < lockTime`. |
 | `categoryId` | uint32 | public | set-once | دستهٔ بازار در [رجیستری کارخانه](PredictionFactory.md#رجیستری-دسته‌ها)؛ خودِ بازار هیچ نامی برای دسته ذخیره نمی‌کند. |
 | `autoDistribute` | bool | public | mutable | آیا تعیین‌تکلیف خودش پرداخت‌ها را push می‌کند. **تا وقتی ادمین روشنش نکند خاموش است.** هرگز جلوی پول را نمی‌گیرد. |
-| `feeBps` / `protocolFeeShareBps` | uint16 | public | set-once | کارمزد کل و سهم خزانه؛ باقیمانده به LP می‌رسد. |
+| `feeBps` | uint16 | public | set-once | کارمزد کل معامله؛ تمام آن به خزانه می‌رود. |
 | `outcomeCount` | uint256 | public | set-once | تعداد خروجی‌ها n. |
 | `_outcomeNames` / `_reserves` | string[] / uint256[] | private | set-once / mutable | نام‌ها / رزرو مجازی FPMM به wei. |
 | `totalSets` | uint256 | public | mutable | وثیقهٔ پشت ست‌های کامل؛ برابر موجودی بومی قرارداد. |
@@ -127,9 +127,9 @@ function buy(uint256 outcomeIndex, uint256 minSharesOut, uint256 deadline)
 ```
 
 خرید سهام خروجی با کوین بومی الصاقی. جریان: چک deadline → چک قابل‌معامله بودن → تفکیک
-کارمزد با `FeeMath` (fee، cut پروتکل، lpFee، invest) → محاسبه با
-`MarketMath.calcBuyShares` → چک slippage → effects: همهٔ رزروها += invest+lpFee؛ رزرو
-خریداری‌شده -= sharesOut؛ totalSets += invest+lpFee؛ ضرب سهام → تعامل: ارسال cut به خزانه.
+کارمزد با `FeeMath` (fee و invest = amountIn − fee) → محاسبه با
+`MarketMath.calcBuyShares` → چک slippage → effects: همهٔ رزروها += invest؛ رزرو
+خریداری‌شده -= sharesOut؛ totalSets += invest؛ ضرب سهام → تعامل: ارسال کل کارمزد به خزانه.
 **امنیت:** محافظت MEV با minSharesOut+deadline؛ CEI؛ کارمزد روی ورودی واقعی.
 
 ---
@@ -143,9 +143,8 @@ function sell(uint256 outcomeIndex, uint256 returnAmount, uint256 maxSharesIn, u
 
 معکوس خرید: سوزاندن `sharesIn` توکن خروجی و دریافت `returnAmount` خالص.
 ‏`grossFromNet` کارمزد را به بالا گرد می‌کند. effects: burn؛ رزرو سایر خروجی‌ها -= gross؛
-رزرو خروجی فروش‌شده += sharesIn − gross؛ totalSets -= gross؛ تزریق مجدد lpFee به همهٔ
-رزروها. سپس cut به خزانه و پرداخت به فروشنده. مرز slippage برعکس است: بیشینهٔ توکنی که
-می‌دهید.
+رزرو خروجی فروش‌شده += sharesIn − gross؛ totalSets -= gross. سپس کل کارمزد به خزانه و
+پرداخت به فروشنده. مرز slippage برعکس است: بیشینهٔ توکنی که می‌دهید.
 
 ---
 
@@ -306,8 +305,7 @@ function sweepUnclaimed() external onlyController nonReentrant returns (uint256 
 
 ```text
 خریدار ──buy{value}──▶ بازار
-         ├─ fee ─┬─ سهم پروتکل ──▶ Treasury.depositFee
-         │        └─ lpFee ── در رزروها می‌ماند (ارزش LP)
+         ├─ fee ──▶ Treasury.depositFee (تمام آن)
          └─ invest ──▶ رزروها ⇄ ضرب سهام برای خریدار
 فروشنده ──sell──◀ کوین (خالص کارمزد) ؛ ست‌ها سوزانده شدند
 تعیین‌تکلیف ──┬─ برندگان ── ۱:۱ روی سهام برنده

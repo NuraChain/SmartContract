@@ -133,10 +133,9 @@ Trade/lifecycle events are emitted by the clones themselves (shared declarations
 ### Classification
 
 - **Administrative:** `createMarket`, `createMarket2`, `pauseMarket`, `unpauseMarket`,
-  `closeMarket`, `voidMarket`, `sweepUnclaimed`, `setMarketAutoDistribute`,
+  `closeMarket`, `voidMarket`, `sweepUnclaimed`,
   `setTreasury`, `repointTreasury`, `setDefaultFees`, `addCategory`,
   `setCategoryMeanings`, `setCategoryEnabled`
-- **Permissionless:** `distributeMarket`
 - **Resolution multisig:** confirmResolution (signers), setResolutionSigners (owner)
 - **View:** marketCount, marketAt, marketAddress, marketKind, 	reasury, 
 esolutionSigners, 
@@ -203,19 +202,18 @@ transition is illegal, so registry and clone can never disagree:
 | `confirmResolution(marketId, winningOutcome)` *(signer)* | records a vote; at quorum calls `resolve(winningOutcome)` | → Resolved |
 | `voidMarket(marketId)` *(ADMIN_ROLE)* | `voidMarket()` | → Voided |
 | `sweepUnclaimed(marketId)` *(ADMIN_ROLE)* | `sweepUnclaimed()` | none — terminal status is unchanged |
-| `setMarketAutoDistribute(marketId, enabled)` *(ADMIN_ROLE)* | `setAutoDistribute(enabled)` | none |
-| `distributeMarket(marketId, limit)` *(**anyone**)* | `distribute(limit)` | none |
 
 `marketId` out of range reverts with array-index panic.
 
-The last three relays carry no registry transition. `sweepUnclaimed` moves the collateral
-a settled market still holds into the treasury; the factory supplies only the admin gate,
+The last relay carries no registry transition. `sweepUnclaimed` moves the collateral a
+settled market still holds into the treasury; the factory supplies only the admin gate,
 while the clone enforces the timing, refusing whilst it is live (`MarketNotResolved`) or
 whilst its one-year claim window is still open (`ClaimWindowOpen`), so an admin can never
-front-run a winner. `setMarketAutoDistribute` switches a market's push-at-settlement on
-or off. `distributeMarket` is deliberately **permissionless**: it only moves a settled
-market's own collateral to the accounts already entitled to it, so a keeper, a frontend,
-or an impatient participant may all push it along. All three work on either engine.
+front-run a winner. It works on either engine.
+
+**There is no payout relay.** Neither engine pushes money at anyone: participants call
+`redeem`/`claim` on the market clone itself, and no factory function can move their share
+for them.
 
 ## Category registry
 
@@ -333,8 +331,8 @@ Moves `marketId` between status buckets and writes the record's status. No-op wh
 **CRITICAL ADMIN POWERS:** market creation (incl. choosing fees up to 10%), voiding,
 treasury re-pointing, sweeping year-old unclaimed collateral, managing the category
 registry, and — owner-only — replacing the resolution signer set/quorum. Note what is
-*not* an admin power: `distributeMarket` is permissionless, and no admin action can stop
-a participant from collecting their own share.
+*not* an admin power: no admin action can stop a participant from collecting their own
+share, or collect it on their behalf.
 Resolution itself requires the N-of-M signer quorum (e.g. 3-of-5), not a single key; a
 colluding quorum is still a trusted assumption. See
 [PredictionPool](PredictionPool.md)/[PredictionMarket](PredictionMarket.md)
@@ -406,8 +404,6 @@ creation (`InvalidTiming`).
 | `setTreasury(t)` | external | nonpayable | ADMIN_ROLE | Treasury for future markets |
 | `repointTreasury(id)` | external | nonpayable | ADMIN_ROLE | Sync one clone's treasury |
 | `sweepUnclaimed(id)` | external | nonpayable | ADMIN_ROLE | Move a settled market's leftover collateral to the treasury, one year on |
-| `setMarketAutoDistribute(id, enabled)` | external | nonpayable | ADMIN_ROLE | Push payouts at settlement, or leave them to be asked for |
-| `distributeMarket(id, limit)` | external | nonpayable | **Anyone** | Pay up to `limit` more of a settled market's accounts |
 | `addCategory/setCategoryMeanings/setCategoryEnabled` | external | nonpayable | ADMIN_ROLE | Category registry |
 | `categoryMeaning(s)/categoryLanguages/categoryIds/categoryCount/categoryState/marketsByCategory/countByCategory` | external | view | Anyone | Category reads |
 | `setDefaultFees(f)` | external | nonpayable | ADMIN_ROLE | Default for feeBps=0 markets |

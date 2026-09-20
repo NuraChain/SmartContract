@@ -151,10 +151,10 @@ Airdrop:
   market; markets carry the id, the display name per language lives in the factory.
 - Create markets: `createMarket{value}` / `createMarket2`; drive lifecycle via
   `pauseMarket/unpauseMarket/closeMarket/voidMarket`; resolution itself is an N-of-M multisig (`confirmResolution` by `resolutionSigners` until `requiredConfirmations` agree).
-- Payouts: participants claim their own share by default. `distributeMarket(id, limit)`
-  pushes payouts out to them instead and is open to anyone;
-  `setMarketAutoDistribute(id, true)` additionally starts that push inside the
-  transaction that settles the market.
+- Payouts: participants always collect their own share, and nothing else moves the money.
+  Settling a market only fixes who is owed what; each account then calls `redeem`
+  (CPMM) or `claim` (pool) on the market clone. Voiding a market refunds everyone what
+  they put in rather than settling it.
 - Fee policy: factory `setDefaultFees(feeBps)` (default for `feeBps=0` requests; the whole
   fee goes to the treasury),
   treasury `setFeeRecipient`/`withdraw`.

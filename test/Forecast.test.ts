@@ -109,11 +109,6 @@ async function createAmm(factory: any, params: Params, value = 10n ** 18n) {
   };
 }
 
-/** Opts a market into the push-at-settlement that markets start with switched off. */
-async function pushOnSettle(factory: any, marketId: bigint | number = 0n) {
-  await factory.setMarketAutoDistribute(marketId, true);
-}
-
 /** Moves block time past a market's lockTime so resolution becomes legal. */
 async function passLock(params: Params) {
   await networkHelpers.time.increaseTo(params.lockTime + 2n);
@@ -170,7 +165,6 @@ describe("Forecast resolution multisig", () => {
       const params = await marketParams(deployer.address);
       const pool = await createPool(factory, params);
       const poolC = await ethers.getContractAt("PredictionPool", pool);
-      await pushOnSettle(factory);
 
       // Alice backs outcome 0 with 90, Bob outcome 1 with 10. Pool = 100.
       await poolC.connect(alice).bet(0n, { value: 90n * 10n ** 18n });
@@ -186,13 +180,11 @@ describe("Forecast resolution multisig", () => {
       expect(await factory.confirmationCount(0n, 0n)).to.equal(2n);
 
       // Third confirmation crosses the threshold and resolves on-chain. Alice holds all of
-      // the winning side and is paid inside that very transaction — she never calls claim.
-      const aliceBefore = await ethers.provider.getBalance(alice.address);
+      // the winning side, so the whole pool net of fee becomes hers to come and claim.
       await expect(factory.connect(signers[2]).confirmResolution(0n, 0n))
         .to.emit(poolC, "MarketResolved")
         .and.to.emit(factory, "ResolutionExecuted")
         .withArgs(0n, 0n, 3n);
-      const aliceAfter = await ethers.provider.getBalance(alice.address);
 
       expect(await poolC.status()).to.equal(3n); // Resolved
       expect(await poolC.winningOutcome()).to.equal(0n);
@@ -201,7 +193,12 @@ describe("Forecast resolution multisig", () => {
       const totalPool = 100n * 10n ** 18n;
       const fee = (totalPool * 300n) / 10_000n;
       expect(await treasury.collectedFor(pool)).to.equal(fee);
-      expect(aliceAfter - aliceBefore).to.equal(totalPool - fee);
+      expect(await poolC.pendingPayout(alice.address)).to.equal(totalPool - fee);
+
+      const aliceBefore = await ethers.provider.getBalance(alice.address);
+      const receipt = await (await poolC.connect(alice).claim()).wait();
+      const gas = receipt!.gasUsed * receipt!.gasPrice;
+      expect((await ethers.provider.getBalance(alice.address)) - aliceBefore + gas).to.equal(totalPool - fee);
 
       // A losing bettor has nothing to claim.
       await expect(poolC.connect(bob).claim()).to.be.revertedWithCustomError(poolC, "NothingToClaim");
@@ -346,14 +343,14 @@ describe("Forecast resolution multisig", () => {
 });
 
 /**
- * Automatic payout.
+ * Payout.
  *
- * Settling a market pays its participants without anyone having to come and claim: resolve
- * and voidMarket push the first batch of payouts in the very transaction that settles the
- * market, and anyone can carry the rest. Claiming survives only as the fallback for whoever
- * the push could not reach.
+ * A settled market never moves money on its own. Resolving or voiding only fixes who is owed
+ * what; the collateral stays where it is until each participant comes and claims their own
+ * share, once. A void is not a settlement at all — it unwinds the market, so shares and LP
+ * stakes stop counting and everyone takes back what they put in.
  */
-describe("Forecast automatic payout", () => {
+describe("Forecast payout", () => {
   /** Resolves a market through the 3-of-5 signer quorum. */
   async function resolveVia(factory: any, signers: any[], marketId: bigint, outcome: bigint) {
     for (let i = 0; i < 3; i++) {
@@ -361,138 +358,67 @@ describe("Forecast automatic payout", () => {
     }
   }
 
-  /** Creates `count` funded throwaway wallets. */
-  async function fundedWallets(funder: any, count: number) {
-    const wallets = [];
-    for (let i = 0; i < count; i++) {
-      const w = ethers.Wallet.createRandom().connect(ethers.provider);
-      await funder.sendTransaction({ to: w.address, value: 10n ** 18n });
-      wallets.push(w);
-    }
-    return wallets;
+  /** Runs `fn` and returns what it moved into `account`, with the gas it paid added back. */
+  async function netOf(account: any, fn: () => Promise<any>) {
+    const before = await ethers.provider.getBalance(account.address);
+    const receipt = await (await fn()).wait();
+    const after = await ethers.provider.getBalance(account.address);
+    const gas = (receipt.gasUsed as bigint) * (receipt.gasPrice as bigint);
+    return after - before + gas;
   }
 
-  it("pays pool winners at resolution without anyone claiming", async () => {
+  it("pays a pool's winners nothing until they claim, and then only once", async () => {
     const { factory, signers, alice, bob } = await deployForecast();
     const [deployer] = await ethers.getSigners();
     const params = await marketParams(deployer.address);
     const pool = await createPool(factory, params);
     const poolC = await ethers.getContractAt("PredictionPool", pool);
 
-    await pushOnSettle(factory);
     await poolC.connect(alice).bet(0n, { value: 60n * 10n ** 18n });
     await poolC.connect(bob).bet(0n, { value: 40n * 10n ** 18n });
     await passLock(params);
 
     const aliceBefore = await ethers.provider.getBalance(alice.address);
-    const bobBefore = await ethers.provider.getBalance(bob.address);
     await resolveVia(factory, signers, 0n, 0n);
 
-    // 100 staked, 3% house fee, 97 shared 60/40 — delivered, not offered.
+    // 100 staked, 3% house fee, 97 shared 60/40 — offered, not delivered.
     const distributable = 97n * 10n ** 18n;
-    expect((await ethers.provider.getBalance(alice.address)) - aliceBefore).to.equal((distributable * 60n) / 100n);
-    expect((await ethers.provider.getBalance(bob.address)) - bobBefore).to.equal((distributable * 40n) / 100n);
+    expect(await ethers.provider.getBalance(alice.address)).to.equal(aliceBefore);
+    expect(await ethers.provider.getBalance(pool)).to.equal(distributable);
+    expect(await poolC.pendingPayout(alice.address)).to.equal((distributable * 60n) / 100n);
 
-    // The pool is empty and there is nothing left to claim.
+    expect(await netOf(alice, () => poolC.connect(alice).claim())).to.equal((distributable * 60n) / 100n);
+    expect(await netOf(bob, () => poolC.connect(bob).claim())).to.equal((distributable * 40n) / 100n);
+
+    // The pool is empty and a second claim has nothing behind it.
     expect(await ethers.provider.getBalance(pool)).to.equal(0n);
-    const [cursor, total] = await poolC.distributionProgress();
-    expect([cursor, total]).to.deep.equal([2n, 2n]);
     await expect(poolC.connect(alice).claim()).to.be.revertedWithCustomError(poolC, "NothingToClaim");
   });
 
-  it("refunds every bettor automatically when a pool is voided", async () => {
+  it("gives a voided pool's bettors their own stake back", async () => {
     const { factory, alice, bob } = await deployForecast();
     const [deployer] = await ethers.getSigners();
     const params = await marketParams(deployer.address);
     const pool = await createPool(factory, params);
     const poolC = await ethers.getContractAt("PredictionPool", pool);
 
-    await pushOnSettle(factory);
     await poolC.connect(alice).bet(0n, { value: 7n * 10n ** 18n });
     await poolC.connect(bob).bet(1n, { value: 3n * 10n ** 18n });
-
-    const aliceBefore = await ethers.provider.getBalance(alice.address);
-    const bobBefore = await ethers.provider.getBalance(bob.address);
     await factory.voidMarket(0n);
 
-    expect((await ethers.provider.getBalance(alice.address)) - aliceBefore).to.equal(7n * 10n ** 18n);
-    expect((await ethers.provider.getBalance(bob.address)) - bobBefore).to.equal(3n * 10n ** 18n);
+    // Opposite sides of a bet that never happened: both simply get their money back.
+    expect(await poolC.stakeOf(alice.address)).to.equal(7n * 10n ** 18n);
+    expect(await netOf(alice, () => poolC.connect(alice).claim())).to.equal(7n * 10n ** 18n);
+    expect(await netOf(bob, () => poolC.connect(bob).claim())).to.equal(3n * 10n ** 18n);
     expect(await ethers.provider.getBalance(pool)).to.equal(0n);
   });
 
-  it("pushes a first batch at settlement and lets anyone carry the rest", async () => {
-    const { factory, signers } = await deployForecast();
-    const [deployer] = await ethers.getSigners();
-    const params = await marketParams(deployer.address);
-    const pool = await createPool(factory, params);
-    const poolC = await ethers.getContractAt("PredictionPool", pool);
-
-    // Two more bettors than one settlement transaction pays for.
-    await pushOnSettle(factory);
-    const batch = await poolC.AUTO_DISTRIBUTE_BATCH();
-    const bettors = await fundedWallets(deployer, Number(batch) + 2);
-    for (const w of bettors) {
-      await poolC.connect(w).bet(0n, { value: 10n ** 17n });
-    }
-    await passLock(params);
-    await resolveVia(factory, signers, 0n, 0n);
-
-    // The tail is untouched but already accounted for, and still in the contract.
-    const [cursor, total] = await poolC.distributionProgress();
-    expect([cursor, total]).to.deep.equal([batch, batch + 2n]);
-    const tail = bettors[bettors.length - 1];
-    const owed = await poolC.pendingPayout(tail.address);
-    expect(owed).to.be.greaterThan(0n);
-    expect(await ethers.provider.getBalance(pool)).to.equal(owed * 2n);
-
-    // Anyone may finish it — here a bystander, through the factory.
-    const tailBefore = await ethers.provider.getBalance(tail.address);
-    await factory.connect(signers[4]).distributeMarket(0n, 10n);
-
-    expect((await ethers.provider.getBalance(tail.address)) - tailBefore).to.equal(owed);
-    expect((await poolC.distributionProgress())[0]).to.equal(batch + 2n);
-    expect(await ethers.provider.getBalance(pool)).to.equal(0n);
-  });
-
-  it("credits a recipient it cannot pay instead of stalling the batch", async () => {
-    const { factory, signers, alice } = await deployForecast();
-    const [deployer] = await ethers.getSigners();
-    const params = await marketParams(deployer.address);
-    const pool = await createPool(factory, params);
-    const poolC = await ethers.getContractAt("PredictionPool", pool);
-
-    // The rejector bets first, so the push hits it before it reaches Alice.
-    await pushOnSettle(factory);
-    const rejector = await ethers.deployContract("PayoutRejector", [pool], deployer);
-    await rejector.betPool(0n, { value: 50n * 10n ** 18n });
-    await poolC.connect(alice).bet(0n, { value: 50n * 10n ** 18n });
-    await passLock(params);
-
-    const rejectorAddr = await rejector.getAddress();
-    const aliceBefore = await ethers.provider.getBalance(alice.address);
-    await factory.connect(signers[0]).confirmResolution(0n, 0n);
-    await factory.connect(signers[1]).confirmResolution(0n, 0n);
-    await expect(factory.connect(signers[2]).confirmResolution(0n, 0n))
-      .to.emit(poolC, "PayoutDeferred")
-      .withArgs(pool, rejectorAddr, 485n * 10n ** 17n);
-
-    // Alice, queued behind the failure, was still paid in the same transaction.
-    expect((await ethers.provider.getBalance(alice.address)) - aliceBefore).to.equal(485n * 10n ** 17n);
-
-    // The rejector's share is held for it, and it can pull once it will take the money.
-    expect(await poolC.pendingPayout(rejectorAddr)).to.equal(485n * 10n ** 17n);
-    await rejector.startAccepting();
-    await rejector.claimPool();
-    expect(await ethers.provider.getBalance(rejectorAddr)).to.equal(485n * 10n ** 17n);
-    expect(await ethers.provider.getBalance(pool)).to.equal(0n);
-  });
-
-  it("pays CPMM share holders and liquidity providers at resolution", async () => {
+  it("pays CPMM share holders and liquidity providers when they redeem", async () => {
     const { factory, signers, alice } = await deployForecast();
     const [deployer] = await ethers.getSigners();
     const params = await marketParams(deployer.address);
     const { marketId, market } = await createAmm(factory, params);
-    await pushOnSettle(factory, marketId);
+    const marketAddr = await market.getAddress();
 
     await market.connect(alice).buy(1n, 0n, params.resolveTime, { value: 10n ** 18n });
 
@@ -500,20 +426,89 @@ describe("Forecast automatic payout", () => {
     // of the outcome about to win.
     const aliceShares = await market.balanceOf(alice.address, 1n);
     const lpPot = (await market.getReserves())[1];
-    const held = await ethers.provider.getBalance(await market.getAddress());
+    const held = await ethers.provider.getBalance(marketAddr);
 
-    const aliceBefore = await ethers.provider.getBalance(alice.address);
-    const lpBefore = await ethers.provider.getBalance(deployer.address);
     await resolveVia(factory, signers, marketId, 1n);
 
-    expect((await ethers.provider.getBalance(alice.address)) - aliceBefore).to.equal(aliceShares);
-    expect((await ethers.provider.getBalance(deployer.address)) - lpBefore).to.equal(lpPot);
+    // Resolution moved nothing; it only fixed the split.
+    expect(await ethers.provider.getBalance(marketAddr)).to.equal(held);
+    expect(await market.pendingPayout(alice.address)).to.equal(aliceShares);
+
+    expect(await netOf(alice, () => market.connect(alice).redeem())).to.equal(aliceShares);
+    expect(await netOf(deployer, () => market.redeem())).to.equal(lpPot);
 
     // Winners' shares plus the LP pot is the whole pot: the market is left empty.
     expect(aliceShares + lpPot).to.equal(held);
     expect(await market.totalSets()).to.equal(0n);
-    expect(await ethers.provider.getBalance(await market.getAddress())).to.equal(0n);
+    expect(await ethers.provider.getBalance(marketAddr)).to.equal(0n);
     await expect(market.connect(alice).redeem()).to.be.revertedWithCustomError(market, "NothingToClaim");
+  });
+
+  it("hands a voided CPMM market back to whoever funded it", async () => {
+    const { factory, alice, bob } = await deployForecast();
+    const [deployer] = await ethers.getSigners();
+    const params = await marketParams(deployer.address);
+    const seed = 10n ** 18n;
+    const { market } = await createAmm(factory, params, seed);
+    const marketAddr = await market.getAddress();
+
+    await market.connect(alice).buy(1n, 0n, params.resolveTime, { value: 10n ** 18n });
+    await market.connect(bob).buy(0n, 0n, params.resolveTime, { value: 2n * 10n ** 18n });
+
+    // Every trade leaves 3% with the treasury on the way in; the rest is the market's to
+    // give back, whichever outcome the buyer picked and whatever the shares are worth now.
+    const owed = { creator: seed, alice: 97n * 10n ** 16n, bob: 194n * 10n ** 16n };
+    expect(await market.depositOf(deployer.address)).to.equal(owed.creator);
+    expect(await market.depositOf(alice.address)).to.equal(owed.alice);
+    expect(await market.depositOf(bob.address)).to.equal(owed.bob);
+    expect(await ethers.provider.getBalance(marketAddr)).to.equal(owed.creator + owed.alice + owed.bob);
+
+    await factory.voidMarket(0n);
+
+    expect(await netOf(alice, () => market.connect(alice).redeem())).to.equal(owed.alice);
+    expect(await netOf(bob, () => market.connect(bob).redeem())).to.equal(owed.bob);
+    expect(await netOf(deployer, () => market.redeem())).to.equal(owed.creator);
+
+    expect(await ethers.provider.getBalance(marketAddr)).to.equal(0n);
+    expect(await market.totalSets()).to.equal(0n);
+    await expect(market.connect(alice).redeem()).to.be.revertedWithCustomError(market, "NothingToClaim");
+  });
+
+  it("scales a voided market's refunds to what it actually still holds", async () => {
+    const { factory, alice } = await deployForecast();
+    const all = await ethers.getSigners();
+    const [deployer] = all;
+    const carol = all[8];
+    const params = await marketParams(deployer.address);
+    const { market } = await createAmm(factory, params);
+    const marketAddr = await market.getAddress();
+
+    // Shares are ordinary ERC-1155 tokens: Alice buys, hands them to Carol, and Carol sells
+    // them. Collateral left against a deposit Carol never made, so the deposits still on the
+    // books add up to more than the market is holding.
+    await market.connect(alice).buy(1n, 0n, params.resolveTime, { value: 10n ** 18n });
+    const shares = await market.balanceOf(alice.address, 1n);
+    await market.connect(alice).safeTransferFrom(alice.address, carol.address, 1n, shares, "0x");
+    await market.connect(carol).sell(1n, 5n * 10n ** 17n, shares, params.resolveTime);
+
+    expect(await market.depositOf(carol.address)).to.equal(0n);
+    expect(await market.depositOf(alice.address)).to.equal(97n * 10n ** 16n);
+
+    await factory.voidMarket(0n);
+
+    // Everyone still on the ledger is scaled down together, rather than paid in full until
+    // the money runs out and the last one back finds an empty contract.
+    const owedAlice = await market.pendingPayout(alice.address);
+    const owedLp = await market.pendingPayout(deployer.address);
+    expect(owedAlice).to.be.lessThan(await market.depositOf(alice.address));
+    expect(owedAlice + owedLp).to.be.lessThanOrEqual(await ethers.provider.getBalance(marketAddr));
+
+    expect(await netOf(alice, () => market.connect(alice).redeem())).to.equal(owedAlice);
+    expect(await netOf(deployer, () => market.redeem())).to.equal(owedLp);
+    await expect(market.connect(carol).redeem()).to.be.revertedWithCustomError(market, "NothingToClaim");
+
+    // Nothing but sub-unit rounding dust is left behind.
+    expect(await ethers.provider.getBalance(marketAddr)).to.be.lessThan(4n);
   });
 
   it("refuses to unwind liquidity once a CPMM market has settled", async () => {
@@ -524,8 +519,8 @@ describe("Forecast automatic payout", () => {
 
     await resolveVia(factory, signers, marketId, 0n);
 
-    // LP value is paid out in collateral by the distribution; converting LP shares into
-    // outcome tokens afterwards would pay the same reserves twice.
+    // LP value is paid out in collateral by {redeem}; converting LP shares into outcome
+    // tokens afterwards would pay the same reserves twice.
     await expect(market.removeFunding(1n)).to.be.revertedWithCustomError(market, "MarketAlreadyEnded");
   });
 });
@@ -533,11 +528,11 @@ describe("Forecast automatic payout", () => {
 /**
  * Unclaimed collateral after settlement.
  *
- * Automatic payout empties most markets on the spot, but not all of them: a recipient can
- * refuse delivery, and a market can resolve to an outcome nobody backed. Whatever is left
- * stays claimable for a full year; after that the payout functions shut for everyone at the
- * same instant and an admin can move the residue into the treasury, so a settled market
- * never turns into a permanently stranded pot of coins.
+ * Nothing is paid until someone asks for it, and some of it is never asked for: a recipient
+ * can refuse delivery, a winner can simply never come back, and a market can resolve to an
+ * outcome nobody backed. Whatever is left stays claimable for a full year; after that the
+ * payout functions shut for everyone at the same instant and an admin can move the residue
+ * into the treasury, so a settled market never turns into a permanently stranded pot of coins.
  */
 describe("Forecast claim window", () => {
   const YEAR = 365n * 24n * 60n * 60n;
@@ -568,22 +563,23 @@ describe("Forecast claim window", () => {
     expect(await poolC.claimDeadline()).to.equal(endedAt + YEAR);
   });
 
-  it("holds an undeliverable payout for a year, then sweeps it to the treasury", async () => {
+  it("holds a payout nobody can take for a year, then sweeps it to the treasury", async () => {
     const { factory, treasury, signers } = await deployForecast();
     const [deployer] = await ethers.getSigners();
     const params = await marketParams(deployer.address);
     const pool = await createPool(factory, params);
     const poolC = await ethers.getContractAt("PredictionPool", pool);
 
-    await pushOnSettle(factory);
     const rejector = await ethers.deployContract("PayoutRejector", [pool], deployer);
     await rejector.betPool(0n, { value: 100n * 10n ** 18n });
     await passLock(params);
     await resolveVia(factory, signers, 0n, 0n);
 
-    // Its whole share stayed behind, credited but undelivered.
-    const credited = 97n * 10n ** 18n;
-    expect(await ethers.provider.getBalance(pool)).to.equal(credited);
+    // Its whole share is owed to it, but it will not take delivery, so the money stays put.
+    const stranded = 97n * 10n ** 18n;
+    expect(await poolC.pendingPayout(await rejector.getAddress())).to.equal(stranded);
+    await expect(rejector.claimPool()).to.be.revertedWithCustomError(poolC, "TransferFailed");
+    expect(await ethers.provider.getBalance(pool)).to.equal(stranded);
     await expect(factory.sweepUnclaimed(0n)).to.be.revertedWithCustomError(poolC, "ClaimWindowOpen");
 
     const deadline = await poolC.claimDeadline();
@@ -594,17 +590,16 @@ describe("Forecast claim window", () => {
     await networkHelpers.time.increaseTo(deadline);
     await rejector.startAccepting();
     await expect(rejector.claimPool()).to.be.revertedWithCustomError(poolC, "ClaimWindowClosed");
-    await expect(factory.distributeMarket(0n, 5n)).to.be.revertedWithCustomError(poolC, "ClaimWindowClosed");
 
     const feeFromResolution = 3n * 10n ** 18n;
     expect(await treasury.collectedFor(pool)).to.equal(feeFromResolution);
 
     await expect(factory.sweepUnclaimed(0n))
       .to.emit(poolC, "UnclaimedSwept")
-      .withArgs(pool, await treasury.getAddress(), credited);
+      .withArgs(pool, await treasury.getAddress(), stranded);
 
     expect(await ethers.provider.getBalance(pool)).to.equal(0n);
-    expect(await treasury.collectedFor(pool)).to.equal(feeFromResolution + credited);
+    expect(await treasury.collectedFor(pool)).to.equal(feeFromResolution + stranded);
 
     // Nothing left over: a second sweep has no work to do.
     await expect(factory.sweepUnclaimed(0n)).to.be.revertedWithCustomError(poolC, "ZeroAmount");
@@ -640,8 +635,7 @@ describe("Forecast claim window", () => {
     const { marketId, market } = await createAmm(factory, params);
     const marketAddr = await market.getAddress();
 
-    // A holder that refuses delivery is what keeps collateral in a settled CPMM market.
-    await pushOnSettle(factory, marketId);
+    // A holder that never successfully redeems is what keeps collateral in a settled market.
     const rejector = await ethers.deployContract("PayoutRejector", [marketAddr], deployer);
     await rejector.buyMarket(1n, { value: 10n ** 18n });
     await resolveVia(factory, signers, marketId, 1n);
@@ -826,89 +820,3 @@ describe("Forecast categories", () => {
   });
 });
 
-/**
- * The push at settlement is opt-in.
- *
- * Markets start with it off: participants collect their own share, exactly as they always
- * could. Turning it on changes nothing about the money, only about who pays the gas and when
- * — the permissionless distribute works either way.
- */
-describe("Forecast optional distribution", () => {
-  it("is off by default, leaving participants to collect their own share", async () => {
-    const { factory, signers, alice, bob } = await deployForecast();
-    const [deployer] = await ethers.getSigners();
-    const params = await marketParams(deployer.address);
-    const pool = await createPool(factory, params);
-    const poolC = await ethers.getContractAt("PredictionPool", pool);
-
-    expect(await poolC.autoDistribute()).to.equal(false);
-
-    await poolC.connect(alice).bet(0n, { value: 60n * 10n ** 18n });
-    await poolC.connect(bob).bet(0n, { value: 40n * 10n ** 18n });
-    await passLock(params);
-
-    const aliceBefore = await ethers.provider.getBalance(alice.address);
-    for (let i = 0; i < 3; i++) {
-      await factory.connect(signers[i]).confirmResolution(0n, 0n);
-    }
-
-    // Settlement paid nobody; the money is accounted for and waiting.
-    expect(await ethers.provider.getBalance(alice.address)).to.equal(aliceBefore);
-    expect((await poolC.distributionProgress())[0]).to.equal(0n);
-    const owed = await poolC.pendingPayout(alice.address);
-    expect(owed).to.equal((97n * 10n ** 18n * 60n) / 100n);
-
-    // Alice takes her own share whenever she likes.
-    const tx = await poolC.connect(alice).claim();
-    const receipt = await tx.wait();
-    const gas = receipt!.gasUsed * receipt!.gasPrice;
-    expect((await ethers.provider.getBalance(alice.address)) - aliceBefore + gas).to.equal(owed);
-
-    // And anyone may still push the rest out — Bob never has to act.
-    const bobBefore = await ethers.provider.getBalance(bob.address);
-    await factory.connect(signers[4]).distributeMarket(0n, 10n);
-    expect((await ethers.provider.getBalance(bob.address)) - bobBefore).to.equal(
-      (97n * 10n ** 18n * 40n) / 100n,
-    );
-    expect(await ethers.provider.getBalance(pool)).to.equal(0n);
-  });
-
-  it("can be switched on, and only by an admin", async () => {
-    const { factory, alice } = await deployForecast();
-    const [deployer] = await ethers.getSigners();
-    const params = await marketParams(deployer.address);
-    await createPool(factory, params);
-
-    await expect(factory.connect(alice).setMarketAutoDistribute(0n, true)).to.be.revertedWithCustomError(
-      factory,
-      "AccessControlUnauthorizedAccount",
-    );
-
-    const poolC = await ethers.getContractAt("PredictionPool", await factory.marketAddress(0n));
-    await expect(factory.setMarketAutoDistribute(0n, true))
-      .to.emit(poolC, "AutoDistributeSet")
-      .withArgs(await poolC.getAddress(), true);
-    expect(await poolC.autoDistribute()).to.equal(true);
-  });
-
-  it("leaves the CPMM pull path open when the push is off", async () => {
-    const { factory, signers, alice } = await deployForecast();
-    const [deployer] = await ethers.getSigners();
-    const params = await marketParams(deployer.address);
-    const { marketId, market } = await createAmm(factory, params);
-
-    await market.connect(alice).buy(1n, 0n, params.resolveTime, { value: 10n ** 18n });
-    const shares = await market.balanceOf(alice.address, 1n);
-
-    for (let i = 0; i < 3; i++) {
-      await factory.connect(signers[i]).confirmResolution(marketId, 1n);
-    }
-    expect((await market.distributionProgress())[0]).to.equal(0n);
-    expect(await market.pendingPayout(alice.address)).to.equal(shares);
-
-    const before = await ethers.provider.getBalance(alice.address);
-    const receipt = await (await market.connect(alice).redeem()).wait();
-    const gas = receipt!.gasUsed * receipt!.gasPrice;
-    expect((await ethers.provider.getBalance(alice.address)) - before + gas).to.equal(shares);
-  });
-});

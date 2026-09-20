@@ -38,11 +38,8 @@ PredictionPool
 | `MAX_OUTCOMES` | `uint256` | public | constant | `16`; bounds per-outcome loops (incl. void-refund loop in `claim`). |
 | `MAX_FEE_BPS` | `uint16` | public | constant | `1000`; house fee ≤ 10%. |
 | `CLAIM_WINDOW` | `uint64` | public | constant | `365 days`; how long after settlement winners may still `claim`. |
-| `AUTO_DISTRIBUTE_BATCH` | `uint256` | public | constant | `20`; payouts pushed inside the settling transaction itself. |
-| `PUSH_GAS` | `uint256` | private | constant | `50_000`; gas forwarded to each pushed payout. |
 | `controller` / `treasury` / `status` / metadata / `creator` / timestamps / `feeBps` | — | public | set-once | Same shapes as [PredictionMarket](PredictionMarket.md). |
 | `categoryId` | `uint32` | public | set-once | Category this market is filed under, in the [factory's registry](PredictionFactory.md#category-registry). The market stores no category name of its own. |
-| `autoDistribute` | `bool` | public | mutable | Whether settlement pushes payouts by itself. **`false` until an admin turns it on.** Never gates the money. |
 | `endedAt` | `uint64` | public | set at resolve/void | Settlement timestamp; `0` while live. Anchors the claim window. |
 | `outcomeCount` | `uint256` | public | set-once | n outcomes. |
 | `_outcomeNames` | `string[]` | private | set-once | Display names. |
@@ -51,11 +48,8 @@ PredictionPool
 | `_winningOutcome` | `uint256` | private | set at resolve | Meaningful only when Resolved. |
 | `_stakedFor` | `mapping(uint256 => uint256)` | private | mutable | Key: outcome → total staked on it. |
 | `_stakeOf` | `mapping(address => mapping(uint256 => uint256))` | private | mutable | Keys: account → outcome → stake of that account on that outcome. |
-| `_claimed` | `mapping(address => bool)` | private | mutable | One-shot payment flag per account — set by a push as well as by a pull, or when the account had nothing coming. |
-| `_participants` | `address[]` | private | append-only | Every account that has ever bet, in first-bet order; the distribution walks it. |
-| `_totalStakeOf` | `mapping(address => uint256)` | private | mutable | Stake across all outcomes; doubles as the void-refund amount and as the first-bet test that keeps `_participants` free of duplicates. |
-| `_cursor` | `uint256` | private | mutable | How far the push has walked `_participants`. |
-| `_credited` | `mapping(address => uint256)` | private | mutable | Payouts a push could not deliver, waiting to be pulled by `claim`. |
+| `_claimed` | `mapping(address => bool)` | private | mutable | One-shot payment flag per account. |
+| `_totalStakeOf` | `mapping(address => uint256)` | private | mutable | Stake across all outcomes: exactly what a void pays back. Read via `stakeOf`. |
 | `_entered` | `uint256` | private | mutable | Storage reentrancy lock (1 free / 2 entered); =1 after initialize. |
 
 ## Structs / Enums
@@ -78,9 +72,7 @@ Shared types from `PredictionTypes.sol`: `MarketParams`, `MarketStatus`
 | `RewardClaimed` | `market, claimant, amount` | market, claimant | Successful `claim` |
 | `MarketPaused/Unpaused/Closed/Voided/Resolved` | see shared events | — | Lifecycle |
 | `UnclaimedSwept` | `market, treasury, amount` | market, treasury | `sweepUnclaimed`; kept apart from `FeeCollected` so residue never reads as house revenue |
-| `PayoutDeferred` | `market, account, amount` | market, account | A pushed payout could not be delivered; `amount` was credited for the account to pull instead |
-| `DistributionAdvanced` | `market, cursor, total, amount` | market | Every push batch, including the one inside settlement |
-| `AutoDistributeSet` | `market, enabled` | market | `setAutoDistribute` |
+
 
 ## Errors
 
@@ -99,13 +91,14 @@ for the common list):
 ### Classification
 
 - **User / Financial:** `bet`, `claim`
-- **Permissionless keeper:** `distribute`
 - **Administrative (controller-only):** `pause`, `unpause`, `close`, `resolve`,
-  `voidMarket`, `setTreasury`, `setAutoDistribute`, `sweepUnclaimed`, `initialize`
-  (factory once)
-- **View:** `winningOutcome`, `claimDeadline`, `distributionProgress`, `pendingPayout`,
-  `participantCount`, `stakedFor`, `myStake`, `distributableAmount`, `previewPayout`,
+  `voidMarket`, `setTreasury`, `sweepUnclaimed`, `initialize` (factory once)
+- **View:** `winningOutcome`, `claimDeadline`, `pendingPayout`, `stakeOf`,
+  `stakedFor`, `myStake`, `distributableAmount`, `previewPayout`,
   `impliedOdds`, `outcomeName`, `totalPool` (+ status/outcomeCount/endedAt/categoryId)
+
+**Nothing is ever pushed.** Settlement only fixes who is owed what; every wei leaves the
+pool through a bettor's own `claim`.
 
 ---
 
@@ -164,56 +157,19 @@ Admins must declare an outcome that actually has stakes.
 function claim() external nonReentrant returns (uint256 payout);
 ```
 
-The **pull** path, and the default one: a pool pays on request unless an admin has switched
-on the push at settlement (see below). Even then, this is what an account uses when the push
-could not reach it — or whenever it simply prefers to collect its own share.
+The only way collateral leaves a settled pool. Nothing is pushed; every bettor comes and
+takes their own share, once.
 
-- **A waiting credit** (a push tried and the transfer failed) is paid first and in full.
 - **Resolved:** `payout = myStakeOn(winner) · _distributable / stakedFor(winner)`
   (floored; dust stays in contract). Zero stake on winner ⇒ `NothingToClaim`.
-- **Voided:** the caller's total stake across all outcomes (exact refund, fee-free).
+- **Voided:** the caller's total stake across all outcomes — their own money back, in full
+  and fee-free, whichever outcome they backed. The house fee is only ever taken at
+  resolution, so a voided pool has never charged one.
 - Otherwise ⇒ `MarketNotResolved`.
 
 Effects first (`_claimed[sender] = true`) then `_sendNative(sender, payout)`; emits
-`RewardClaimed`. Double payment is impossible by construction — the flag is the same one a
-push sets. Claiming stops at `claimDeadline()` with `ClaimWindowClosed` (see
-`sweepUnclaimed`).
-
----
-
-### distribute
-
-```solidity
-function distribute(uint256 limit) external nonReentrant returns (uint256 paid);
-```
-
-The **push** path: bettors are paid without doing anything at all.
-
-`distribute` is **permissionless** — a keeper, a frontend, or an impatient bettor may all
-call it, and on a pool left at its defaults it is the only thing that pays anyone without
-them asking.
-
-Switch `autoDistribute` on and `resolve`/`voidMarket` also call it internally for
-`AUTO_DISTRIBUTE_BATCH` accounts in the settling transaction, so a pool with few bettors is
-emptied the moment an admin settles it; `distribute` then carries any remainder.
-
-Each account is marked paid *before* its transfer and paid with `PUSH_GAS` forwarded. A
-transfer that fails does not revert the batch: the amount becomes a `_credited` balance,
-`PayoutDeferred` is logged, and the walk continues. One hostile recipient therefore cannot
-stall the queue behind it. Losing bettors are marked and skipped at no cost.
-
----
-
-### setAutoDistribute
-
-```solidity
-function setAutoDistribute(bool enabled) external onlyController;
-```
-
-Turns the push at settlement on or off for this pool. **Pools start with it off**, so this
-is the opt-in. It is a convenience switch, not an access gate: with it off, `distribute` is
-still open to anyone and `claim` still lets a bettor collect their own share — settlement
-just does not start paying by itself. Emits `AutoDistributeSet`.
+`RewardClaimed`. Double payment is impossible by construction. Claiming stops at
+`claimDeadline()` with `ClaimWindowClosed` (see `sweepUnclaimed`).
 
 ---
 
@@ -260,10 +216,9 @@ myStake(i)                           // caller's stake on i
 distributableAmount()                // prize pool after fee (0 pre-resolve)
 previewPayout(i)                     // hypothetical: if resolved now to i, my payout
 impliedOdds(i)                       // stake share of whole pool, WAD (1e18)
-distributionProgress()               // (cursor, total) of the automatic payout walk
-pendingPayout(account)               // waiting credit, else this account's share
-participantCount()                   // length of the distribution list
-autoDistribute(), categoryId()       // push-at-settlement flag; factory category id
+pendingPayout(account)               // this account's share, 0 while live or once paid
+stakeOf(account)                     // total stake across outcomes; what a void refunds
+categoryId()                         // factory category id
 totalPool(), outcomeName(i), status(), outcomeCount()
 ```
 
@@ -276,7 +231,6 @@ resolution fixes the numbers.
 | --- | --- | --- |
 | `bet` | none | Anyone (Open, pre-lock) |
 | `claim` | none | Stakeholders, once each, until `claimDeadline()` |
-| `distribute` | none | **Anyone** — it only moves settled collateral to the accounts already entitled to it |
 | lifecycle + `initialize` | controller (factory) | ADMIN_ROLE upstream |
 
 ## Token / Financial Flow
@@ -285,10 +239,8 @@ resolution fixes the numbers.
 Bettors ──bet{value}──▶ totalPool (per-outcome accounting)
 ADMIN ──resolve(w) after lockTime──▶ fee = pool·feeBps/BPS ──▶ Treasury
                                     └─ distributable ──▶ winners pro-rata
-     (autoDistribute on) ──▶ first batch pushed to their wallets in the settling tx
-Anyone ──distribute(limit)──▶ walks the same list, on or off
-Undeliverable ──▶ credited ──▶ Winner ──claim──▶ native     (until claimDeadline())
-Void path: ADMIN ──voidMarket──▶ each bettor refunds own full stake, fee-free
+Bettor ──claim──▶ native      (their own share only, once, until claimDeadline())
+Void path: ADMIN ──voidMarket──▶ each bettor claims own full stake back, fee-free
 After claimDeadline(): ADMIN ──sweepUnclaimed──▶ whole remaining balance ──▶ Treasury
 ```
 
@@ -312,7 +264,7 @@ out of the contract settles the same accounting; the only difference is who pays
 | Rounding | Floors favour the pool; sub-unit dust remains in contract |
 | Admin error | **Partly mitigated** — resolving a zero-stake outcome still bricks claims, but the pool is no longer stranded forever: `sweepUnclaimed` recovers it to the treasury a year on. Centralized resolution otherwise trusted |
 | Unclaimed funds | Bounded — a settled pool cannot hold coins indefinitely; after a one-year claim window the residue is recoverable by an admin, and the cut-off is the deadline, not the sweep tx, so it is identical for every claimant |
-| DoS | Loops bounded by 16 outcomes, and by the caller's `limit` in `distribute`; a failed push is credited rather than retried, so no recipient can stall the queue |
+| DoS | Loops bounded by 16 outcomes; a failed transfer reverts only the claimant's own call, so no account can affect another's |
 
 ## Upgradeability
 
@@ -341,7 +293,5 @@ Common failures: `TradingLocked` (after lock), `MarketNotOpen` (paused/closed),
 | `claim()` | external | nonpayable | Stakeholders | Winner payout or void refund, once |
 | `pause/unpause/close/voidMarket/setTreasury` | external | nonpayable | Controller | Lifecycle/config |
 | `resolve(w)` | external | nonpayable | Controller | Declare winner after lock; take fee |
-| `setAutoDistribute(bool)` | external | nonpayable | Controller | Push at settlement on/off |
-| `distribute(limit)` | external | nonpayable | **Anyone** | Pay up to `limit` more bettors |
 | `sweepUnclaimed()` | external | nonpayable | Controller | Residue → treasury, post-claim-window |
-| `winningOutcome/claimDeadline/endedAt/distributionProgress/pendingPayout/participantCount/autoDistribute/categoryId/stakedFor/myStake/distributableAmount/previewPayout/impliedOdds/outcomeName/totalPool` | external | view | Anyone | Reads |
+| `winningOutcome/claimDeadline/endedAt/pendingPayout/stakeOf/categoryId/stakedFor/myStake/distributableAmount/previewPayout/impliedOdds/outcomeName/totalPool` | external | view | Anyone | Reads |

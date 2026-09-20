@@ -44,20 +44,17 @@ PredictionMarket
 | `MAX_OUTCOMES` | `uint256` | public | constant | ‏16؛ سقف حلقه‌های هر-خروجی. |
 | `MAX_FEE_BPS` | `uint16` | public | constant | ‏1000؛ حداکثر کارمزد کل ۱۰٪. |
 | `CLAIM_WINDOW` | `uint64` | public | constant | ‏365 روز؛ مهلت بازخرید برندگان پس از تعیین‌تکلیف بازار. |
-| `AUTO_DISTRIBUTE_BATCH` | `uint256` | public | constant | ‏20؛ تعداد پرداخت‌هایی که داخل خودِ تراکنش تعیین‌تکلیف push می‌شود. |
-| `PUSH_GAS` | `uint256` | private | constant | ‏50_000؛ گسی که به هر پرداختِ push‌شده داده می‌شود. |
 | `controller` / `treasury` / `status` | address/address/enum | public | mutable | کارخانه، خزانه، وضعیت چرخهٔ حیات. |
 | متادیتا + `creator` + سه timestamp | string/address/uint64 | public | set-once | در initialize نوشته می‌شوند؛ معامله نیازمند `block.timestamp < lockTime`. |
 | `categoryId` | uint32 | public | set-once | دستهٔ بازار در [رجیستری کارخانه](PredictionFactory.md#رجیستری-دسته‌ها)؛ خودِ بازار هیچ نامی برای دسته ذخیره نمی‌کند. |
-| `autoDistribute` | bool | public | mutable | آیا تعیین‌تکلیف خودش پرداخت‌ها را push می‌کند. **تا وقتی ادمین روشنش نکند خاموش است.** هرگز جلوی پول را نمی‌گیرد. |
 | `feeBps` | uint16 | public | set-once | کارمزد کل معامله؛ تمام آن به خزانه می‌رود. |
 | `outcomeCount` | uint256 | public | set-once | تعداد خروجی‌ها n. |
 | `_outcomeNames` / `_reserves` | string[] / uint256[] | private | set-once / mutable | نام‌ها / رزرو مجازی FPMM به wei. |
 | `totalSets` | uint256 | public | mutable | وثیقهٔ پشت ست‌های کامل؛ برابر موجودی بومی قرارداد. |
 | `endedAt` | uint64 | public | در resolve/void ثبت | زمان تعیین‌تکلیف؛ تا وقتی بازار زنده است صفر. مبدأ پنجرهٔ بازخرید. |
-| `_holders` / `_listed` (private) | address[] / mapping | فقط افزودنی | هر حسابی که تا حالا توکنی از این بازار گرفته، به ترتیب اولین دریافت؛ توزیع همین فهرست را می‌پیماید. موجودی صفر هنگام پرداخت رد می‌شود. |
-| `_cursor` / `_credited` (private) | uint256 / mapping | mutable | جای رسیدنِ push در فهرست؛ و پرداخت‌هایی که تحویل نشد و منتظر برداشت با `redeem` مانده‌اند. |
-| `_lpSupplyAtEnd` / `_lpPoolAtEnd` (private) | uint256 | در تعیین‌تکلیف ثبت | عرضهٔ LP و وثیقه‌ای که مجموعاً مال LPهاست (‏`reserves[win]` در resolve، میانگین رزروها در void). اسنپ‌شات گرفته می‌شود چون سوزاندن سهام LP حین پیمایش عرضهٔ زنده را جابه‌جا می‌کند. |
+| `_deposited` (private) | mapping | mutable | وثیقهٔ خالصی که هر حساب وارد بازار کرده: با seed و `buy` و `addFunding` بالا می‌رود، با `sell` و `mergeSets` پایین. همین چیزی است که void پس می‌دهد. خالصِ کارمزد است — کارمزد قبلاً به خزانه رفته و برنمی‌گردد. با `depositOf` خوانده می‌شود. |
+| `_totalDeposited` (private) | uint256 | mutable | مجموع `_deposited`. سهام توکن ERC-1155 معمولی و قابل انتقال است و دفتر نمی‌تواند دنبالش برود، پس برداشت روی سپردهٔ خودِ فروشنده متوقف می‌شود به‌جای underflow؛ در نتیجه این عدد **کران بالای** `totalSets` است، نه مساوی آن. |
+| `_shareBasis` / `_sharePot` (private) | uint256 | در تعیین‌تکلیف ثبت | مخرج و صورتِ سهم تناسبی‌ای که تعیین‌تکلیف پرداخت می‌کند. در resolve: عرضهٔ LP روی `reserves[win]`. در void: ‏`_totalDeposited` روی `totalSets`. اسنپ‌شات گرفته می‌شود چون بازخرید هر دو عدد زنده را جابه‌جا می‌کند. |
 | `_winningOutcome` | uint256 | private | در resolve ثبت | فقط وقتی Resolved معنی‌دار. |
 | `_entered` | uint256 | private | mutable | قفل reentrancy مبتنی بر storage (1 آزاد / 2 داخل)؛ در initialize =1. |
 
@@ -72,10 +69,8 @@ PredictionMarket
 
 اعلام مشترک در `PredictionEvents.sol`: ‏`LiquidityAdded`, `LiquidityRemoved`,
 `PredictionPlaced`, `PredictionSold`, `RewardClaimed`, ‏`MarketPaused/Unpaused/Closed/
-Resolved/Voided`، ‏`UnclaimedSwept(market, treasury, amount)` هنگام جاروی باقیمانده،
-`PayoutDeferred(market, account, amount)` وقتی پرداختِ push‌شده تحویل نشد و به اعتبار
-تبدیل شد، ‏`DistributionAdvanced(market, cursor, total, amount)` در هر دستهٔ توزیع، و
-`AutoDistributeSet(market, enabled)`. جزئیات در فایل انگلیسی همین سند.
+Resolved/Voided`، و ‏`UnclaimedSwept(market, treasury, amount)` هنگام جاروی باقیمانده.
+جزئیات در فایل انگلیسی همین سند.
 
 ## خطاها
 
@@ -92,14 +87,16 @@ NothingToClaim، NotController، Reentrancy، TransferFailed) با شرط دقی
 ### طبقه‌بندی
 
 - **کاربر / مالی:** ‏`buy`, `sell`, `addFunding`, `removeFunding`, `mergeSets`, `redeem`
-- **کیپرِ بدون مجوز:** ‏`distribute`
 - **مدیریتی (فقط کارخانه):** ‏`pause`, `unpause`, `close`, `resolve`, `voidMarket`,
-  `setTreasury`, `setAutoDistribute`, `sweepUnclaimed`, `initialize`
-- **View:** ‏`winningOutcome`, `claimDeadline`, `distributionProgress`, `pendingPayout`,
-  `holderCount`, `getReserves`, `getPrices`, `calcBuy`, `calcSell`, `outcomeName`,
+  `setTreasury`, `sweepUnclaimed`, `initialize`
+- **View:** ‏`winningOutcome`, `claimDeadline`, `pendingPayout`, `depositOf`,
+  `getReserves`, `getPrices`, `calcBuy`, `calcSell`, `outcomeName`,
   `totalSets` (+ سطح ERC-1155)
 - **Private:** ‏`_requireTradable`, `_requireNotEnded`, `_requireClaimWindowOpen`,
-  `_snapshotLp`, `_payoutOf`, `_settleAccount`, `_pushPayouts`, `_update`, `_sendNative`
+  `_withdrawDeposit`, `_payoutOf`, `_settleAccount`, `_sendNative`
+
+**هیچ‌چیز push نمی‌شود.** تعیین‌تکلیف فقط مشخص می‌کند چه کسی چقدر طلبکار است؛ هر wei
+فقط با `redeem` خودِ شرکت‌کننده از بازار بیرون می‌رود.
 
 ---
 
@@ -113,7 +110,8 @@ function initialize(address controller_, address treasury_, MarketParams calldat
 مقداردهی یک‌بارهٔ کلون؛ `msg.value` نقدینگی اولیهٔ LP می‌شود. اعتبارسنجی آدرس‌ها /
 تعداد خروجی ۲..۱۶ / کارمزدها / ‏`now < lockTime ≤ resolveTime` / value > 0 → راه‌اندازی
 ERC-1155 و `_entered=1` → کپی متادیتا → پر کردن همهٔ رزروها با seed →
-`totalSets = seed` → ضرب LP برای creator → رویداد `LiquidityAdded`.
+`totalSets = seed` → ثبت seed به نام `creator` در دفتر سپرده → ضرب LP برای creator →
+رویداد `LiquidityAdded`.
 **دسترسی:** کارخانه، در همان تراکنشِ clone (بدون پنجرهٔ frontrun). سازندهٔ implementation
 `_disableInitializers()` صدا می‌زند.
 
@@ -129,7 +127,8 @@ function buy(uint256 outcomeIndex, uint256 minSharesOut, uint256 deadline)
 خرید سهام خروجی با کوین بومی الصاقی. جریان: چک deadline → چک قابل‌معامله بودن → تفکیک
 کارمزد با `FeeMath` (fee و invest = amountIn − fee) → محاسبه با
 `MarketMath.calcBuyShares` → چک slippage → effects: همهٔ رزروها += invest؛ رزرو
-خریداری‌شده -= sharesOut؛ totalSets += invest؛ ضرب سهام → تعامل: ارسال کل کارمزد به خزانه.
+خریداری‌شده -= sharesOut؛ totalSets += invest؛ افزودن invest به دفتر سپردهٔ خریدار؛
+ضرب سهام → تعامل: ارسال کل کارمزد به خزانه.
 **امنیت:** محافظت MEV با minSharesOut+deadline؛ CEI؛ کارمزد روی ورودی واقعی.
 
 ---
@@ -143,8 +142,9 @@ function sell(uint256 outcomeIndex, uint256 returnAmount, uint256 maxSharesIn, u
 
 معکوس خرید: سوزاندن `sharesIn` توکن خروجی و دریافت `returnAmount` خالص.
 ‏`grossFromNet` کارمزد را به بالا گرد می‌کند. effects: burn؛ رزرو سایر خروجی‌ها -= gross؛
-رزرو خروجی فروش‌شده += sharesIn − gross؛ totalSets -= gross. سپس کل کارمزد به خزانه و
-پرداخت به فروشنده. مرز slippage برعکس است: بیشینهٔ توکنی که می‌دهید.
+رزرو خروجی فروش‌شده += sharesIn − gross؛ totalSets -= gross؛ کم شدن gross از دفتر سپردهٔ
+فروشنده، با توقف روی صفر (ممکن است سهامی را بفروشد که کس دیگری خریده). سپس کل کارمزد به
+خزانه و پرداخت به فروشنده. مرز slippage برعکس است: بیشینهٔ توکنی که می‌دهید.
 
 ---
 
@@ -157,7 +157,8 @@ function addFunding(uint256 minLpSharesOut) external payable nonReentrant return
 افزودن نقدینگی وقتی Open و قبل از lock. اگر عرضهٔ LP صفر باشد همهٔ ارزش رزرو می‌شود و
 lpShares = amount؛ وگرنه متناسب با `maxReserve`: به‌ازای هر خروجی j مقدار
 `keep = amount·r_j/maxR` در رزرو می‌ماند و باقیمانده به‌عنوان *توکن خروجی j* به واریزکننده
-mint می‌شود (حفظ ناوردا هنگام رزروهای نامتوازن). بدون پارامتر deadline — یادداشت MEV.
+mint می‌شود (حفظ ناوردا هنگام رزروهای نامتوازن). `amount` به دفتر سپردهٔ واریزکننده هم
+افزوده می‌شود. بدون پارامتر deadline — یادداشت MEV.
 
 ---
 
@@ -169,7 +170,8 @@ function removeFunding(uint256 lpShares) external nonReentrant;
 
 سوزاندن سهام LP و دریافت سهم تناسبی به شکل **توکن‌های خروجی**
 (`out_j = r_j·lpShares/lpSupply`). تبدیل به کوین از طریق mergeSets یا نگهداری برندگان تا
-حل. در هر وضعیت غیرپایانی مجاز است. **نه slippage دارد نه deadline** — شکاف مستند.
+حل. دفتر سپرده دست‌نخورده می‌ماند: نه چیزی وارد شده نه خارج. در هر وضعیت غیرپایانی مجاز
+است. **نه slippage دارد نه deadline** — شکاف مستند.
 
 ---
 
@@ -179,8 +181,9 @@ function removeFunding(uint256 lpShares) external nonReentrant;
 function mergeSets(uint256 amount) external nonReentrant;
 ```
 
-سوزاندن «از هر خروجی یکی» × amount و بازگشت دقیقاً همان amount کوین (۱:۱ و بی‌کارمزد).
-بعد از وضعیت پایانی مسدود است. رویداد `RewardClaimed`.
+سوزاندن «از هر خروجی یکی» × amount و بازگشت دقیقاً همان amount کوین (۱:۱ و بی‌کارمزد)؛
+همان amount هم از دفتر سپردهٔ فراخواننده کم می‌شود، با توقف روی صفر. بعد از وضعیت پایانی
+مسدود است. رویداد `RewardClaimed`.
 
 ---
 
@@ -190,56 +193,29 @@ function mergeSets(uint256 amount) external nonReentrant;
 function redeem() external nonReentrant returns (uint256 payout);
 ```
 
-مسیر **pull**، و مسیر پیش‌فرض: بازار به‌درخواست پرداخت می‌کند، مگر ادمین push هنگام
-تعیین‌تکلیف را روشن کرده باشد (پایین‌تر). در آن حالت هم این همان راهی است که حساب وقتی
-push به او نرسیده استفاده می‌کند — یا هر وقت خودش ترجیح بدهد سهمش را بردارد.
+تنها راهی که وثیقه از بازارِ تعیین‌تکلیف‌شده بیرون می‌رود. هیچ‌چیز push نمی‌شود؛ هر
+شرکت‌کننده خودش می‌آید و سهم خودش را — یک‌بار — برمی‌دارد.
 
-- **اعتبارِ منتظر** (push تلاش کرده و انتقال شکست خورده) اول و به‌طور کامل پرداخت می‌شود.
 - **Resolved:** سوزاندن کل موجودی توکن برنده و پرداخت ۱:۱، به‌علاوهٔ سهم تناسبی او از
-  استخر LP (‏`lpBalance · _lpPoolAtEnd / _lpSupplyAtEnd`) با سوزاندن سهام LP‌اش.
-- **Voided:** سوزاندن موجودی‌ها در همهٔ خروجی‌ها و پرداخت `floor(Σ balances / n)`
-  — دارایی‌ها را ست کامل کسری فرض می‌کند — به‌علاوهٔ همان سهم LP.
+  استخر LP (‏`lpBalance · _sharePot / _shareBasis`) با سوزاندن سهام LP‌اش. تقسیم دقیق
+  است: در لحظهٔ حل ‏`reserves[win] + totalSupply(win) == totalSets`، پس پرداخت ۱:۱ به هر
+  سهم برنده و دادن `reserves[win]` به LPها وثیقه را تا آخرین wei تقسیم می‌کند.
+- **Voided:** سهام و سهم LP اصلاً به حساب نمی‌آیند. فراخواننده سپردهٔ خودش را پس
+  می‌گیرد — ‏`_deposited · _sharePot / _shareBasis` — و سطر دفترش صفر می‌شود. همین
+  مقیاس‌گذاری است که توانگری را نگه می‌دارد: ‏`_totalDeposited` فقط می‌تواند *جلوتر* از
+  صندوق باشد (معامله‌گری که با سود فروخته، تفاوت را با خودش برده)، پس ضریب ≤ ۱ است و
+  دقیقاً ۱ می‌شود هر وقت کسی بیشتر از آنچه آورده بیرون نبرده باشد. بازگشت وجه خالصِ
+  کارمزدهای پرداخت‌شده است — آن‌ها مال خزانه‌اند و برنمی‌گردند.
 
-گرد شدن به نفع استخر؛ payout به totalSets گیر می‌کند. همین سوزاندن است که پرداخت را
-یک‌باره می‌کند: فراخوانی دوم موجودی صفر می‌بیند و `NothingToClaim` می‌دهد. یک سال پس از
-تعیین‌تکلیف بازار هم `ClaimWindowClosed` می‌دهد (به `sweepUnclaimed` نگاه کنید).
+گرد شدن به نفع استخر؛ payout به totalSets گیر می‌کند. پاک‌کردن مبنای ادعا (سوزاندن، یا
+صفر کردن سطر دفتر) است که پرداخت را یک‌باره می‌کند: فراخوانی دوم چیزی نمی‌بیند و
+`NothingToClaim` می‌دهد. یک سال پس از تعیین‌تکلیف بازار هم `ClaimWindowClosed` می‌دهد
+(به `sweepUnclaimed` نگاه کنید).
 
----
-
-### distribute
-
-```solidity
-function distribute(uint256 limit) external nonReentrant returns (uint256 paid);
-```
-
-مسیر **push**: شرکت‌کننده‌ها بدون اینکه کاری بکنند پول‌شان را می‌گیرند.
-
-‏`distribute` **بدون مجوز** است: کیپر، فرانت‌اند، یا شرکت‌کننده‌ای که عجله دارد، هر سه
-می‌توانند صدایش بزنند — و روی بازاری که با پیش‌فرض‌هایش رها شده، تنها چیزی است که بدون
-درخواستِ خودِ شخص به او پول می‌دهد.
-
-اگر `autoDistribute` روشن شود، ‏`resolve` و `voidMarket` هم همین را برای
-`AUTO_DISTRIBUTE_BATCH` حساب، داخل همان تراکنشِ تعیین‌تکلیف صدا می‌زنند؛ پس بازاری با
-شرکت‌کنندهٔ کم، همان لحظه که ادمین تعیین‌تکلیفش می‌کند خالی می‌شود و `distribute` بقیه را
-ادامه می‌دهد.
-
-هر حساب پیش از انتقالش پرداخت‌شده علامت می‌خورد و با `PUSH_GAS` گس پرداخت می‌شود. انتقالی
-که شکست بخورد کل دسته را revert نمی‌کند: مبلغ به اعتبار (`_credited`) تبدیل می‌شود،
-`PayoutDeferred` ثبت می‌شود و پیمایش ادامه پیدا می‌کند. بنابراین یک گیرندهٔ خصمانه
-نمی‌تواند صف پشت سرش را بخواباند.
-
----
-
-### setAutoDistribute
-
-```solidity
-function setAutoDistribute(bool enabled) external onlyController;
-```
-
-‏push هنگام تعیین‌تکلیف را روشن یا خاموش می‌کند. **بازارها با خاموش شروع می‌شوند**، پس این
-همان opt-in است. یک کلید راحتی است، نه گیتِ دسترسی: با خاموش‌بودنش هم `distribute` برای
-همه باز است و هم شرکت‌کننده می‌تواند سهم خودش را بردارد؛ فقط تعیین‌تکلیف خودبه‌خود شروع
-به پرداخت نمی‌کند. ‏`AutoDistributeSet` را emit می‌کند.
+> **void به چه کسی پرداخت می‌کند.** دفتر دنبال پول است، نه دنبال توکن. خرید سهام از
+> دارندهٔ دیگر روی ERC-1155، *موقعیت* او را می‌خرد نه ادعای بازگشت وجهش را — بازگشت وجه
+> پیش کسی می‌ماند که پول را به بازار داده. بازارهایی که انتظار بازار ثانویهٔ سهام دارند
+> باید resolve شوند، نه void.
 
 ---
 
@@ -271,12 +247,12 @@ function sweepUnclaimed() external onlyController nonReentrant returns (uint256 
 
 `pause()/unpause()` توقف برگشت‌پذیر؛ ‏`close()` توقف دائمی؛
 `resolve(uint256 w)` اعلام برنده — **حتی قبل از lockTime ممکن است** (فرض اعتمادِ مستند؛
-موتور استخر این را بسته است)؛ ‏`voidMarket()` حالت بازگشت وجه؛ ‏`setTreasury`؛
-`setAutoDistribute(bool)`؛ ‏`sweepUnclaimed()` انتقال باقیمانده به خزانه، فقط بعد از
+موتور استخر این را بسته است)؛ ‏`voidMarket()` باز کردن بازار: هرکس سپردهٔ خودش را پس
+می‌گیرد؛ ‏`setTreasury`؛ ‏`sweepUnclaimed()` انتقال باقیمانده به خزانه، فقط بعد از
 `endedAt + CLAIM_WINDOW`.
 
 ‏`removeFunding` دیگر بعد از تعیین‌تکلیف کار نمی‌کند (`MarketAlreadyEnded`): از آن به بعد
-سهام LP را خودِ توزیع به‌صورت وثیقه پرداخت می‌کند، و تبدیلش به توکن خروجی یعنی پرداخت
+سهام LP را خودِ `redeem` به‌صورت وثیقه پرداخت می‌کند، و تبدیلش به توکن خروجی یعنی پرداخت
 دوبارهٔ همان رزروها.
 
 ---
@@ -286,9 +262,10 @@ function sweepUnclaimed() external onlyController nonReentrant returns (uint256 
 `winningOutcome()` (خارج از Resolved revert)، ‏`getReserves()`، ‏`getPrices()`
 (قیمت‌های WAD با مجموع ≈1e18)، ‏`calcBuy(i,amountIn)` و `calcSell(i,returnAmount)`
 (کوت استاتیک)، ‏`outcomeName(i)`، ‏`totalSets()`، ‏`endedAt()`، ‏`claimDeadline()`
-(برابر `endedAt + CLAIM_WINDOW`، و تا وقتی بازار زنده است صفر)، ‏`distributionProgress()`
-(‏cursor و total پیمایش توزیع)، ‏`pendingPayout(account)` (اعتبار منتظر، وگرنه سهم آن
-حساب)، ‏`holderCount()`، ‏`autoDistribute()` و `categoryId()`.
+(برابر `endedAt + CLAIM_WINDOW`، و تا وقتی بازار زنده است صفر)،
+‏`pendingPayout(account)` (سهم آن حساب؛ تا وقتی بازار زنده است یا پس از پرداخت، صفر)،
+‏`depositOf(account)` (وثیقهٔ خالصی که آن حساب گذاشته — همان چیزی که void پس می‌دهد) و
+`categoryId()`.
 به‌علاوه سطح ERC-1155: ‏`balanceOf`, `balanceOfBatch`, `isApprovedForAll`,
 `safeTransferFrom`, `safeBatchTransferFrom`, `setApprovalForAll`, `totalSupply(id)`,
 `supportsInterface`.
@@ -308,11 +285,10 @@ function sweepUnclaimed() external onlyController nonReentrant returns (uint256 
          ├─ fee ──▶ Treasury.depositFee (تمام آن)
          └─ invest ──▶ رزروها ⇄ ضرب سهام برای خریدار
 فروشنده ──sell──◀ کوین (خالص کارمزد) ؛ ست‌ها سوزانده شدند
-تعیین‌تکلیف ──┬─ برندگان ── ۱:۱ روی سهام برنده
-              └─ LPها    ── reserves[win] تناسبی
-   (با autoDistribute روشن) ──▶ دستهٔ اول همان‌جا به کیف پول‌شان push می‌شود
-هرکسی ──distribute(limit)──▶ همان فهرست را می‌پیماید، روشن باشد یا خاموش
-تحویل‌نشده ──▶ اعتبار ──▶ برنده ──redeem──◀ کوین      (تا claimDeadline())
+resolve ──┬─ برندگان ── ۱:۱ روی سهام برنده
+          └─ LPها    ── reserves[win] تناسبی
+voidMarket ─── همه ── سپردهٔ خودشان، مقیاس‌شده با صندوق
+شرکت‌کننده ──redeem──◀ کوین   (فقط سهم خودش، یک‌بار، تا claimDeadline())
 ADMIN ──sweepUnclaimed بعد از claimDeadline()──▶ کل باقیماندهٔ موجودی ──▶ Treasury
 ```
 
@@ -322,7 +298,8 @@ ADMIN ──sweepUnclaimed بعد از claimDeadline()──▶ کل باقیم�
 | --- | --- |
 | Reentrancy | **مشکلی دیده نشد** — قفل storage + CEI در همهٔ مسیرهای پولی |
 | توانگری | **ناوردا اعمال می‌شود** — تست‌های fuzz/invariant آن را assert می‌کنند |
-| گرد کردن | خرید floor سهام، فروش ceil ورودی، redeem-voided floor — استخر با گرد شدن تخلیه نمی‌شود |
+| گرد کردن | خرید floor سهام، فروش ceil ورودی، بازگشت وجه در void floor — استخر با گرد شدن تخلیه نمی‌شود |
+| توانگری در void | **کران‌دار** — بازگشت وجه برابر `deposit · totalSets / _totalDeposited` است و `_totalDeposited ≥ totalSets`، پس مجموع پرداخت‌ها حداکثر به اندازهٔ صندوق است؛ خبری از «هرکه زودتر رسید» نیست |
 | حل زودهنگام | **ملاحظهٔ طراحی/اعتماد** — resolve قبل از lockTime ممکن است؛ صحت به ADMIN_ROLE وابسته است |
 | MEV | buy/sell مرز دارند؛ addFunding بی‌deadline؛ removeFunding هیچ‌مرزی ندارد — شکاف مستند |
 | DoS | حلقه‌ها ≤ 16 خروجی؛ شکست send فقط payout خودِ فراخواننده را تحت تأثیر قرار می‌دهد |
@@ -335,7 +312,8 @@ ADMIN ──sweepUnclaimed بعد از claimDeadline()──▶ کل باقیم�
 ## راهنمای یکپارچه‌سازی
 
 قبل از معامله با `calcBuy`/`calcSell` کوت بگیرید و min*/deadline واقع‌بینانه بدهید.
-پس از حل، ‏`winningOutcome()` را بخوانید و اگر سهام برنده دارید `redeem()` بزنید.
+پس از تعیین‌تکلیف `redeem()` بزنید — تنها مسیر پرداخت است و `pendingPayout(account)`
+می‌گوید چقدر می‌پردازد. بعد از void آن عدد از `depositOf(account)` می‌آید، نه از موجودی سهام.
 خطاهای رایج: ‏`TradingLocked` بعد از lock، ‏`SlippageExceeded` در نوسان،
 `InsufficientLiquidity` فروش بزرگ به استخر نامتوازن.
 
@@ -351,7 +329,5 @@ ADMIN ──sweepUnclaimed بعد از claimDeadline()──▶ کل باقیم�
 | `mergeSets(amount)` | external | nonpayable | عموم | ست کامل ← وثیقه |
 | `redeem()` | external | nonpayable | دارندگان توکن | پرداخت برنده/بازگشت |
 | `pause/unpause/close/voidMarket/resolve/setTreasury` | external | nonpayable | Controller | چرخهٔ حیات |
-| `setAutoDistribute(bool)` | external | nonpayable | Controller | روشن/خاموش کردن push هنگام تعیین‌تکلیف |
-| `distribute(limit)` | external | nonpayable | **همه** | پرداخت به حداکثر `limit` دارندهٔ بعدی |
 | `sweepUnclaimed()` | external | nonpayable | Controller | باقیمانده ← خزانه، بعد از پنجرهٔ بازخرید |
 | viewها | external | view | همه | قیمت/رزرو/کوت/نام |

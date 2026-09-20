@@ -403,21 +403,6 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
     }
 
     /// @inheritdoc IPredictionFactory
-    function setMarketAutoDistribute(uint256 marketId, bool enabled) external onlyRole(ADMIN_ROLE) {
-        IPredictionMarket(_records[marketId].market).setAutoDistribute(enabled);
-    }
-
-    /**
-     * @inheritdoc IPredictionFactory
-     * @dev Deliberately permissionless: it only moves a settled market's own collateral to
-     *      the accounts already entitled to it, so anyone — a keeper, a frontend, a user
-     *      impatient for their neighbours — may push it along.
-     */
-    function distributeMarket(uint256 marketId, uint256 limit) external returns (uint256 paid) {
-        paid = IPredictionMarket(_records[marketId].market).distribute(limit);
-    }
-
-    /// @inheritdoc IPredictionFactory
     function setTreasury(address treasury_) external onlyRole(ADMIN_ROLE) {
         if (treasury_ == address(0)) revert ZeroAddress();
         _treasury = treasury_;

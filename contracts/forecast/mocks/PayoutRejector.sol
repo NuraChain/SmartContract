@@ -6,10 +6,10 @@ import { IPredictionPool } from "../interfaces/IPredictionPool.sol";
 
 /**
  * @title PayoutRejector
- * @notice Test-only participant that refuses every native transfer, so an automatic payout
- *         pushed to it always fails. Used to prove that one undeliverable recipient becomes a
- *         pullable credit instead of stalling the batch behind it. Works against either
- *         engine: {betPool} for the parimutuel pool, {buyMarket} for the CPMM.
+ * @notice Test-only participant that refuses every native transfer, so its own claim always
+ *         fails. Used to prove that an undeliverable payout reverts for that account alone
+ *         and leaves its collateral in the market until the claim window shuts. Works against
+ *         either engine: {betPool} for the parimutuel pool, {buyMarket} for the CPMM.
  * @dev Never deploy this outside tests.
  */
 contract PayoutRejector {
@@ -31,7 +31,7 @@ contract PayoutRejector {
         require(accepting, "no");
     }
 
-    /// @notice Starts accepting native transfers, so the credit can be pulled.
+    /// @notice Starts accepting native transfers, so the payout can be claimed.
     function startAccepting() external {
         accepting = true;
     }
@@ -52,12 +52,12 @@ contract PayoutRejector {
         IPredictionMarket(subject).buy{ value: msg.value }(outcomeIndex, 0, type(uint256).max);
     }
 
-    /// @notice Pulls the credit a failed pool push left behind.
+    /// @notice Claims this contract's share of a settled pool.
     function claimPool() external returns (uint256) {
         return IPredictionPool(subject).claim();
     }
 
-    /// @notice Pulls the credit a failed market push left behind.
+    /// @notice Redeems this contract's share of a settled market.
     function redeemMarket() external returns (uint256) {
         return IPredictionMarket(subject).redeem();
     }

@@ -44,10 +44,7 @@ import {
     MarketClosed,
     MarketResolved,
     MarketVoided,
-    UnclaimedSwept,
-    PayoutDeferred,
-    DistributionAdvanced,
-    AutoDistributeSet
+    UnclaimedSwept
 } from "./PredictionEvents.sol";
 
 /**
@@ -73,14 +70,14 @@ import {
  *      closed nothing can be redeemed any more, so the leftover collateral and `totalSets`
  *      both go to zero together and outstanding share balances become inert bookkeeping.
  *
- *      Settlement pays holders out by itself. It also splits the pot exactly: at that moment
+ *      Settlement never moves money by itself. Every participant collects their own share
+ *      with {redeem}, and nothing leaves the market until they do.
+ *
+ *      A resolution splits the pot exactly: at that moment
  *      `reserves[win] + totalSupply(win) == totalSets`, so paying every winning share 1:1 and
  *      handing `reserves[win]` to the LPs pro-rata distributes the collateral to the last wei.
- *      With {autoDistribute} switched on, {resolve} and {voidMarket} push the first
- *      {AUTO_DISTRIBUTE_BATCH} accounts in the same transaction and anyone can carry the rest
- *      with {distribute}. That push is off until an admin asks for it ({setAutoDistribute}),
- *      and it is never the only way out either way, because {distribute} is permissionless
- *      and {redeem} always lets a holder collect their own share.
+ *      A void is not a settlement at all — it unwinds the market, so shares and LP stakes
+ *      stop counting and everyone takes back what they put in, off the {depositOf} ledger.
  */
 contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgradeable {
     /// @notice ERC-1155 id used for liquidity-provider shares (outcomes use ids 0..n-1).
@@ -96,16 +93,6 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     ///         elapses the leftover collateral is sweepable to the treasury.
     uint64 public constant CLAIM_WINDOW = 365 days;
 
-    /// @notice Payouts pushed inside the settlement transaction itself. Small markets are
-    ///         therefore paid out in full the moment an admin resolves or voids them;
-    ///         anything larger is carried by {distribute} calls afterwards.
-    uint256 public constant AUTO_DISTRIBUTE_BATCH = 20;
-
-    /// @dev Gas forwarded to each pushed payout. Enough for an ordinary wallet or a plain
-    ///      `receive()`, and low enough that one hostile recipient cannot burn the batch.
-    ///      Whatever it cannot deliver becomes a pullable credit, so nobody loses money.
-    uint256 private constant PUSH_GAS = 50_000;
-
     /// @notice The factory; the only address allowed to drive lifecycle actions.
     address public controller;
 
@@ -114,13 +101,6 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
 
     /// @notice Current lifecycle status.
     MarketStatus public status;
-
-    /// @notice Whether settlement pushes the first batch of payouts by itself. Off until an
-    ///         admin turns it on, so a market pays out on request unless someone has decided
-    ///         it should pay out on its own. It never gates the money either way:
-    ///         {distribute} is open to anyone, and a participant can always collect their
-    ///         own share.
-    bool public autoDistribute;
 
     /// @notice Human-readable market metadata.
     string public title;
@@ -160,21 +140,21 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     /// @dev Winning outcome; meaningful only once status == Resolved.
     uint256 private _winningOutcome;
 
-    /// @dev Every account that has ever received a token of this market, in first-receipt
-    ///      order; the distribution walks it. Append-only: a zero balance is skipped at
-    ///      payout time, which is cheaper than keeping the list pruned on every transfer.
-    address[] private _holders;
-    /// @dev Membership test that keeps `_holders` free of duplicates.
-    mapping(address account => bool listed) private _listed;
-    /// @dev How far the push has walked `_holders`.
-    uint256 private _cursor;
-    /// @dev Payouts a push could not deliver, waiting to be pulled by {redeem}.
-    mapping(address account => uint256 amount) private _credited;
-    /// @dev LP supply at settlement, and the collateral that belongs to LPs as a whole
-    ///      (`reserves[win]` when resolved, the mean reserve when voided). Snapshotted
-    ///      because burning LP shares during the payout walk moves the live supply.
-    uint256 private _lpSupplyAtEnd;
-    uint256 private _lpPoolAtEnd;
+    /// @dev Net collateral each account has put into the market: up on the seed, a buy and
+    ///      added funding, down on a sell or a merge. This is what a void pays back. It is
+    ///      net of trade fees, which already left for the treasury and cannot be recalled.
+    mapping(address account => uint256 amount) private _deposited;
+    /// @dev Sum of `_deposited` across every account. Shares are ordinary ERC-1155 tokens and
+    ///      can change hands while the ledger cannot follow them, so a withdrawal stops at
+    ///      the seller's own deposit instead of underflowing; that makes this an upper bound
+    ///      on `totalSets` rather than an equality, and the refund scales by the two.
+    uint256 private _totalDeposited;
+
+    /// @dev The pro-rata share settlement pays, snapshotted the moment the market ends
+    ///      because redeeming moves both live figures. Resolved: LP shares over the losing
+    ///      reserves. Voided: deposits over the whole pot.
+    uint256 private _shareBasis;
+    uint256 private _sharePot;
 
     /// @dev Reentrancy lock: 1 = not entered, 2 = entered (storage-based; the Paris target has
     ///      no transient storage). Set to 1 in {initialize}.
@@ -240,6 +220,8 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
             _reserves.push(seed);
         }
         totalSets = seed;
+        _deposited[params.creator] = seed;
+        _totalDeposited = seed;
         _mint(params.creator, LP_TOKEN_ID, seed, "");
         emit LiquidityAdded(address(this), params.creator, seed, seed);
     }
@@ -278,14 +260,9 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         endedAt = uint64(block.timestamp);
 
         // What the losing reserves were worth is now the LPs' share of the pot.
-        _snapshotLp(_reserves[winningOutcome_]);
+        _shareBasis = totalSupply(LP_TOKEN_ID);
+        _sharePot = _reserves[winningOutcome_];
         emit MarketResolved(address(this), winningOutcome_);
-
-        // Winners do not have to come and ask: start paying them right here, unless an admin
-        // has turned that off for this market.
-        if (autoDistribute) {
-            _pushPayouts(AUTO_DISTRIBUTE_BATCH);
-        }
     }
 
     /// @inheritdoc IPredictionMarket
@@ -294,20 +271,14 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         status = MarketStatus.Voided;
         endedAt = uint64(block.timestamp);
 
-        // Refunds treat holdings as fractional complete sets, so an LP's reserves are worth
-        // the mean reserve on the same basis.
-        uint256 n = outcomeCount;
-        uint256 sum;
-        for (uint256 j = 0; j < n; ++j) {
-            sum += _reserves[j];
-        }
-        _snapshotLp(sum / n);
+        // Nobody was right or wrong here, so nobody is paid out of anyone else's stake:
+        // shares and LP holdings stop counting and every account is owed its deposit back.
+        // The ledger can only run ahead of the pot — a trader who sold at a profit took the
+        // difference with them — so refunds scale by the two, which is the deposit itself
+        // whenever nobody left with more than they brought.
+        _shareBasis = _totalDeposited;
+        _sharePot = totalSets;
         emit MarketVoided(address(this));
-
-        // Refunds go back out on their own, exactly like winnings do.
-        if (autoDistribute) {
-            _pushPayouts(AUTO_DISTRIBUTE_BATCH);
-        }
     }
 
     /// @inheritdoc IPredictionMarket
@@ -315,13 +286,6 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         if (treasury_ == address(0)) revert ZeroAddress();
         treasury = treasury_;
     }
-
-    /// @inheritdoc IPredictionMarket
-    function setAutoDistribute(bool enabled) external onlyController {
-        autoDistribute = enabled;
-        emit AutoDistributeSet(address(this), enabled);
-    }
-
 
     // ----------------------------------------------------------------------------------------
     // Trading
@@ -353,6 +317,8 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         }
         _reserves[outcomeIndex] -= sharesOut;
         totalSets += invest;
+        _deposited[msg.sender] += invest;
+        _totalDeposited += invest;
         _mint(msg.sender, outcomeIndex, sharesOut, "");
 
         // Interaction: forward the whole fee.
@@ -388,6 +354,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         }
         _reserves[outcomeIndex] = _reserves[outcomeIndex] + sharesIn - gross;
         totalSets -= gross;
+        _withdrawDeposit(msg.sender, gross);
 
         // Interactions: fee out, then pay the seller.
         if (fee > 0) {
@@ -429,6 +396,8 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
             }
         }
         totalSets += amount;
+        _deposited[msg.sender] += amount;
+        _totalDeposited += amount;
         if (lpShares < minLpSharesOut) revert SlippageExceeded();
         _mint(msg.sender, LP_TOKEN_ID, lpShares, "");
         emit LiquidityAdded(address(this), msg.sender, amount, lpShares);
@@ -463,6 +432,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
             _burn(msg.sender, j, amount);
         }
         totalSets -= amount;
+        _withdrawDeposit(msg.sender, amount);
         _sendNative(msg.sender, amount);
         emit RewardClaimed(address(this), msg.sender, amount);
     }
@@ -475,32 +445,13 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     function redeem() external nonReentrant returns (uint256 payout) {
         _requireClaimWindowOpen();
 
-        uint256 credit = _credited[msg.sender];
-        if (credit > 0) {
-            // A push already set this money aside; it just could not be delivered.
-            _credited[msg.sender] = 0;
-            payout = credit;
-        } else {
-            MarketStatus s = status;
-            if (s != MarketStatus.Resolved && s != MarketStatus.Voided) revert MarketNotResolved();
-            payout = _settleAccount(msg.sender);
-            if (payout == 0) revert NothingToClaim();
-        }
+        MarketStatus s = status;
+        if (s != MarketStatus.Resolved && s != MarketStatus.Voided) revert MarketNotResolved();
+        payout = _settleAccount(msg.sender);
+        if (payout == 0) revert NothingToClaim();
 
         _sendNative(msg.sender, payout);
         emit RewardClaimed(address(this), msg.sender, payout);
-    }
-
-    // ----------------------------------------------------------------------------------------
-    // Automatic distribution
-    // ----------------------------------------------------------------------------------------
-
-    /// @inheritdoc IPredictionMarket
-    function distribute(uint256 limit) external nonReentrant returns (uint256 paid) {
-        if (endedAt == 0) revert MarketNotResolved();
-        if (limit == 0) revert ZeroAmount();
-        _requireClaimWindowOpen();
-        paid = _pushPayouts(limit);
     }
 
     // ----------------------------------------------------------------------------------------
@@ -537,26 +488,16 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     }
 
     /// @inheritdoc IPredictionMarket
-    function distributionProgress() external view returns (uint256 cursor, uint256 total) {
-        return (_cursor, _holders.length);
-    }
-
-    /// @inheritdoc IPredictionMarket
     function pendingPayout(address account) external view returns (uint256) {
-        uint256 credit = _credited[account];
-        if (credit > 0) {
-            return credit;
-        }
         if (endedAt == 0) {
             return 0;
         }
         return _payoutOf(account);
     }
 
-    /// @notice Total accounts that have ever held a token of this market (the distribution's
-    ///         length). Includes accounts whose balance has since gone to zero.
-    function holderCount() external view returns (uint256) {
-        return _holders.length;
+    /// @inheritdoc IPredictionMarket
+    function depositOf(address account) external view returns (uint256) {
+        return _deposited[account];
     }
 
     /// @inheritdoc IPredictionMarket
@@ -622,109 +563,66 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         if (deadline != 0 && block.timestamp >= deadline) revert ClaimWindowClosed();
     }
 
-    /// @dev Records the LP side of the pot at settlement: how many LP shares exist and how
-    ///      much collateral they collectively own.
-    function _snapshotLp(uint256 lpPool) private {
-        _lpSupplyAtEnd = totalSupply(LP_TOKEN_ID);
-        _lpPoolAtEnd = lpPool;
+    /// @dev Takes up to `amount` off `account`'s deposit ledger. Outcome shares are ordinary
+    ///      ERC-1155 tokens, so a seller may never have deposited what they are now taking
+    ///      out; the ledger stops at zero rather than underflowing, and the gap that leaves
+    ///      between `_totalDeposited` and `totalSets` is what scales the void refund.
+    function _withdrawDeposit(address account, uint256 amount) private {
+        uint256 held = _deposited[account];
+        uint256 cut = amount < held ? amount : held;
+        if (cut > 0) {
+            _deposited[account] = held - cut;
+            _totalDeposited -= cut;
+        }
     }
 
-    /// @dev What `account` is owed at the current settlement, without paying it: their winning
-    ///      shares (or refund basis) plus their pro-rata slice of the LP pot.
+    /// @dev What `account` is owed at the current settlement, without paying it. Resolved:
+    ///      their winning shares 1:1, plus their pro-rata slice of the losing reserves.
+    ///      Voided: their own deposit back, scaled to what the pot actually holds.
     function _payoutOf(address account) private view returns (uint256 payout) {
-        uint256 n = outcomeCount;
         if (status == MarketStatus.Resolved) {
             payout = balanceOf(account, _winningOutcome);
-        } else if (status == MarketStatus.Voided) {
-            uint256 sum;
-            for (uint256 j = 0; j < n; ++j) {
-                sum += balanceOf(account, j);
+            uint256 lp = balanceOf(account, LP_TOKEN_ID);
+            if (lp > 0 && _shareBasis > 0) {
+                payout += Math.mulDiv(lp, _sharePot, _shareBasis);
             }
-            payout = sum / n;
+        } else if (status == MarketStatus.Voided) {
+            uint256 deposit = _deposited[account];
+            if (deposit == 0 || _shareBasis == 0) {
+                return 0;
+            }
+            payout = Math.mulDiv(deposit, _sharePot, _shareBasis);
         } else {
             return 0;
         }
 
-        uint256 lp = balanceOf(account, LP_TOKEN_ID);
-        if (lp > 0 && _lpSupplyAtEnd > 0) {
-            payout += Math.mulDiv(lp, _lpPoolAtEnd, _lpSupplyAtEnd);
-        }
         if (payout > totalSets) {
             payout = totalSets;
         }
     }
 
-    /// @dev Burns everything `account` holds and books their payout against `totalSets`. The
-    ///      burn is what makes settlement one-shot: a second pass finds a zero balance.
+    /// @dev Clears whatever the account's claim rested on and books their payout against
+    ///      `totalSets`. That is what makes redemption one-shot: a resolved market burns the
+    ///      shares and LP stake it has just paid for, a voided one empties the deposit ledger.
     function _settleAccount(address account) private returns (uint256 payout) {
         payout = _payoutOf(account);
 
-        uint256 n = outcomeCount;
         if (status == MarketStatus.Resolved) {
             uint256 win = _winningOutcome;
             uint256 held = balanceOf(account, win);
             if (held > 0) {
                 _burn(account, win, held);
             }
-        } else {
-            for (uint256 j = 0; j < n; ++j) {
-                uint256 b = balanceOf(account, j);
-                if (b > 0) {
-                    _burn(account, j, b);
-                }
+            uint256 lp = balanceOf(account, LP_TOKEN_ID);
+            if (lp > 0) {
+                _burn(account, LP_TOKEN_ID, lp);
             }
-        }
-        uint256 lp = balanceOf(account, LP_TOKEN_ID);
-        if (lp > 0) {
-            _burn(account, LP_TOKEN_ID, lp);
+        } else {
+            _totalDeposited -= _deposited[account];
+            _deposited[account] = 0;
         }
 
         totalSets -= payout;
-    }
-
-    /// @dev Pays up to `limit` further holders and advances the cursor. Each account's tokens
-    ///      are burned before its transfer, and a transfer that fails becomes a credit rather
-    ///      than a revert, so one recipient can never stall the queue behind it.
-    function _pushPayouts(uint256 limit) private returns (uint256 paid) {
-        uint256 i = _cursor;
-        uint256 total = _holders.length;
-        uint256 end = i + limit;
-        if (end > total) {
-            end = total;
-        }
-
-        for (; i < end; ++i) {
-            address account = _holders[i];
-            uint256 payout = _settleAccount(account);
-            if (payout == 0) {
-                continue;
-            }
-            (bool ok, ) = payable(account).call{ value: payout, gas: PUSH_GAS }("");
-            if (ok) {
-                paid += payout;
-                emit RewardClaimed(address(this), account, payout);
-            } else {
-                _credited[account] += payout;
-                emit PayoutDeferred(address(this), account, payout);
-            }
-        }
-
-        _cursor = i;
-        emit DistributionAdvanced(address(this), i, total, paid);
-    }
-
-    /// @dev Lists every account that receives a token so settlement knows who to pay. The
-    ///      market is the sole issuer and never custodies its own tokens, so this list is
-    ///      always a superset of the current holders.
-    function _update(address from, address to, uint256[] memory ids, uint256[] memory values)
-        internal
-        override
-    {
-        super._update(from, to, ids, values);
-        if (to != address(0) && !_listed[to]) {
-            _listed[to] = true;
-            _holders.push(to);
-        }
     }
 
     /// @dev Native transfer with an explicit success check.

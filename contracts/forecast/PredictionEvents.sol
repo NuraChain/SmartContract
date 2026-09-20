@@ -44,7 +44,7 @@ event MarketClosed(address indexed market);
 /// @notice A market was resolved to a winning outcome.
 event MarketResolved(address indexed market, uint256 indexed winningOutcome);
 
-/// @notice A market was voided; every outcome pays an equal refund share.
+/// @notice A market was voided; every participant can take back what they put in.
 event MarketVoided(address indexed market);
 
 /// @notice A buy trade: `buyer` spent `amountIn` collateral for `sharesOut` of `outcome`.
@@ -74,24 +74,9 @@ event LiquidityAdded(address indexed market, address indexed funder, uint256 amo
 /// @notice Liquidity removed; `provider` burned `lpShares`.
 event LiquidityRemoved(address indexed market, address indexed provider, uint256 lpShares);
 
-/// @notice A winner (or refund) claim: `amount` collateral paid to `claimant`. Emitted for
-///         payouts the market pushes out on its own as well as for pulled ones, so an
-///         indexer sees one settlement log per account either way.
+/// @notice A winner (or refund) claim: `amount` collateral paid to `claimant`. One per
+///         account per settlement, so an indexer sees each participant exactly once.
 event RewardClaimed(address indexed market, address indexed claimant, uint256 amount);
-
-/// @notice A pushed payout could not be delivered (the recipient reverted or ran past the
-///         forwarded gas), so `amount` was credited for `account` to pull instead. The
-///         collateral is already accounted as theirs; only delivery failed.
-event PayoutDeferred(address indexed market, address indexed account, uint256 amount);
-
-/// @notice Automatic distribution advanced to `cursor` of `total` recipients on `market`,
-///         paying out `amount` in this batch.
-event DistributionAdvanced(address indexed market, uint256 cursor, uint256 total, uint256 amount);
-
-/// @notice Whether `market` pushes payouts itself at settlement was changed. With it off,
-///         collateral still leaves the same way — through {distribute} or a participant's
-///         own claim — it just is not started automatically.
-event AutoDistributeSet(address indexed market, bool enabled);
 
 /// @notice Protocol fee forwarded to the treasury from `market`.
 event FeeCollected(address indexed market, uint256 amount);

@@ -72,7 +72,7 @@ interface IPredictionFactory {
     /// @notice The outcome `signer` voted for on `marketId`, or type(uint256).max when none.
     function confirmationOf(uint256 marketId, address signer) external view returns (uint256);
 
-    /// @notice Voids a market for equal refunds (admin only).
+    /// @notice Voids a market so everyone takes back what they put in (admin only).
     function voidMarket(uint256 marketId) external;
 
     /**
@@ -82,25 +82,6 @@ interface IPredictionFactory {
      * @return amount Collateral moved to the treasury.
      */
     function sweepUnclaimed(uint256 marketId) external returns (uint256 amount);
-
-    /**
-     * @notice Turns a market's push-at-settlement on or off (admin only). Markets start with
-     *        it off. Payouts themselves are never gated by it: {distributeMarket} stays open
-     *        to anyone and participants can always collect their own share.
-     * @param marketId Market to configure.
-     * @param enabled Whether settlement should push the first batch of payouts.
-     */
-    function setMarketAutoDistribute(uint256 marketId, bool enabled) external;
-
-    /**
-     * @notice Carries a settled market's automatic payout forward by up to `limit` accounts.
-     *        Callable by anyone — settlement pushes the first batch itself, and this finishes
-     *        markets with more recipients than one transaction can hold.
-     * @param marketId Market to pay out.
-     * @param limit Maximum accounts to pay in this call.
-     * @return paid Collateral actually delivered in this batch.
-     */
-    function distributeMarket(uint256 marketId, uint256 limit) external returns (uint256 paid);
 
     /// @notice Updates the treasury applied to newly created markets (admin only). Existing
     ///         markets are re-pointed individually to keep gas bounded.

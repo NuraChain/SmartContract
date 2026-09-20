@@ -123,10 +123,9 @@ MarketStatus:
 ### طبقه‌بندی
 
 - **مدیریتی:** ‏`createMarket`, `createMarket2`, `pauseMarket`, `unpauseMarket`,
-  `closeMarket`, `voidMarket`, `sweepUnclaimed`, `setMarketAutoDistribute`,
+  `closeMarket`, `voidMarket`, `sweepUnclaimed`,
   `setTreasury`, `repointTreasury`, `setDefaultFees`, `addCategory`,
   `setCategoryMeanings`, `setCategoryEnabled`
-- **بدون مجوز:** ‏`distributeMarket`
 - **مولتی‌سگ حل:** ‏confirmResolution (امضاکننده‌ها)، ‏setResolutionSigners (مالک)
 - **View:** ‏marketCount, marketAt, marketAddress, marketKind, 	reasury, 
 esolutionSigners, 
@@ -184,8 +183,6 @@ function createMarket2(MarketParams calldata params)
 | `confirmResolution(id, winningOutcome)` *(امضاکننده)* | ثبت رای؛ در حد نصاب `resolve(winningOutcome)` را اجرا می‌کند | ← Resolved |
 | `voidMarket(id)` *(ADMIN_ROLE)* | `voidMarket()` | ← Voided |
 | `sweepUnclaimed(id)` *(ADMIN_ROLE)* | `sweepUnclaimed()` | ندارد — وضعیت پایانی دست‌نخورده می‌ماند |
-| `setMarketAutoDistribute(id, enabled)` *(ADMIN_ROLE)* | `setAutoDistribute(enabled)` | ندارد |
-| `distributeMarket(id, limit)` *(**همه**)* | `distribute(limit)` | ندارد |
 
 marketId خارج از محدوده panic اندیس آرایه می‌دهد.
 
@@ -193,10 +190,11 @@ marketId خارج از محدوده panic اندیس آرایه می‌دهد.
 تعیین‌تکلیف‌شده هنوز نگه داشته به خزانه می‌برد و مبلغ را برمی‌گرداند. کارخانه فقط گیتِ
 ادمین را فراهم می‌کند؛ زمان‌بندی را خودِ کلون اجرا می‌کند و تا وقتی بازار زنده است
 (`MarketNotResolved`) یا پنجرهٔ یک‌سالهٔ برداشتش باز است (`ClaimWindowOpen`) رد می‌کند، پس
-ادمین هرگز نمی‌تواند جلوی برنده را بگیرد. ‏`setMarketAutoDistribute` هم push هنگام
-تعیین‌تکلیف را روشن/خاموش می‌کند، و `distributeMarket` عمداً **بدون مجوز** است: فقط وثیقهٔ
-خودِ بازارِ تعیین‌تکلیف‌شده را به حساب‌هایی می‌برد که از قبل مستحق‌اند. هر سه روی هر دو
-موتور کار می‌کنند.
+ادمین هرگز نمی‌تواند جلوی برنده را بگیرد. روی هر دو موتور کار می‌کند.
+
+**هیچ رلهٔ پرداختی وجود ندارد.** هیچ‌کدام از دو موتور پول را به کسی push نمی‌کند:
+شرکت‌کننده‌ها خودشان روی کلونِ بازار `redeem`/`claim` می‌زنند و هیچ تابعی در کارخانه
+نمی‌تواند سهم آن‌ها را به‌جایشان جابه‌جا کند.
 
 ## رجیستری دسته‌ها
 
@@ -354,8 +352,6 @@ ADMIN ──createMarket{value}──▶ initialize روی کلون (seed = سه
 | `setTreasury(t)` | external | nonpayable | ADMIN_ROLE | خزانهٔ بازارهای آینده |
 | `repointTreasury(id)` | external | nonpayable | ADMIN_ROLE | همگام‌سازی خزانهٔ یک کلون |
 | `sweepUnclaimed(id)` | external | nonpayable | ADMIN_ROLE | انتقال باقیماندهٔ بازار تعیین‌تکلیف‌شده به خزانه، یک سال بعد |
-| `setMarketAutoDistribute(id, enabled)` | external | nonpayable | ADMIN_ROLE | روشن/خاموش کردن push هنگام تعیین‌تکلیف |
-| `distributeMarket(id, limit)` | external | nonpayable | **همه** | پرداخت به حداکثر `limit` حسابِ بعدیِ یک بازار تعیین‌تکلیف‌شده |
 | `addCategory/setCategoryMeanings/setCategoryEnabled` | external | nonpayable | ADMIN_ROLE | رجیستری دسته‌ها |
 | `categoryMeaning(s)/categoryLanguages/categoryIds/categoryCount/categoryState/marketsByCategory/countByCategory` | external | view | همه | خواندن دسته‌ها |
 | `setDefaultFees(f)` | external | nonpayable | ADMIN_ROLE | پیش‌فرض بازارهای feeBps=0 |

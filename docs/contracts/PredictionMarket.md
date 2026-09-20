@@ -52,14 +52,9 @@ PredictionMarket
 | `MAX_OUTCOMES` | `uint256` | public | constant | `16`; bounds every per-outcome loop (gas ceiling). |
 | `MAX_FEE_BPS` | `uint16` | public | constant | `1000`; max total trade fee (10%). |
 | `CLAIM_WINDOW` | `uint64` | public | constant | `365 days`; how long after settlement winners may still `redeem`. |
-| `AUTO_DISTRIBUTE_BATCH` | `uint256` | public | constant | `20`; payouts pushed inside the settling transaction itself. |
-| `PUSH_GAS` | `uint256` | private | constant | `50_000`; gas forwarded to each pushed payout. Enough for a wallet or a plain `receive()`, low enough that one hostile recipient cannot burn the batch. |
-| `AUTO_DISTRIBUTE_BATCH` | `uint256` | public | constant | `20`; payouts pushed inside the settling transaction itself. |
-| `PUSH_GAS` | `uint256` | private | constant | `50_000`; gas forwarded to each pushed payout. Enough for a wallet or a plain `receive()`, low enough that one hostile recipient cannot burn the batch. |
 | `controller` | `address` | public | mutable | The factory; sole caller of lifecycle actions. |
 | `treasury` | `address` | public | mutable | Receives protocol fees. |
 | `status` | `MarketStatus` | public | mutable | Lifecycle state (Open/Paused/Closed/Resolved/Voided). |
-| `autoDistribute` | `bool` | public | mutable | Whether settlement pushes payouts by itself. **`false` until an admin turns it on.** Never gates the money — see [distribute](#distribute). |
 | `title/description/imageURI` | `string` | public | immutable-in-practice | Metadata written once in `initialize`. |
 | `categoryId` | `uint32` | public | set-once | Category this market is filed under, in the [factory's registry](PredictionFactory.md#category-registry). The market stores no category name of its own. |
 | `creator` | `address` | public | set-once | Account credited as creator/first LP. |
@@ -71,11 +66,9 @@ PredictionMarket
 | `_reserves` | `uint256[]` | private | mutable | Virtual FPMM reserve per outcome (wei). |
 | `totalSets` | `uint256` | public | mutable | Collateral backing outstanding complete sets; equals contract native balance. |
 | `_winningOutcome` | `uint256` | private | set at resolve | Meaningful only when Resolved. |
-| `_holders` | `address[]` | private | append-only | Every account that has ever received a token of this market, in first-receipt order; the distribution walks it. A zero balance is skipped at payout time, which is cheaper than pruning on every transfer. |
-| `_listed` | `mapping(address => bool)` | private | mutable | Membership test keeping `_holders` free of duplicates. |
-| `_cursor` | `uint256` | private | mutable | How far the push has walked `_holders`. |
-| `_credited` | `mapping(address => uint256)` | private | mutable | Payouts a push could not deliver, waiting to be pulled by `redeem`. |
-| `_lpSupplyAtEnd` / `_lpPoolAtEnd` | `uint256` | private | set at settlement | LP supply, and the collateral LPs own as a whole (`reserves[win]` resolved, mean reserve voided). Snapshotted because burning LP shares during the walk moves the live supply. |
+| `_deposited` | `mapping(address => uint256)` | private | mutable | Net collateral each account has put in: up on the seed, a buy and `addFunding`, down on a sell or a merge. What a void pays back; net of trade fees, which already left for the treasury. Read via `depositOf`. |
+| `_totalDeposited` | `uint256` | private | mutable | Sum of `_deposited`. Shares are transferable and the ledger cannot follow them, so a withdrawal clamps at the seller's own deposit rather than underflowing — making this an **upper bound** on `totalSets`, not an equality. |
+| `_shareBasis` / `_sharePot` | `uint256` | private | set at settlement | Denominator and numerator of the pro-rata share settlement pays. Resolved: LP supply over `reserves[win]`. Voided: `_totalDeposited` over `totalSets`. Snapshotted because redeeming moves both live figures. |
 | `_entered` | `uint256` | private | mutable | Reentrancy lock: 1 = free, 2 = entered (storage-based; Paris target has no transient storage); set to 1 in `initialize`. |
 
 ERC-1155 balances: outcome shares per user, plus LP shares under `LP_TOKEN_ID`
@@ -111,9 +104,6 @@ Shared declarations live in `PredictionEvents.sol`:
 | `RewardClaimed` | `market, claimant, amount` | market, claimant | `redeem` and `mergeSets` |
 | `MarketPaused/MarketUnpaused/MarketClosed/MarketVoided` | `market` | market | lifecycle relays |
 | `MarketResolved` | `market, winningOutcome` | both | `resolve` |
-| `PayoutDeferred` | `market, account, amount` | market, account | A pushed payout could not be delivered; `amount` was credited for the account to pull instead |
-| `DistributionAdvanced` | `market, cursor, total, amount` | market | Every push batch, including the one inside settlement |
-| `AutoDistributeSet` | `market, enabled` | market | `setAutoDistribute` |
 | `UnclaimedSwept` | `market, treasury, amount` | market, treasury | `sweepUnclaimed`; logged apart from `FeeCollected` so residue never reads as trading revenue |
 
 ## Errors
@@ -143,15 +133,16 @@ Shared declarations live in `PredictionEvents.sol`:
 ### Classification
 
 - **User / Financial:** `buy`, `sell`, `addFunding`, `removeFunding`, `mergeSets`, `redeem`
-- **Permissionless keeper:** `distribute`
 - **Administrative (factory-only):** `pause`, `unpause`, `close`, `resolve`,
-  `voidMarket`, `setTreasury`, `setAutoDistribute`, `sweepUnclaimed`, `initialize`
-  (factory calls once)
-- **View:** `winningOutcome`, `claimDeadline`, `distributionProgress`, `pendingPayout`,
-  `holderCount`, `getReserves`, `getPrices`, `calcBuy`, `calcSell`, `outcomeName`,
+  `voidMarket`, `setTreasury`, `sweepUnclaimed`, `initialize` (factory calls once)
+- **View:** `winningOutcome`, `claimDeadline`, `pendingPayout`, `depositOf`,
+  `getReserves`, `getPrices`, `calcBuy`, `calcSell`, `outcomeName`,
   `totalSets` (+ ERC-1155 getters)
 - **Private:** `_requireTradable`, `_requireNotEnded`, `_requireClaimWindowOpen`,
-  `_snapshotLp`, `_payoutOf`, `_settleAccount`, `_pushPayouts`, `_update`, `_sendNative`
+  `_withdrawDeposit`, `_payoutOf`, `_settleAccount`, `_sendNative`
+
+**Nothing is ever pushed.** Settlement only fixes who is owed what; every wei leaves the
+market through a participant's own `redeem`.
 
 ---
 
@@ -172,7 +163,8 @@ initialized directly.
 
 **Flow:** validate addresses / outcome count 2..16 / fees / `now < lockTime ≤ resolveTime`
 / value > 0 → init ERC-1155 + `_entered = 1` → copy metadata → push n reserves = seed →
-`totalSets = seed` → `_mint(params.creator, LP_TOKEN_ID, seed)` → emit `LiquidityAdded`.
+`totalSets = seed` → credit the seed to `params.creator` on the deposit ledger →
+`_mint(params.creator, LP_TOKEN_ID, seed)` → emit `LiquidityAdded`.
 
 **State changes:** everything above. **Events:** `LiquidityAdded`.
 **Errors:** see table (`ZeroAmount` when no seed).
@@ -200,7 +192,8 @@ function buy(uint256 outcomeIndex, uint256 minSharesOut, uint256 deadline)
 `invest = amountIn - fee` →
 `sharesOut = MarketMath.calcBuyShares(_reserves, i, invest)` → slippage check →
 effects: every reserve += `invest`; bought reserve -= sharesOut;
-`totalSets += invest`; mint shares → interaction: forward the whole `fee` to the treasury.
+`totalSets += invest`; `invest` added to the buyer's deposit ledger; mint shares →
+interaction: forward the whole `fee` to the treasury.
 
 **Events:** `PredictionPlaced`. **Errors:** listed above.
 **Security:** MEV-protected by `minSharesOut`+`deadline`; reentrancy-guarded; CEI respected
@@ -217,8 +210,9 @@ function sell(uint256 outcomeIndex, uint256 returnAmount, uint256 maxSharesIn, u
 
 Inverse: burn `sharesIn` outcome tokens, receive `returnAmount` collateral net of fee.
 `grossFromNet` rounds the fee up (`FeeMath.grossFromNet`). Effects: burn; every other
-reserve -= gross; bought-outcome reserve += sharesIn − gross; `totalSets -= gross`.
-Interactions: the whole fee to the treasury, then `_sendNative(seller)`.
+reserve -= gross; bought-outcome reserve += sharesIn − gross; `totalSets -= gross`;
+`gross` taken off the seller's deposit ledger, clamped at zero (they may be selling shares
+someone else bought). Interactions: the whole fee to the treasury, then `_sendNative(seller)`.
 Slippage bound is `maxSharesIn` (max tokens you give up).
 
 ---
@@ -236,7 +230,8 @@ Add liquidity while Open and pre-lock.
   reserves and the remainder `sendBack` is minted to the depositor **as outcome-j tokens**
   (this keeps the invariant intact when reserves are skewed).
 
-`totalSets += amount`; slippage bound `minLpSharesOut`; mints LP shares last.
+`totalSets += amount` and `amount` added to the funder's deposit ledger; slippage bound
+`minLpSharesOut`; mints LP shares last.
 No `deadline` parameter — a pending deposit can land after a price move (MEV note).
 
 ---
@@ -249,10 +244,10 @@ function removeFunding(uint256 lpShares) external nonReentrant;
 
 Burn LP shares; receive pro-rata **outcome tokens** (`out_j = r_j · lpShares/lpSupply`,
 minted per outcome), not collateral — complete-set conversion happens via `mergeSets`
-or by holding winners through resolution. **Only while the market is live**
-(`MarketAlreadyEnded` once settled): after settlement an LP's shares are paid in
-collateral by the distribution, so converting them to outcome tokens here would pay the
-same reserves twice.
+or by holding winners through resolution. The deposit ledger is untouched: nothing came
+in or went out. **Only while the market is live** (`MarketAlreadyEnded` once settled):
+after settlement an LP's shares are paid in collateral by `redeem`, so converting them to
+outcome tokens here would pay the same reserves twice.
 **No slippage/deadline parameters** — frontrunning risk documented (design consideration).
 
 ---
@@ -264,7 +259,8 @@ function mergeSets(uint256 amount) external nonReentrant;
 ```
 
 Burn one of *each* outcome token × `amount`, receive exactly `amount` native back
-(1:1, fee-free). Blocked only after terminal status. Emits `RewardClaimed`.
+(1:1, fee-free); `amount` is taken off the caller's deposit ledger, clamped at zero.
+Blocked only after terminal status. Emits `RewardClaimed`.
 
 ---
 
@@ -274,66 +270,30 @@ Burn one of *each* outcome token × `amount`, receive exactly `amount` native ba
 function redeem() external nonReentrant returns (uint256 payout);
 ```
 
-The **pull** path, and the default one: a market pays on request unless an admin has
-switched on the push at settlement (see below). Even then, this is what an account uses when
-the push could not reach it — or whenever it simply prefers to collect its own share.
+The only way collateral leaves a settled market. Nothing is pushed; every participant
+comes and takes their own share, once.
 
-- **A waiting credit** (a push tried and the transfer failed) is paid first and in full.
 - **Resolved:** burns the caller's entire winning-token balance and pays 1:1, plus their
-  pro-rata slice of the LP pot (`lpBalance · _lpPoolAtEnd / _lpSupplyAtEnd`), burning
-  their LP shares too.
-- **Voided:** burns balances across all outcomes and pays `floor(Σ balances / n)` — treats
-  holdings as fractional complete sets — plus the same LP slice.
+  pro-rata slice of the LP pot (`lpBalance · _sharePot / _shareBasis`), burning their LP
+  shares too. The split is exact — at resolution
+  `reserves[win] + totalSupply(win) == totalSets`, so paying every winning share 1:1 and
+  handing `reserves[win]` to the LPs pro-rata distributes the collateral to the last wei.
+- **Voided:** shares and LP stakes stop counting entirely. The caller is paid their own
+  deposit back — `_deposited · _sharePot / _shareBasis` — and their ledger entry is
+  cleared. The scaling is what keeps it solvent: `_totalDeposited` can only run *ahead* of
+  the pot (a trader who sold at a profit took the difference with them), so the factor is
+  ≤ 1 and is exactly 1 whenever nobody left with more than they brought. Refunds are net
+  of trade fees already paid — those are the treasury's and cannot be recalled.
 
-Rounding dust favours the pool; payout clamped to `totalSets`. The burn is what makes
-settlement one-shot: a second call finds a zero balance and reverts `NothingToClaim`.
-Also reverts `MarketNotResolved` while live, and `ClaimWindowClosed` once the market has
-been settled for a year (see `sweepUnclaimed`).
+Rounding dust favours the pool; payout clamped to `totalSets`. Clearing the claim's basis
+(the burn, or the ledger entry) is what makes redemption one-shot: a second call finds
+nothing and reverts `NothingToClaim`. Also reverts `MarketNotResolved` while live, and
+`ClaimWindowClosed` once the market has been settled for a year (see `sweepUnclaimed`).
 
----
-
-### distribute
-
-```solidity
-function distribute(uint256 limit) external nonReentrant returns (uint256 paid);
-```
-
-The **push** path: holders are paid without doing anything at all.
-
-`distribute` is **permissionless** — a keeper, a frontend, or an impatient participant may
-all call it, and on a market left at its defaults it is the only thing that pays anyone
-without them asking.
-
-Switch `autoDistribute` on and `resolve`/`voidMarket` also call it internally for
-`AUTO_DISTRIBUTE_BATCH` accounts in the settling transaction, so a market with few
-participants is emptied the moment an admin settles it; `distribute` then carries any
-remainder.
-
-Each account is settled exactly as `redeem` would settle it (`_settleAccount`: burn, book
-against `totalSets`), then paid with `PUSH_GAS` forwarded. A transfer that fails does not
-revert the batch: the amount becomes a `_credited` balance, `PayoutDeferred` is logged,
-and the walk continues. One hostile recipient therefore cannot stall the queue behind it.
-
-The split is exact. At resolution `reserves[win] + totalSupply(win) == totalSets`, so
-paying every winning share 1:1 and handing `reserves[win]` to the LPs pro-rata distributes
-the collateral to the last wei.
-
-**Who ends up on the list:** `_update` records every account that receives a token, so
-`_holders` is always a superset of the current holders. An account that receives winning
-tokens *after* the cursor has passed its index simply uses `redeem`.
-
----
-
-### setAutoDistribute
-
-```solidity
-function setAutoDistribute(bool enabled) external onlyController;
-```
-
-Turns the push at settlement on or off for this market. **Markets start with it off**, so
-this is the opt-in. It is a convenience switch, not an access gate: with it off, `distribute`
-is still open to anyone and `redeem` still lets a holder collect their own share — settlement
-just does not start paying by itself. Emits `AutoDistributeSet`.
+> **Who a void pays.** The ledger follows the money, not the tokens. Buying shares from
+> another holder over ERC-1155 buys their *position*, not their refund claim — the refund
+> stays with whoever paid the market. Markets that expect a secondary market in shares
+> should be resolved, not voided.
 
 ---
 
@@ -366,9 +326,8 @@ the same instant for everyone whether or not an admin has already collected.
 pause()/unpause()        // reversible halt (Open↔Paused); MarketNotOpen otherwise
 close()                  // permanent stop betting/trading, await resolution
 resolve(uint256 w)       // declare winner; any time, even BEFORE lockTime (documented trust assumption)
-voidMarket()             // refund mode; every outcome pays equal share
+voidMarket()             // unwind: everyone redeems their own deposit back
 setTreasury(address)     // re-point fee sink; zero-checked
-setAutoDistribute(bool)  // push payouts at settlement, or leave them to be asked for
 sweepUnclaimed()         // residue → treasury, only after endedAt + CLAIM_WINDOW
 ```
 
@@ -384,10 +343,9 @@ All guarded by `onlyController` (the factory relays admin actions) and
 winningOutcome()                     // reverts MarketNotResolved unless Resolved
 claimDeadline()                      // endedAt + CLAIM_WINDOW, or 0 while live
 endedAt()                            // settlement timestamp, or 0 while live
-distributionProgress() -> (cur,tot)  // how far the push has walked its holder list
-pendingPayout(account)               // waiting credit, else this account's share
-holderCount()                        // length of the distribution list
-autoDistribute(), categoryId()       // push-at-settlement flag; factory category id
+pendingPayout(account)               // this account's share, 0 while live or once paid
+depositOf(account)                   // net collateral put in; what a void refunds
+categoryId()                         // factory category id
 getReserves() -> uint256[]           // virtual reserves per outcome
 getPrices()    -> uint256[]          // marginal prices, WAD, sum ≈ 1e18 (MarketMath.prices)
 calcBuy(i, amountIn)  -> sharesOut   // static quote (net of fee)
@@ -415,11 +373,10 @@ Buyer ──buy{value}──▶ market
          ├─ fee ──▶ Treasury.depositFee (all of it)
          └─ invest ──▶ reserves ⇄ shares minted to buyer
 Seller ──sell(shares)──◀ native (net of fee) ; sets burned
-Settlement ──┬─ winners  ── 1:1 on their winning shares
-             └─ LPs      ── reserves[win] pro-rata
-     (autoDistribute on) ──▶ first batch pushed to their wallets in the settling tx
-Anyone ──distribute(limit)──▶ walks the same list, on or off
-Undeliverable ──▶ credited ──▶ Winner ──redeem──▶ native   (until claimDeadline())
+resolve   ──┬─ winners  ── 1:1 on their winning shares
+            └─ LPs      ── reserves[win] pro-rata
+voidMarket ─── everyone  ── their own deposit back, scaled to the pot
+Participant ──redeem──▶ native   (their own share only, once, until claimDeadline())
 ADMIN ──sweepUnclaimed after claimDeadline()──▶ whole remaining balance ──▶ Treasury
 ```
 
@@ -436,7 +393,8 @@ ADMIN ──sweepUnclaimed after claimDeadline()──▶ whole remaining balanc
 | --- | --- |
 | Reentrancy | **No issue detected** — storage lock + CEI on every money path |
 | Solvency | **Invariant enforced** — see overview; tests assert it incl. fuzz/invariant suites |
-| Rounding | Buys floor shares (pool-favoured); sells ceil required input; voided redeem floors — pool never drained by rounding |
+| Rounding | Buys floor shares (pool-favoured); sells ceil required input; voided refunds floor — pool never drained by rounding |
+| Void solvency | **Bounded** — refunds are `deposit · totalSets / _totalDeposited` with `_totalDeposited ≥ totalSets`, so the payouts sum to at most the pot; no first-come-first-served drain |
 | Early resolution | **Design consideration / trust assumption** — CPMM `resolve` may fire before `lockTime`; integrity rests on ADMIN_ROLE honesty (pool engine fixes this; this engine does not) |
 | MEV | Slippage+deadline on buy/sell; `addFunding` lacks deadline; `removeFunding` has neither — documented gap |
 | DoS | Loops bounded by MAX_OUTCOMES=16; `_sendNative` failures affect only caller's own payout |
@@ -455,8 +413,10 @@ Chain: Nurachain (1020). Individual market addresses: Not found in repository.
 ## Integration Guide
 
 Quote with `calcBuy`/`calcSell` before trading; pass realistic `min*` and `deadline`.
-After resolution read `winningOutcome()` then `redeem()` if holding winners.
-Listen per market: `PredictionPlaced/Sold`, `MarketResolved`, `RewardClaimed`.
+After settlement call `redeem()` — it is the only payout path, and `pendingPayout(account)`
+says what it will pay. After a void that figure comes off `depositOf(account)`, not off
+share balances.
+Listen per market: `PredictionPlaced/Sold`, `MarketResolved`, `MarketVoided`, `RewardClaimed`.
 Common failures: `TradingLocked` after lockTime, `SlippageExceeded` under vol,
 `InsufficientLiquidity` selling large size into skewed pools.
 
@@ -474,8 +434,6 @@ Common failures: `TradingLocked` after lockTime, `SlippageExceeded` under vol,
 | `pause/unpause/close/voidMarket` | external | nonpayable | Controller | Lifecycle |
 | `resolve(w)` | external | nonpayable | Controller | Declare winner |
 | `setTreasury(t)` | external | nonpayable | Controller | Fee sink |
-| `setAutoDistribute(bool)` | external | nonpayable | Controller | Push at settlement on/off |
-| `distribute(limit)` | external | nonpayable | **Anyone** | Pay up to `limit` more holders |
 | `sweepUnclaimed()` | external | nonpayable | Controller | Residue → treasury, post-claim-window |
-| `winningOutcome/claimDeadline/endedAt/distributionProgress/pendingPayout/holderCount/autoDistribute/categoryId/getReserves/getPrices/calcBuy/calcSell/outcomeName` | external | view | Anyone | Reads |
+| `winningOutcome/claimDeadline/endedAt/pendingPayout/depositOf/categoryId/getReserves/getPrices/calcBuy/calcSell/outcomeName` | external | view | Anyone | Reads |
 

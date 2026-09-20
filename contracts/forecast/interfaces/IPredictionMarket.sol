@@ -38,7 +38,8 @@ interface IPredictionMarket {
      */
     function resolve(uint256 winningOutcome_) external;
 
-    /// @notice Voids the market; every outcome redeems for an equal 1/n refund share.
+    /// @notice Voids the market; shares stop counting and every account redeems its own
+    ///         deposit back instead.
     function voidMarket() external;
 
     /**
@@ -46,16 +47,6 @@ interface IPredictionMarket {
      * @param treasury New treasury address.
      */
     function setTreasury(address treasury) external;
-
-    /**
-     * @notice Turns the push at settlement on or off for this market. It starts off.
-     * @dev Payouts are never gated by it: {distribute} stays open to anyone and participants
-     *      can always collect their own share. Off simply means settlement does not start
-     *      paying by itself.
-     * @param enabled Whether settlement should push the first batch of payouts.
-     */
-    function setAutoDistribute(bool enabled) external;
-
 
     /**
      * @notice Sweeps the collateral still sitting in a settled market to the treasury, once
@@ -111,26 +102,13 @@ interface IPredictionMarket {
     function mergeSets(uint256 amount) external;
 
     /**
-     * @notice Claims collateral for the caller: winning shares (Resolved) or an equal refund
-     *         share of every held outcome (Voided), plus their pro-rata slice of the LP pot.
-     *         When the market pushes payouts at settlement this is the fallback for anyone
-     *         it could not reach — including collecting a credit a failed delivery left — and
-     *         when it does not, this is how a holder is paid at all.
+     * @notice Claims collateral for the caller: winning shares 1:1 plus their pro-rata slice
+     *         of the losing reserves (Resolved), or their own deposit back (Voided). One-shot
+     *         per account, and the only way collateral leaves a settled market — nothing is
+     *         ever pushed out.
      * @return payout Collateral paid to the caller.
      */
     function redeem() external returns (uint256 payout);
-
-    /**
-     * @notice Pays out up to `limit` more settled accounts, straight to their wallets. Callable
-     *        by anyone: settlement already pushes the first batch on its own, and this carries
-     *        the rest for markets too large to finish in one transaction.
-     * @dev A payout that cannot be delivered is credited to the account instead of reverting,
-     *      so a hostile recipient cannot stall the queue behind it.
-     * @param limit Maximum accounts to pay in this call.
-     * @return paid Collateral actually delivered in this batch.
-     */
-    function distribute(uint256 limit) external returns (uint256 paid);
-
 
     // --- views ---
 
@@ -147,14 +125,13 @@ interface IPredictionMarket {
     ///         live. Past it the leftover collateral is the treasury's to sweep.
     function claimDeadline() external view returns (uint64);
 
-    /// @notice How far automatic distribution has walked its recipient list.
-    /// @return cursor Accounts already settled.
-    /// @return total Accounts in the list.
-    function distributionProgress() external view returns (uint256 cursor, uint256 total);
-
-    /// @notice What `account` would receive right now: an undelivered credit if one is
-    ///         waiting, otherwise their share of the settlement (0 while the market is live).
+    /// @notice What `account` would receive if they redeemed right now: their share of the
+    ///         settlement, or 0 while the market is live or once they have been paid.
     function pendingPayout(address account) external view returns (uint256);
+
+    /// @notice Net collateral `account` has put into the market — what a void pays them back,
+    ///         scaled to whatever the pot still holds. Fees already paid are not part of it.
+    function depositOf(address account) external view returns (uint256);
 
 
     /// @notice Current per-outcome reserves.

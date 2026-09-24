@@ -10,7 +10,7 @@ Documentación de todos los contratos del repositorio, generada del código fuen
 | Contrato | Archivo | Tipo |
 | --- | --- | --- |
 | `BridgeToken` | contracts/token/BridgeToken.sol | base abstracta ERC20 |
-| `BridgeUSDT` / `BridgeBNB` | token/*.sol | tokens puente (18 decimales) |
+| `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | tokens puente (18 decimales) |
 | `Airdrop` | airdrop/Airdrop.sol | reparto de moneda nativa firmado con EIP-712 |
 | `CollateralizedNFT` | vault/CollateralizedNFT.sol | bóveda ERC721 respaldada por un ERC20 |
 | `PredictionFactory` | forecast/PredictionFactory.sol | fábrica de clones + registro |

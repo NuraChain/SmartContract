@@ -26,6 +26,8 @@ vendored code are covered by dedicated files as noted below.
 | [BridgeToken.md](BridgeToken.md) | `BridgeToken` | `contracts/token/BridgeToken.sol` | abstract ERC20 base |
 | [BridgeUSDT.md](BridgeUSDT.md) | `BridgeUSDT` | `contracts/token/BridgeUSDT.sol` | ERC20 token |
 | [BridgeBNB.md](BridgeBNB.md) | `BridgeBNB` | `contracts/token/BridgeBNB.sol` | ERC20 token |
+| [BridgeETH.md](BridgeETH.md) | `BridgeETH` | `contracts/token/BridgeETH.sol` | ERC20 token |
+| [BridgeBTC.md](BridgeBTC.md) | `BridgeBTC` | `contracts/token/BridgeBTC.sol` | ERC20 token |
 | [Airdrop.md](Airdrop.md) | `Airdrop` | `contracts/airdrop/Airdrop.sol` | native-coin airdrop |
 | [CollateralizedNFT.md](CollateralizedNFT.md) | `CollateralizedNFT` | `contracts/vault/CollateralizedNFT.sol` | ERC721 vault |
 | [PredictionFactory.md](PredictionFactory.md) | `PredictionFactory` | `contracts/forecast/PredictionFactory.sol` | clone factory + registry |

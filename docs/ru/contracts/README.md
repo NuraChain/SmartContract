@@ -10,7 +10,7 @@
 | Контракт | Файл | Тип |
 | --- | --- | --- |
 | `BridgeToken` | contracts/token/BridgeToken.sol | абстрактная база ERC20 |
-| `BridgeUSDT` / `BridgeBNB` | token/*.sol | мостовые токены (18 знаков) |
+| `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | мостовые токены (18 знаков) |
 | `Airdrop` | airdrop/Airdrop.sol | раздача нативной монеты с подписью EIP-712 |
 | `CollateralizedNFT` | vault/CollateralizedNFT.sol | хранилище ERC721 под обеспечением ERC20 |
 | `PredictionFactory` | forecast/PredictionFactory.sol | фабрика клонов + реестр |

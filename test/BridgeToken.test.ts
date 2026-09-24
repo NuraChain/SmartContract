@@ -729,17 +729,19 @@ describe("BridgeUSDT", () => {
   });
 });
 
-describe("BridgeBNB", () => {
-  it("exposes the expected metadata and mints", async () => {
-    const [admin, alice] = await ethers.getSigners();
-    const token = await ethers.deployContract("BridgeBNB", [admin.address], admin);
-    const amount = ethers.parseUnits("2.5", 18);
+for (const symbol of ["BNB", "ETH", "BTC"] as const) {
+  describe(`Bridge${symbol}`, () => {
+    it("exposes the expected metadata and mints", async () => {
+      const [admin, alice] = await ethers.getSigners();
+      const token = await ethers.deployContract(`Bridge${symbol}`, [admin.address], admin);
+      const amount = ethers.parseUnits("2.5", 18);
 
-    expect(await token.name()).to.equal("Bridge BNB");
-    expect(await token.symbol()).to.equal("BNB");
-    expect(await token.decimals()).to.equal(18n);
+      expect(await token.name()).to.equal(`Bridge ${symbol}`);
+      expect(await token.symbol()).to.equal(symbol);
+      expect(await token.decimals()).to.equal(18n);
 
-    await token.mint(alice.address, amount);
-    expect(await token.balanceOf(alice.address)).to.equal(amount);
+      await token.mint(alice.address, amount);
+      expect(await token.balanceOf(alice.address)).to.equal(amount);
+    });
   });
-});
+}

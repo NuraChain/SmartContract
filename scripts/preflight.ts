@@ -25,6 +25,8 @@ function probes(deployer: string) {
     token: [
       { name: "BridgeUSDT", args: [deployer] },
       { name: "BridgeBNB", args: [deployer] },
+      { name: "BridgeETH", args: [deployer] },
+      { name: "BridgeBTC", args: [deployer] },
     ],
     airdrop: [
       { name: "Airdrop", args: [deployer, deployer, 50_000n, 200n * 10n ** 18n] },

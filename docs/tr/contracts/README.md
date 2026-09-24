@@ -10,7 +10,7 @@ Depodaki tüm sözleşmelerin belgeleri, `contracts/` altındaki gerçek kaynakt
 | Sözleşme | Dosya | Tür |
 | --- | --- | --- |
 | `BridgeToken` | contracts/token/BridgeToken.so­l | soyut ERC20 tabanı |
-| `BridgeUSDT` / `BridgeBNB` | token/*.sol | köprü tokenları (18 ondalık) |
+| `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | köprü tokenları (18 ondalık) |
 | `Airdrop` | airdrop/Airdrop.sol | EIP-712 imzalı yerel coin dağıtımı |
 | `CollateralizedNFT` | vault/CollateralizedNFT.sol | tek bir ERC20 ile desteklenen ERC721 kasa |
 | `PredictionFactory` | forecast/PredictionFactory.sol | klon fabrikası + kayıt defteri |

@@ -25,7 +25,8 @@
 - `adminBurn()` موجودی **هر** دارنده را بدون نیاز به allowance نابود می‌کند.
 - `pause()` همهٔ انتقال‌ها، ضرب‌ها و سوزاندن‌ها را متوقف می‌کند.
 
-دیپلوی‌های واقعی: [`BridgeUSDT`](BridgeUSDT.md) و [`BridgeBNB`](BridgeBNB.md).
+دیپلوی‌های واقعی: [`BridgeUSDT`](BridgeUSDT.md)، [`BridgeBNB`](BridgeBNB.md)،
+[`BridgeETH`](BridgeETH.md) و [`BridgeBTC`](BridgeBTC.md).
 
 ## وراثت
 
@@ -82,7 +83,7 @@ State ارثی مهم: `AccessControl._roles` (نقش ← دادهٔ نقش شا
 | `MINTER_ROLE` | `bytes32` | `keccak256("MINTER_ROLE")` | گیت ایجاد عرضه؛ لو رفتن کلید minter یعنی ضرب بدون پشتوانه. |
 | `BURNER_ROLE` | `bytes32` | `keccak256("BURNER_ROLE")` | گیت سوزاندن بدون قید و شرط از هر حسابی. |
 | `PAUSER_ROLE` | `bytes32` | `keccak256("PAUSER_ROLE")` | گیت توقف سراسری انتقال‌ها. |
-| `_tokenDecimals` | `uint8` | آرگومان constructor | اعشار ثابت (۱۸ برای هر دو توکن). |
+| `_tokenDecimals` | `uint8` | آرگومان constructor | اعشار ثابت (۱۸ برای همهٔ توکن‌ها). |
 
 ## Modifierها
 
@@ -289,7 +290,8 @@ BURNER_ROLE ‏adminBurn()‎ می‌زند → رله دارایی را در ز
 
 ## اطلاعات دیپلوی
 
-ببینید [BridgeUSDT](BridgeUSDT.md) / [BridgeBNB](BridgeBNB.md). دیپلوی با
+ببینید [BridgeUSDT](BridgeUSDT.md) / [BridgeBNB](BridgeBNB.md) / [BridgeETH](BridgeETH.md) /
+[BridgeBTC](BridgeBTC.md). دیپلوی با
 `ignition/modules/token.ts` (`npm run deploy:nurachain:token`). شبکه: Nurachain (1020).
 
 ## راهنمای یکپارچه‌سازی

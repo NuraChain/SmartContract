@@ -13,6 +13,8 @@
 | [BridgeToken.md](BridgeToken.md) | ‏`BridgeToken` | ‏token/BridgeToken.sol | پایهٔ abstract ERC20 |
 | [BridgeUSDT.md](BridgeUSDT.md) | ‏`BridgeUSDT` | token/BridgeUSDT.sol | توکن ERC20 |
 | [BridgeBNB.md](BridgeBNB.md) | ‏`BridgeBNB` | token/BridgeBNB.sol | توکن ERC20 |
+| [BridgeETH.md](BridgeETH.md) | ‏`BridgeETH` | token/BridgeETH.sol | توکن ERC20 |
+| [BridgeBTC.md](BridgeBTC.md) | ‏`BridgeBTC` | token/BridgeBTC.sol | توکن ERC20 |
 | [Airdrop.md](Airdrop.md) | ‏`Airdrop` | airdrop/Airdrop.sol | ایردراپ کوین بومی |
 | [CollateralizedNFT.md](CollateralizedNFT.md) | ‏`CollateralizedNFT` | vault/CollateralizedNFT.sol | خزانهٔ ERC721 |
 | [PredictionFactory.md](PredictionFactory.md) | ‏`PredictionFactory` | forecast/PredictionFactory.sol | کارخانهٔ کلون + رجیستری |

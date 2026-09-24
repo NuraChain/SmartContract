@@ -11,7 +11,7 @@
 | العقد | الملف | النوع |
 | --- | --- | --- |
 | `BridgeToken` | ‏contracts/token/BridgeToken.sol | أساس ERC20 مجرّد (abstract) |
-| `BridgeUSDT` / `BridgeBNB` | token/*.sol | رموز ممثلة للجسر (18 رقمًا عشريًا) |
+| `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | رموز ممثلة للجسر (18 رقمًا عشريًا) |
 | `Airdrop` | airdrop/Airdrop.sol | توزيع عملة أصلية موقّع بـ EIP-712 |
 | `CollateralizedNFT` | vault/CollateralizedNFT.sol | خزنة NFT مدعومة بـ ERC20 |
 | `PredictionFactory` | forecast/PredictionFactory.sol | مصنع استنساخ + سجل |

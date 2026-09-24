@@ -10,7 +10,7 @@ Documentation de tous les contrats du dépôt, générée à partir du code sour
 | Contrat | Fichier | Type |
 | --- | --- | --- |
 | `BridgeToken` | contracts/token/BridgeToken.sol | base ERC20 abstraite |
-| `BridgeUSDT` / `BridgeBNB` | token/*.sol | jetons de pont (18 décimales) |
+| `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | jetons de pont (18 décimales) |
 | `Airdrop` | airdrop/Airdrop.sol | distribution de pièce native signée EIP-712 |
 | `CollateralizedNFT` | vault/CollateralizedNFT.sol | coffre ERC721 adossé à un ERC20 |
 | `PredictionFactory` | forecast/PredictionFactory.sol | fabrique de clones + registre |

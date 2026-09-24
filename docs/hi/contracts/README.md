@@ -10,7 +10,7 @@
 | कॉन्ट्रैक्ट | फ़ाइल | प्रकार |
 | --- | --- | --- |
 | `BridgeToken` | contracts/token/BridgeToken.sol | एब्स्ट्रैक्ट ERC20 आधार |
-| `BridgeUSDT` / `BridgeBNB` | token/*.sol | ब्रिज टोकन (18 दशमलव) |
+| `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | ब्रिज टोकन (18 दशमलव) |
 | `Airdrop` | airdrop/Airdrop.sol | EIP-712 हस्ताक्षरित नेटिव-कॉइन वितरण |
 | `CollateralizedNFT` | vault/CollateralizedNFT.sol | ERC20-समर्थित ERC721 वॉल्ट |
 | `PredictionFactory` | forecast/PredictionFactory.sol | क्लोन फ़ैक्ट्री + रजिस्ट्री |

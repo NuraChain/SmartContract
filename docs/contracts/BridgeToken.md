@@ -23,7 +23,8 @@ Two deliberate operator powers exist and are documented as such:
 - `adminBurn()` destroys **any** holder's balance without an allowance.
 - `pause()` freezes all transfers, mints and burns.
 
-Concrete deployments: [`BridgeUSDT`](BridgeUSDT.md) and [`BridgeBNB`](BridgeBNB.md).
+Concrete deployments: [`BridgeUSDT`](BridgeUSDT.md), [`BridgeBNB`](BridgeBNB.md),
+[`BridgeETH`](BridgeETH.md) and [`BridgeBTC`](BridgeBTC.md).
 
 ## Inheritance
 
@@ -80,7 +81,7 @@ None.
 | `MINTER_ROLE` | `bytes32` | `keccak256("MINTER_ROLE")` | Gates supply creation. A leaked minter key can mint unbacked supply. |
 | `BURNER_ROLE` | `bytes32` | `keccak256("BURNER_ROLE")` | Gates unconditional burning of any account. |
 | `PAUSER_ROLE` | `bytes32` | `keccak256("PAUSER_ROLE")` | Gates the global transfer freeze. |
-| `_tokenDecimals` | `uint8` | constructor arg | Immutable decimals (18 for both concrete tokens). |
+| `_tokenDecimals` | `uint8` | constructor arg | Immutable decimals (18 for every concrete token). |
 
 ## Modifiers
 
@@ -320,7 +321,8 @@ None. Abstract base; concrete tokens are plain constructors, immutable after dep
 
 ## Deployment Information
 
-See [BridgeUSDT](BridgeUSDT.md) / [BridgeBNB](BridgeBNB.md). Deployed via
+See [BridgeUSDT](BridgeUSDT.md) / [BridgeBNB](BridgeBNB.md) / [BridgeETH](BridgeETH.md) /
+[BridgeBTC](BridgeBTC.md). Deployed via
 `ignition/modules/token.ts` (`npm run deploy:nurachain:token`). Chain: Nurachain (1020).
 
 ## Integration Guide

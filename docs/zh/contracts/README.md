@@ -10,7 +10,7 @@
 | 合约 | 文件 | 类型 |
 | --- | --- | --- |
 | `BridgeToken` | contracts/token/BridgeToken.sol | 抽象 ERC20 基类 |
-| `BridgeUSDT` / `BridgeBNB` | token/*.sol | 跨链桥代币（18 位小数） |
+| `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | 跨链桥代币（18 位小数） |
 | `Airdrop` | airdrop/Airdrop.sol | EIP-712 签名的原生币空投 |
 | `CollateralizedNFT` | vault/CollateralizedNFT.sol | 由单一 ERC20 支撑的 ERC721 金库 |
 | `PredictionFactory` | forecast/PredictionFactory.sol | 克隆工厂 + 注册表 |

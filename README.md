@@ -1,14 +1,16 @@
-# Bridge Tokens — BridgeUSDT & BridgeBNB
+# Bridge Tokens — BridgeUSDT, BridgeBNB, BridgeETH & BridgeBTC
 
-Two bridged (wrapped) ERC20 tokens built on OpenZeppelin Contracts 5.x, where the
+Four bridged (wrapped) ERC20 tokens built on OpenZeppelin Contracts 5.x, where the
 deployer is the admin and can mint and burn.
 
 | Contract     | Name        | Symbol | Decimals |
 | ------------ | ----------- | ------ | -------- |
 | `BridgeUSDT` | Bridge USDT | `USDT` | 18       |
 | `BridgeBNB`  | Bridge BNB  | `BNB`  | 18       |
+| `BridgeETH`  | Bridge ETH  | `ETH`  | 18       |
+| `BridgeBTC`  | Bridge BTC  | `BTC`  | 18       |
 
-Both inherit everything from `contracts/token/BridgeToken.sol`; the child contracts
+All four inherit everything from `contracts/token/BridgeToken.sol`; the child contracts
 only fix the name, symbol and decimals.
 
 ## What the tokens do
@@ -780,6 +782,8 @@ router computes moves with it.
   want that added.
 - **`BridgeUSDT` uses 18 decimals** to match USDT on BNB Chain. USDT on Ethereum and
   Tron uses 6 — bridging from either means the relayer must scale amounts by `1e12`.
+- **`BridgeBTC` uses 18 decimals** to match BTCB on BNB Chain. Native Bitcoin and WBTC
+  use 8 — bridging from either means the relayer must scale amounts by `1e10`.
 - **EVM target is `cancun`** for the 0.8.28 contracts. OpenZeppelin 5.6 uses the `mcopy`
   opcode, so those cannot target `paris`. The vendored AMM is a separate matter: it is
   pinned to `istanbul` on purpose and must stay there.
@@ -805,6 +809,8 @@ contracts/token/
   BridgeToken.sol            shared base: roles, mint, burn, pause, permit, rescue
   BridgeUSDT.sol             Bridge USDT / USDT, 18 decimals
   BridgeBNB.sol              Bridge BNB / BNB, 18 decimals
+  BridgeETH.sol              Bridge ETH / ETH, 18 decimals
+  BridgeBTC.sol              Bridge BTC / BTC, 18 decimals
   WNURA.sol                  wrapped native coin (Dapphub WETH9, renamed); already live
                              on Nurachain, deployed here only by tests
 contracts/airdrop/
@@ -853,7 +859,7 @@ scripts/
   profile-gas.ts             gas table for every profile operation
   lib/params.ts              deployment input parsing and formatting, shared and tested
 test/
-  BridgeToken.test.ts        47 tests: roles, mint, burn, pause, permit security, rescue
+  BridgeToken.test.ts        49 tests: roles, mint, burn, pause, permit security, rescue
   Airdrop.test.ts            44 tests: signature binding, replay, reentrancy, caps, admin
   univ3/Build.test.ts        EIP-170 sizes and the pool init code hash
   univ3/Factory.test.ts      18 tests: fee tiers, createPool, ownership

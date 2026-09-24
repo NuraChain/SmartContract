@@ -46,20 +46,19 @@ async function expectDeployToFail(promise: Promise<unknown>, reason: RegExp) {
 
 describe("ignition modules", () => {
   describe("token", () => {
-    it("deploys both bridged tokens with the deployer as admin", async () => {
+    it("deploys every bridged token with the deployer as admin", async () => {
       const [deployer] = await ethers.getSigners();
-      const { bridgeUSDT, bridgeBNB } = await ignition.deploy(tokenModule);
+      const { bridgeUSDT, bridgeBNB, bridgeETH, bridgeBTC } = await ignition.deploy(tokenModule);
+      const tokens = { USDT: bridgeUSDT, BNB: bridgeBNB, ETH: bridgeETH, BTC: bridgeBTC };
 
-      expect(await bridgeUSDT.name()).to.equal("Bridge USDT");
-      expect(await bridgeUSDT.symbol()).to.equal("USDT");
-      expect(await bridgeUSDT.decimals()).to.equal(18n);
-
-      expect(await bridgeBNB.name()).to.equal("Bridge BNB");
-      expect(await bridgeBNB.symbol()).to.equal("BNB");
-      expect(await bridgeBNB.decimals()).to.equal(18n);
+      for (const [symbol, token] of Object.entries(tokens)) {
+        expect(await token.name()).to.equal(`Bridge ${symbol}`);
+        expect(await token.symbol()).to.equal(symbol);
+        expect(await token.decimals()).to.equal(18n);
+      }
 
       // Every role lands on one address, which is what the module's docs promise.
-      for (const token of [bridgeUSDT, bridgeBNB]) {
+      for (const token of Object.values(tokens)) {
         for (const role of [
           await token.DEFAULT_ADMIN_ROLE(),
           await token.MINTER_ROLE(),

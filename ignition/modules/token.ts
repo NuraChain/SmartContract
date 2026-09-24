@@ -14,6 +14,8 @@ export default buildModule("token", (m) => {
 
   const bridgeUSDT = m.contract("BridgeUSDT", [admin]);
   const bridgeBNB = m.contract("BridgeBNB", [admin]);
+  const bridgeETH = m.contract("BridgeETH", [admin]);
+  const bridgeBTC = m.contract("BridgeBTC", [admin]);
 
-  return { bridgeUSDT, bridgeBNB };
+  return { bridgeUSDT, bridgeBNB, bridgeETH, bridgeBTC };
 });

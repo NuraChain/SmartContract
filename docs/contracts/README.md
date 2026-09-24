@@ -80,7 +80,7 @@ the event surface, and differ only in engine:
 | Instruments | ERC-1155 outcome shares + LP shares | plain stake accounting |
 | Seed liquidity | required (payable creation) | none (creation reverts on value) |
 | Early resolution | possible **before** lockTime (trust assumption) | impossible — `LockNotReached` |
-| Fees | feeBps per trade, escrowed until resolve; refunded on void | one house fee off the whole pool at resolve; none on void |
+| Fees | feeBps per trade, escrowed until resolve; refunded on cancel | one house fee off the whole pool at resolve; none on cancel |
 
 ## Dependency Graph
 
@@ -115,7 +115,7 @@ WNURA (standalone Dapphub WETH9 lineage), MockToken ──▶ OZ ERC20 (tests)
 | Bridge tokens | `DEFAULT_ADMIN_ROLE`, `MINTER_ROLE`, `BURNER_ROLE`, `PAUSER_ROLE` | unbacked mint, confiscating burn, global pause, rescue sweep |
 | Airdrop | `DEFAULT_ADMIN_ROLE`, `PAUSER_ROLE`, `SIGNER_ROLE` | drain (`withdraw`), reprice, halt; signer decides eligibility |
 | Vault | `DEFAULT_ADMIN_ROLE`, `MINTER_ROLE`; public-mint switch | future lock size, open free-mint race, withdraw **unreserved** tail only |
-| Forecast factory | `ADMIN_ROLE` (+ DEFAULT admin of roles) | create markets (fees ≤ 10%), resolve/void every market, re-point treasuries |
+| Forecast factory | `ADMIN_ROLE` (+ DEFAULT admin of roles) | create markets (fees ≤ 10%), resolve/cancel every market, re-point treasuries |
 | Markets | trust their `controller` (the factory) | lifecycle only reachable through the factory relay |
 | Treasury | `Ownable2Step` owner | withdraw all fees, change recipient (two-step ownership) |
 
@@ -150,10 +150,10 @@ Airdrop:
 - Categories: register ids with `addCategory(id, langs, meanings)` before creating any
   market; markets carry the id, the display name per language lives in the factory.
 - Create markets: `createMarket{value}` / `createMarket2`; drive lifecycle via
-  `pauseMarket/unpauseMarket/closeMarket/voidMarket`; resolution itself is an N-of-M multisig (`confirmResolution` by `resolutionSigners` until `requiredConfirmations` agree).
+  `pauseMarket/unpauseMarket/closeMarket/cancelMarket`; resolution itself is an N-of-M multisig (`confirmResolution` by `resolutionSigners` until `requiredConfirmations` agree).
 - Payouts: participants always collect their own share, and nothing else moves the money.
   Settling a market only fixes who is owed what; each account then calls `redeem`
-  (CPMM) or `claim` (pool) on the market clone. Voiding a market refunds everyone what
+  (CPMM) or `claim` (pool) on the market clone. Cancelling a market refunds everyone what
   they put in rather than settling it.
 - Fee policy: factory `setDefaultFees(feeBps)` (default for `feeBps=0` requests; the whole
   fee goes to the treasury),

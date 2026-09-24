@@ -72,8 +72,8 @@ interface IPredictionFactory {
     /// @notice The outcome `signer` voted for on `marketId`, or type(uint256).max when none.
     function confirmationOf(uint256 marketId, address signer) external view returns (uint256);
 
-    /// @notice Voids a market so everyone takes back what they put in (admin only).
-    function voidMarket(uint256 marketId) external;
+    /// @notice Cancels a market so everyone takes back what they put in (admin only).
+    function cancelMarket(uint256 marketId) external;
 
     /**
      * @notice Sweeps whatever collateral a settled market still holds into the treasury,

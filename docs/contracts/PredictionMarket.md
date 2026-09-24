@@ -54,22 +54,22 @@ PredictionMarket
 | `CLAIM_WINDOW` | `uint64` | public | constant | `365 days`; how long after settlement winners may still `redeem`. |
 | `controller` | `address` | public | mutable | The factory; sole caller of lifecycle actions. |
 | `treasury` | `address` | public | mutable | Receives protocol fees. |
-| `status` | `MarketStatus` | public | mutable | Lifecycle state (Open/Paused/Closed/Resolved/Voided). |
+| `status` | `MarketStatus` | public | mutable | Lifecycle state (Open/Paused/Closed/Resolved/Cancelled). |
 | `title/description/imageURI` | `string` | public | immutable-in-practice | Metadata written once in `initialize`. |
 | `categoryId` | `uint32` | public | set-once | Category this market is filed under, in the [factory's registry](PredictionFactory.md#category-registry). The market stores no category name of its own. |
 | `creator` | `address` | public | set-once | Account credited as creator/first LP. |
 | `createdAt/lockTime/resolveTime` | `uint64` | public | set-once | Timestamps; trading requires `block.timestamp < lockTime`. |
 | `feeBps` | `uint16` | public | set-once | Total trade fee (bps). |
-| `endedAt` | `uint64` | public | set at resolve/void | Settlement timestamp; `0` while live. Anchors the claim window. |
+| `endedAt` | `uint64` | public | set at resolve/cancel | Settlement timestamp; `0` while live. Anchors the claim window. |
 | `outcomeCount` | `uint256` | public | set-once | Number of outcomes n. |
 | `_outcomeNames` | `string[]` | private | set-once | Display names per index. |
 | `_reserves` | `uint256[]` | private | mutable | Virtual FPMM reserve per outcome (wei). |
 | `totalSets` | `uint256` | public | mutable | Collateral backing outstanding complete sets; contract native balance minus `heldFees`. |
-| `heldFees` | `uint256` | public | mutable | Trade fees charged so far, held in escrow. Sent to the treasury on `resolve`; folded back into the refund pot on `voidMarket`. |
+| `heldFees` | `uint256` | public | mutable | Trade fees charged so far, held in escrow. Sent to the treasury on `resolve`; folded back into the refund pot on `cancelMarket`. |
 | `_winningOutcome` | `uint256` | private | set at resolve | Meaningful only when Resolved. |
-| `_deposited` | `mapping(address => uint256)` | private | mutable | Net collateral each account has put in: up by what it paid on the seed, a buy (fee included) and `addFunding`, down by what it received on a sell or a merge. What a void pays back. Read via `depositOf`. |
+| `_deposited` | `mapping(address => uint256)` | private | mutable | Net collateral each account has put in: up by what it paid on the seed, a buy (fee included) and `addFunding`, down by what it received on a sell or a merge. What a cancellation pays back. Read via `depositOf`. |
 | `_totalDeposited` | `uint256` | private | mutable | Sum of `_deposited`. Shares are transferable and the ledger cannot follow them, so a withdrawal clamps at the seller's own deposit rather than underflowing — making this an **upper bound** on `totalSets + heldFees`, not an equality. |
-| `_shareBasis` / `_sharePot` | `uint256` | private | set at settlement | Denominator and numerator of the pro-rata share settlement pays. Resolved: LP supply over `reserves[win]`. Voided: `_totalDeposited` over `totalSets`. Snapshotted because redeeming moves both live figures. |
+| `_shareBasis` / `_sharePot` | `uint256` | private | set at settlement | Denominator and numerator of the pro-rata share settlement pays. Resolved: LP supply over `reserves[win]`. Cancelled: `_totalDeposited` over `totalSets`. Snapshotted because redeeming moves both live figures. |
 | `_entered` | `uint256` | private | mutable | Reentrancy lock: 1 = free, 2 = entered (storage-based; Paris target has no transient storage); set to 1 in `initialize`. |
 
 ERC-1155 balances: outcome shares per user, plus LP shares under `LP_TOKEN_ID`
@@ -89,7 +89,7 @@ compromised factory tries to initialize a market with a huge fee.
 
 | Modifier | Condition | Prevents | Used by |
 | --- | --- | --- | --- |
-| `onlyController` | `msg.sender == controller` | anyone but the factory driving lifecycle | `pause`, `unpause`, `close`, `resolve`, `voidMarket`, `setTreasury` |
+| `onlyController` | `msg.sender == controller` | anyone but the factory driving lifecycle | `pause`, `unpause`, `close`, `resolve`, `cancelMarket`, `setTreasury` |
 | `nonReentrant` | `_entered != 2` | reentrancy into value paths | `buy`, `sell`, `addFunding`, `removeFunding`, `mergeSets`, `redeem` |
 
 ## Events
@@ -103,7 +103,7 @@ Shared declarations live in `PredictionEvents.sol`:
 | `PredictionPlaced` | `market, buyer, outcome, amountIn, sharesOut` | first three | `buy` |
 | `PredictionSold` | `market, seller, outcome, sharesIn, amountOut` | first three | `sell` |
 | `RewardClaimed` | `market, claimant, amount` | market, claimant | `redeem` and `mergeSets` |
-| `MarketPaused/MarketUnpaused/MarketClosed/MarketVoided` | `market` | market | lifecycle relays |
+| `MarketPaused/MarketUnpaused/MarketClosed/MarketCancelled` | `market` | market | lifecycle relays |
 | `MarketResolved` | `market, winningOutcome` | both | `resolve` |
 | `UnclaimedSwept` | `market, treasury, amount` | market, treasury | `sweepUnclaimed`; logged apart from `FeeCollected` so residue never reads as trading revenue |
 
@@ -120,7 +120,7 @@ Shared declarations live in `PredictionEvents.sol`:
 | `MarketNotOpen()` | status ≠ Open where required | trading, addFunding, pause/unpause |
 | `TradingLocked()` | `block.timestamp >= lockTime` | trading, addFunding |
 | `MarketNotResolved()` | redeem/claim before terminal | `redeem` |
-| `MarketAlreadyEnded()` | lifecycle action after terminal | close/resolve/void/mergeSets |
+| `MarketAlreadyEnded()` | lifecycle action after terminal | close/resolve/cancel/mergeSets |
 | `DeadlineExpired()` | `block.timestamp > deadline` | `buy`, `sell` |
 | `SlippageExceeded()` | output worse than bound | `buy`, `sell`, `addFunding` |
 | `InsufficientLiquidity()` *(via MarketMath)* | other reserve cannot cover sell withdrawal | `sell` |
@@ -135,7 +135,7 @@ Shared declarations live in `PredictionEvents.sol`:
 
 - **User / Financial:** `buy`, `sell`, `addFunding`, `removeFunding`, `mergeSets`, `redeem`
 - **Administrative (factory-only):** `pause`, `unpause`, `close`, `resolve`,
-  `voidMarket`, `setTreasury`, `sweepUnclaimed`, `initialize` (factory calls once)
+  `cancelMarket`, `setTreasury`, `sweepUnclaimed`, `initialize` (factory calls once)
 - **View:** `winningOutcome`, `claimDeadline`, `pendingPayout`, `depositOf`,
   `getReserves`, `getPrices`, `calcBuy`, `calcSell`, `outcomeName`,
   `totalSets` (+ ERC-1155 getters)
@@ -280,12 +280,12 @@ comes and takes their own share, once.
   shares too. The split is exact — at resolution
   `reserves[win] + totalSupply(win) == totalSets`, so paying every winning share 1:1 and
   handing `reserves[win]` to the LPs pro-rata distributes the collateral to the last wei.
-- **Voided:** shares and LP stakes stop counting entirely. The caller is paid their own
+- **Cancelled:** shares and LP stakes stop counting entirely. The caller is paid their own
   deposit back — `_deposited · _sharePot / _shareBasis` — and their ledger entry is
   cleared. The scaling is what keeps it solvent: `_totalDeposited` can only run *ahead* of
   the pot (a trader who sold at a profit took the difference with them), so the factor is
   ≤ 1 and is exactly 1 whenever nobody left with more than they brought. Trade fees are
-  refunded too: `voidMarket` folds `heldFees` back into `totalSets`, so a voided market
+  refunded too: `cancelMarket` folds `heldFees` back into `totalSets`, so a cancelled market
   costs its traders nothing but gas.
 
 Rounding dust favours the pool; payout clamped to `totalSets`. Clearing the claim's basis
@@ -293,10 +293,10 @@ Rounding dust favours the pool; payout clamped to `totalSets`. Clearing the clai
 nothing and reverts `NothingToClaim`. Also reverts `MarketNotResolved` while live, and
 `ClaimWindowClosed` once the market has been settled for a year (see `sweepUnclaimed`).
 
-> **Who a void pays.** The ledger follows the money, not the tokens. Buying shares from
+> **Who a cancellation pays.** The ledger follows the money, not the tokens. Buying shares from
 > another holder over ERC-1155 buys their *position*, not their refund claim — the refund
 > stays with whoever paid the market. Markets that expect a secondary market in shares
-> should be resolved, not voided.
+> should be resolved, not cancelled.
 
 ---
 
@@ -306,7 +306,7 @@ nothing and reverts `NothingToClaim`. Also reverts `MarketNotResolved` while liv
 function sweepUnclaimed() external onlyController nonReentrant returns (uint256 amount);
 ```
 
-Settlement (`resolve` or `voidMarket`) stamps `endedAt`, which starts a
+Settlement (`resolve` or `cancelMarket`) stamps `endedAt`, which starts a
 `CLAIM_WINDOW` of one year. For that year `redeem` behaves exactly as before and the
 market's collateral is untouchable. At `claimDeadline()` the window flips: `redeem`
 reverts `ClaimWindowClosed` for everyone, and the admin may move what is left.
@@ -329,7 +329,7 @@ the same instant for everyone whether or not an admin has already collected.
 pause()/unpause()        // reversible halt (Open↔Paused); MarketNotOpen otherwise
 close()                  // permanent stop betting/trading, await resolution
 resolve(uint256 w)       // declare winner; any time, even BEFORE lockTime (documented trust assumption); sends heldFees to the treasury
-voidMarket()             // unwind: everyone redeems their own deposit back, fees included
+cancelMarket()           // unwind: everyone redeems their own deposit back, fees included
 setTreasury(address)     // re-point fee sink; zero-checked
 sweepUnclaimed()         // residue → treasury, only after endedAt + CLAIM_WINDOW
 ```
@@ -347,7 +347,7 @@ winningOutcome()                     // reverts MarketNotResolved unless Resolve
 claimDeadline()                      // endedAt + CLAIM_WINDOW, or 0 while live
 endedAt()                            // settlement timestamp, or 0 while live
 pendingPayout(account)               // this account's share, 0 while live or once paid
-depositOf(account)                   // net collateral put in; what a void refunds
+depositOf(account)                   // net collateral put in; what a cancellation refunds
 categoryId()                         // factory category id
 getReserves() -> uint256[]           // virtual reserves per outcome
 getPrices()    -> uint256[]          // marginal prices, WAD, sum ≈ 1e18 (MarketMath.prices)
@@ -380,7 +380,7 @@ Seller ──sell(shares)──◀ native (net of fee) ; sets burned
 resolve   ──┬─ winners  ── 1:1 on their winning shares
             ├─ LPs      ── reserves[win] pro-rata
             └─ heldFees ──▶ Treasury.depositFee (all of it)
-voidMarket ─── everyone  ── their own deposit back, fees included, scaled to the pot
+cancelMarket ─── everyone  ── their own deposit back, fees included, scaled to the pot
 Participant ──redeem──▶ native   (their own share only, once, until claimDeadline())
 ADMIN ──sweepUnclaimed after claimDeadline()──▶ whole remaining balance ──▶ Treasury
 ```
@@ -398,8 +398,8 @@ ADMIN ──sweepUnclaimed after claimDeadline()──▶ whole remaining balanc
 | --- | --- |
 | Reentrancy | **No issue detected** — storage lock + CEI on every money path |
 | Solvency | **Invariant enforced** — see overview; tests assert it incl. fuzz/invariant suites |
-| Rounding | Buys floor shares (pool-favoured); sells ceil required input; voided refunds floor — pool never drained by rounding |
-| Void solvency | **Bounded** — refunds are `deposit · totalSets / _totalDeposited` with `_totalDeposited ≥ totalSets`, so the payouts sum to at most the pot; no first-come-first-served drain |
+| Rounding | Buys floor shares (pool-favoured); sells ceil required input; cancelled refunds floor — pool never drained by rounding |
+| Cancel solvency | **Bounded** — refunds are `deposit · totalSets / _totalDeposited` with `_totalDeposited ≥ totalSets`, so the payouts sum to at most the pot; no first-come-first-served drain |
 | Early resolution | **Design consideration / trust assumption** — CPMM `resolve` may fire before `lockTime`; integrity rests on ADMIN_ROLE honesty (pool engine fixes this; this engine does not) |
 | MEV | Slippage+deadline on buy/sell; `addFunding` lacks deadline; `removeFunding` has neither — documented gap |
 | DoS | Loops bounded by MAX_OUTCOMES=16; `_sendNative` failures affect only caller's own payout |
@@ -419,9 +419,9 @@ Chain: Nurachain (1020). Individual market addresses: Not found in repository.
 
 Quote with `calcBuy`/`calcSell` before trading; pass realistic `min*` and `deadline`.
 After settlement call `redeem()` — it is the only payout path, and `pendingPayout(account)`
-says what it will pay. After a void that figure comes off `depositOf(account)`, not off
+says what it will pay. After a cancellation that figure comes off `depositOf(account)`, not off
 share balances.
-Listen per market: `PredictionPlaced/Sold`, `MarketResolved`, `MarketVoided`, `RewardClaimed`.
+Listen per market: `PredictionPlaced/Sold`, `MarketResolved`, `MarketCancelled`, `RewardClaimed`.
 Common failures: `TradingLocked` after lockTime, `SlippageExceeded` under vol,
 `InsufficientLiquidity` selling large size into skewed pools.
 
@@ -436,7 +436,7 @@ Common failures: `TradingLocked` after lockTime, `SlippageExceeded` under vol,
 | `removeFunding(lpShares)` | external | nonpayable | LP | Redeem LP into outcome tokens |
 | `mergeSets(amount)` | external | nonpayable | Anyone | Complete sets → collateral |
 | `redeem()` | external | nonpayable | Token holders | Winner/refund payout |
-| `pause/unpause/close/voidMarket` | external | nonpayable | Controller | Lifecycle |
+| `pause/unpause/close/cancelMarket` | external | nonpayable | Controller | Lifecycle |
 | `resolve(w)` | external | nonpayable | Controller | Declare winner |
 | `setTreasury(t)` | external | nonpayable | Controller | Fee sink |
 | `sweepUnclaimed()` | external | nonpayable | Controller | Residue → treasury, post-claim-window |

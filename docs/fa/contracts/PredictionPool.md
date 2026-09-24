@@ -33,7 +33,7 @@ payout(user) = (totalPool − fee) · stakeOnWinner(user) / totalStakedOnWinner
 | `_stakedFor` (private) | کلید: خروجی ← جمع شرط روی آن. |
 | `_stakeOf` (private) | کلیدها: حساب ← خروجی ← شرط آن حساب. |
 | `_claimed` (private) | فلگ یک‌بارِ پرداخت هر حساب. |
-| `_totalStakeOf` (private) | شرط هر حساب روی همهٔ خروجی‌ها: دقیقاً همان چیزی که void پس می‌دهد. با `stakeOf` خوانده می‌شود. |
+| `_totalStakeOf` (private) | شرط هر حساب روی همهٔ خروجی‌ها: دقیقاً همان چیزی که cancel پس می‌دهد. با `stakeOf` خوانده می‌شود. |
 | `categoryId` | دستهٔ بازار در رجیستری کارخانه. |
 | `_entered` (private) | قفل reentrancy مبتنی بر storage. |
 
@@ -60,7 +60,7 @@ claim موفق یا پرداختِ push‌شده؛ ‏`UnclaimedSwept(market, tr
 ### طبقه‌بندی
 
 - **کاربر / مالی:** ‏`bet`, `claim`
-- **مدیریتی (controller):** ‏`pause`, `unpause`, `close`, `resolve`, `voidMarket`,
+- **مدیریتی (controller):** ‏`pause`, `unpause`, `close`, `resolve`, `cancelMarket`,
   `setTreasury`, `sweepUnclaimed`, `initialize`
 - **View:** ‏`winningOutcome`, `claimDeadline`, `pendingPayout`, `stakeOf`,
   `stakedFor`, `myStake`, `distributableAmount`, `previewPayout`,
@@ -119,9 +119,9 @@ function claim() external nonReentrant returns (uint256 payout);
 
 - **Resolved:** ‏`payout = شرطِ_من_روی(برنده) · _distributable / stakedFor(برنده)`
   (floor؛ گردِ ریز در قرارداد می‌ماند). صفر شرط روی برنده ⇒ `NothingToClaim`.
-- **Voided:** جمع شرط‌های فراخواننده روی همهٔ خروجی‌ها — پول خودش، کامل و بی‌کارمزد،
+- **Cancelled:** جمع شرط‌های فراخواننده روی همهٔ خروجی‌ها — پول خودش، کامل و بی‌کارمزد،
   روی هر خروجی که بسته باشد. کارمزد خانه فقط هنگام resolve برداشته می‌شود، پس استخری که
-  void شده هرگز کارمزدی نگرفته است.
+  لغو شده هرگز کارمزدی نگرفته است.
 - غیر از این دو ⇒ `MarketNotResolved`.
 
 ابتدا effects (`_claimed = true`) سپس ارسال. پرداخت دوباره با ساختار ناممکن است. برداشت
@@ -135,14 +135,14 @@ function claim() external nonReentrant returns (uint256 payout);
 function sweepUnclaimed() external onlyController nonReentrant returns (uint256 amount);
 ```
 
-تعیین‌تکلیف بازار (`resolve` یا `voidMarket`) زمان `endedAt` را ثبت می‌کند و پنجرهٔ
+تعیین‌تکلیف بازار (`resolve` یا `cancelMarket`) زمان `endedAt` را ثبت می‌کند و پنجرهٔ
 `CLAIM_WINDOW` به طول یک سال از همان‌جا شروع می‌شود؛ در این مدت `claim` دقیقاً مثل قبل
 کار می‌کند و چیزی از استخر بیرون نمی‌رود. در `claimDeadline()` ورق برمی‌گردد: `claim`
 برای همه `ClaimWindowClosed` می‌دهد و ادمین می‌تواند باقیمانده را جمع کند.
 
 - تا وقتی `endedAt == 0` است `MarketNotResolved` می‌دهد (استخر زنده هرگز جارو نمی‌شود).
 - پیش از مهلت `ClaimWindowOpen`، و وقتی چیزی نمانده باشد `ZeroAmount`.
-- کل موجودی را جارو می‌کند: سهم برندگانی که سراغش نیامدند، بازگشت‌های void که کسی
+- کل موجودی را جارو می‌کند: سهم برندگانی که سراغش نیامدند، بازگشت‌های cancel که کسی
   برنداشت، و گردِ زیرواحدی که هر پرداخت تناسبی جا می‌گذارد. `_distributable` را صفر
   می‌کند، مبلغ را با `IPredictionTreasury.depositFee` به خزانه می‌فرستد و
   `UnclaimedSwept` را emit می‌کند.
@@ -164,7 +164,7 @@ impliedOdds(i)        // سهم شرط خروجی از کل استخر، WAD (1e
 claimDeadline()       // endedAt + CLAIM_WINDOW؛ تا وقتی بازار زنده است صفر
 endedAt()             // زمان تعیین‌تکلیف؛ تا وقتی بازار زنده است صفر
 pendingPayout(a)      // سهم آن حساب؛ تا وقتی بازار زنده است یا پس از پرداخت، صفر
-stakeOf(a)            // جمع شرط آن حساب روی همهٔ خروجی‌ها؛ همان چیزی که void پس می‌دهد
+stakeOf(a)            // جمع شرط آن حساب روی همهٔ خروجی‌ها؛ همان چیزی که cancel پس می‌دهد
 categoryId()          // شناسهٔ دسته در رجیستری کارخانه
 ```
 
@@ -186,7 +186,7 @@ categoryId()          // شناسهٔ دسته در رجیستری کارخان�
 ADMIN ──resolve(w) بعد از lock──▶ fee ──▶ Treasury
                                   └─ distributable ──▶ تناسبی به برندگان
 شرط‌بند ──claim──◀ کوین   (فقط سهم خودش، یک‌بار، تا claimDeadline())
-مسیر void: voidMarket ← هر شرط‌بند دقیقاً شرط خودش را پس می‌گیرد، بی‌کارمزد
+مسیر cancel: cancelMarket ← هر شرط‌بند دقیقاً شرط خودش را پس می‌گیرد، بی‌کارمزد
 بعد از claimDeadline(): ADMIN ──sweepUnclaimed──▶ کل باقیماندهٔ موجودی ──▶ Treasury
 ```
 
@@ -215,8 +215,8 @@ ADMIN ──resolve(w) بعد از lock──▶ fee ──▶ Treasury
 | --- | --- | --- | --- | --- |
 | `initialize(...)` | external | nonpayable | کارخانه، یک‌بار | راه‌اندازی کلون |
 | `bet(outcomeIndex)` | external | payable | عموم (Open,<lock) | شرط بستن کوین بومی |
-| `claim()` | external | nonpayable | ذی‌نفعان | پرداخت برنده یا بازگشت void، یک‌بار |
-| `pause/unpause/close/voidMarket/setTreasury` | external | nonpayable | Controller | چرخهٔ حیات |
+| `claim()` | external | nonpayable | ذی‌نفعان | پرداخت برنده یا بازگشت cancel، یک‌بار |
+| `pause/unpause/close/cancelMarket/setTreasury` | external | nonpayable | Controller | چرخهٔ حیات |
 | `resolve(w)` | external | nonpayable | Controller | اعلام برنده بعد از lock؛ کسر کارمزد |
 | `sweepUnclaimed()` | external | nonpayable | Controller | باقیمانده ← خزانه، بعد از پنجرهٔ برداشت |
 | viewها | external | view | همه | ضرایب/شرط‌ها/پیش‌نمایش |

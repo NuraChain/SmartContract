@@ -56,7 +56,7 @@
 | 桥接代币 | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | 无支撑增发、没收性销毁、全局暂停、救援转移 |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | 抽干资金池、重新定价、暂停；签名者决定资格 |
 | Vault | DEFAULT_ADMIN/MINTER + 公开铸币开关 | 未来锁定量、开放免费铸造竞赛、仅可提取**未预留部分** |
-| Forecast 工厂 | ADMIN_ROLE | 创建市场（费率 ≤ 10%）、结算/作废全部市场、重定向金库 |
+| Forecast 工厂 | ADMIN_ROLE | 创建市场（费率 ≤ 10%）、结算/取消全部市场、重定向金库 |
 | 各市场 | 信任其 controller（工厂） | 生命周期仅能经工厂中继 |
 | Treasury | Ownable2Step 所有者 | 提取全部手续费、更换收款人 |
 

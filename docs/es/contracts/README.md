@@ -57,7 +57,7 @@ Ambos se registran en la misma fábrica y comparten estados, tesorería y evento
 | Tokens puente | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | acuñar sin respaldo, quemar arbitrario, pausa global, rescate |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | drenar, reprecificar, pausar; el firmante decide la elegibilidad |
 | Vault | DEFAULT_ADMIN/MINTER + interruptor de mint público | tamaño futuro del bloqueo, abrir mint libre, retirar **solo la parte libre** |
-| Fábrica Forecast | ADMIN_ROLE | crear mercados (comisión ≤ 10 %), resolver/anular todos, redirigir tesoros |
+| Fábrica Forecast | ADMIN_ROLE | crear mercados (comisión ≤ 10 %), resolver/cancelar todos, redirigir tesoros |
 | Mercados | confían en su controller (la fábrica) | ciclo de vida solo vía la fábrica |
 | Tesorería | dueño Ownable2Step | retirar todas las comisiones, cambiar destinatario |
 

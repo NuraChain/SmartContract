@@ -56,7 +56,7 @@ Arayüzler (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,
 | Köprü tokenları | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | karşılıksız mint, el koyma yanması, genel duraklatma, kurtarma |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | boşaltma, yeniden fiyatlama, duraklatma; imzalayan uygunluğu belirler |
 | Vault | DEFAULT_ADMIN/MINTER + herkese açık mint anahtarı | gelecekteki kilim miktarı, ücretsiz-mint yarışını açmak, yalnızca **boşta kısmı** çekmek |
-| Forecast fabrikası | ADMIN_ROLE | piyasa oluşturmak (komisyon ≤ %10), hepsini çözmek/geçersiz kılmak, hazineyi yönlendirmek |
+| Forecast fabrikası | ADMIN_ROLE | piyasa oluşturmak (komisyon ≤ %10), hepsini çözmek/iptal etmek, hazineyi yönlendirmek |
 | Piyasalar | controller'larına (fabrika) güvenir | yaşam döngüsü yalnızca fabrika rölesi üzerinden |
 | Hazine | Ownable2Step sahibi | tüm komisyonları çekmek, alıcıyı değiştirmek |
 

@@ -50,9 +50,9 @@ error LockNotReached();
 error MarketNotOpen();
 /// @dev Trading is closed because block.timestamp >= lockTime.
 error TradingLocked();
-/// @dev Action requires a resolved (or voided) market and it is not one.
+/// @dev Action requires a resolved (or cancelled) market and it is not one.
 error MarketNotResolved();
-/// @dev Market has already reached a terminal status (Resolved/Voided).
+/// @dev Market has already reached a terminal status (Resolved/Cancelled).
 error MarketAlreadyEnded();
 
 /// @dev A trade's deadline has passed.

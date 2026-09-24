@@ -23,14 +23,14 @@ enum MarketKind {
  * - Paused:   temporarily halted by an admin; can return to Open.
  * - Closed:   permanently halted, awaiting resolution; no trading.
  * - Resolved: a winning outcome is set; winning shares redeem 1:1.
- * - Voided:   invalid resolution; every outcome pays an equal 1/n share (refund basis).
+ * - Cancelled: called off; everyone takes back what they put in (refund basis).
  */
 enum MarketStatus {
     Open,
     Paused,
     Closed,
     Resolved,
-    Voided
+    Cancelled
 }
 
 /**

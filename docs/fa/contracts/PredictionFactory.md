@@ -22,7 +22,7 @@
   و ارزش الصاقی بازیابی‌ناپذیر می‌شد.
 
 هر کلون به کارخانه به‌عنوان **controller** اعتماد دارد؛ فراخوانی‌های چرخهٔ حیات
-(pause/close/resolve/void) از طریق کارخانه انجام می‌شود تا وضعیتِ رجیستری مرجع بماند.
+(pause/close/resolve/cancel) از طریق کارخانه انجام می‌شود تا وضعیتِ رجیستری مرجع بماند.
 
 ## وراثت
 
@@ -38,7 +38,7 @@ PredictionFactory
 | اینترفیس | تعامل |
 | --- | --- |
 | `IPredictionFactory` | سطح پیاده‌سازی‌شده. |
-| `IPredictionMarket` | روی کلون‌های تازه: ‏`initialize(...)`؛ توابع رلهٔ چرخهٔ حیات (`pause/unpause/close/resolve/voidMarket/setTreasury`) امضای یکسان در هر دو موتور دارند. |
+| `IPredictionMarket` | روی کلون‌های تازه: ‏`initialize(...)`؛ توابع رلهٔ چرخهٔ حیات (`pause/unpause/close/resolve/cancelMarket/setTreasury`) امضای یکسان در هر دو موتور دارند. |
 
 ## متغیرهای State
 
@@ -82,11 +82,11 @@ MarketRecord  (اسنپ‌شات رجیستری)
 MarketKind : Amm(0)، Pool(1)
 
 MarketStatus:
-  Open     (0) -- معامله/نقدینگی فعال تا lockTime
-  Paused   (1) -- توقف برگشت‌پذیر توسط ادمین
-  Closed   (2) -- توقف دائمی، در انتظار حل
-  Resolved (3) -- برنده اعلام شده؛ سهام برنده ۱:۱ بازخرید می‌شود
-  Voided   (4) -- حل نامعتبر؛ مبنی بازگشت وجه
+  Open      (0) -- معامله/نقدینگی فعال تا lockTime
+  Paused    (1) -- توقف برگشت‌پذیر توسط ادمین
+  Closed    (2) -- توقف دائمی، در انتظار حل
+  Resolved  (3) -- برنده اعلام شده؛ سهام برنده ۱:۱ بازخرید می‌شود
+  Cancelled (4) -- لغو شده؛ هر کس آنچه گذاشته پس می‌گیرد
 ```
 
 ## Modifierها
@@ -123,7 +123,7 @@ MarketStatus:
 ### طبقه‌بندی
 
 - **مدیریتی:** ‏`createMarket`, `createMarket2`, `pauseMarket`, `unpauseMarket`,
-  `closeMarket`, `voidMarket`, `sweepUnclaimed`,
+  `closeMarket`, `cancelMarket`, `sweepUnclaimed`,
   `setTreasury`, `repointTreasury`, `setDefaultFees`, `addCategory`,
   `setCategoryMeanings`, `setCategoryEnabled`
 - **مولتی‌سگ حل:** ‏confirmResolution (امضاکننده‌ها)، ‏setResolutionSigners (مالک)
@@ -181,7 +181,7 @@ function createMarket2(MarketParams calldata params)
 | `unpauseMarket(id)` *(ADMIN_ROLE)* | `unpause()` | Paused ← Open |
 | `closeMarket(id)` *(ADMIN_ROLE)* | `close()` | ← Closed |
 | `confirmResolution(id, winningOutcome)` *(امضاکننده)* | ثبت رای؛ در حد نصاب `resolve(winningOutcome)` را اجرا می‌کند | ← Resolved |
-| `voidMarket(id)` *(ADMIN_ROLE)* | `voidMarket()` | ← Voided |
+| `cancelMarket(id)` *(ADMIN_ROLE)* | `cancelMarket()` | ← Cancelled |
 | `sweepUnclaimed(id)` *(ADMIN_ROLE)* | `sweepUnclaimed()` | ندارد — وضعیت پایانی دست‌نخورده می‌ماند |
 
 marketId خارج از محدوده panic اندیس آرایه می‌دهد.
@@ -296,7 +296,10 @@ marketsByCategory(7, 0, 20)                 // صفحه‌بندی‌شده، ب
 | همهٔ توابع ساخت/چرخهٔ حیات/پیکربندی | `ADMIN_ROLE` | ادمین‌ها (مدیریت نقش با DEFAULT_ADMIN_ROLE) |
 | همهٔ viewها | ندارد | همه |
 
-**اختیارات CRITICAL:** ساخت بازار (با انتخاب کارمزد تا ۱۰٪)، void کردن،`nتغییر خزانه و — فقط مالک — تعویض مجموعهٔ امضاکننده‌ها/حد نصاب حل.`nخودِ حل به حد نصاب N-از-M امضاکننده (مثلاً ۳ از ۵) نیاز دارد، نه یک کلید واحد؛`nتبانیِ یک حد نصاب همچنان فرض اعتماد است.
+**اختیارات CRITICAL:** ساخت بازار (با انتخاب کارمزد تا ۱۰٪)، cancel کردن،
+تغییر خزانه و — فقط مالک — تعویض مجموعهٔ امضاکننده‌ها/حد نصاب حل.
+خودِ حل به حد نصاب N-از-M امضاکننده (مثلاً ۳ از ۵) نیاز دارد، نه یک کلید واحد؛
+تبانیِ یک حد نصاب همچنان فرض اعتماد است.
 
 ## جریان مالی
 
@@ -345,7 +348,7 @@ ADMIN ──createMarket{value}──▶ initialize روی کلون (seed = سه
 | --- | --- | --- | --- | --- |
 | `createMarket(params)` | external | payable | ADMIN_ROLE | کلون CPMM با seed |
 | `createMarket2(params)` | external | nonpayable | ADMIN_ROLE | کلون پاری‌موچل |
-| `pauseMarket/unpauseMarket/closeMarket/voidMarket(id)` | external | nonpayable | ADMIN_ROLE | رلهٔ چرخهٔ حیات |
+| `pauseMarket/unpauseMarket/closeMarket/cancelMarket(id)` | external | nonpayable | ADMIN_ROLE | رلهٔ چرخهٔ حیات |
 | confirmResolution(id,outcome) | external | nonpayable | امضاکنندهٔ حل | رأی به برنده؛ در حد نصاب اجرا می‌شود |
 | setResolutionSigners(signers,n) | external | nonpayable | مالک کارخانه | تعویض مجموعهٔ امضاکننده‌ها + حد نصاب |
 | viewهای مولتی‌سگ | external | view | همه | وضعیت رأی‌ها و امضاکننده‌ها |

@@ -56,7 +56,7 @@
 | ब्रिज टोकन | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | बिना समर्थन मिंट, ज़ब्ती बर्न, वैश्विक पॉज़, रेस्क्यू |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | निकासी, पुनःमूल्यांकन, रोकथाम; signer पात्रता तय करता है |
 | Vault | DEFAULT_ADMIN/MINTER + public-mint स्विच | भविष्य का lock आकार, मुफ़्त-mint दौड़, **केवल अनारक्षित** निकासी |
-| Forecast फ़ैक्ट्री | ADMIN_ROLE | बाज़ार बनाना (शुल्क ≤ 10%), सबका resolve/void, ट्रेज़री पुनर्निर्देशन |
+| Forecast फ़ैक्ट्री | ADMIN_ROLE | बाज़ार बनाना (शुल्क ≤ 10%), सबका resolve/cancel, ट्रेज़री पुनर्निर्देशन |
 | बाज़ार | controller (फ़ैक्ट्री) पर भरोसा | lifecycle केवल फ़ैक्ट्री रिले से |
 | Treasury | Ownable2Step मालिक | सारे शुल्क निकालना, प्राप्तकर्ता बदलना |
 

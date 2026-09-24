@@ -43,7 +43,7 @@ import {
     MarketUnpaused,
     MarketClosed,
     MarketResolved,
-    MarketVoided,
+    MarketCancelled,
     UnclaimedSwept
 } from "./PredictionEvents.sol";
 
@@ -66,8 +66,8 @@ import {
  *      pool going insolvent.
  *
  *      Trade fees are escrowed in {heldFees}, not paid out as they are charged. A resolution
- *      sends them to the treasury; a void hands them back with everything else, so a market
- *      that never settles on an outcome costs its traders nothing but gas.
+ *      sends them to the treasury; a cancellation hands them back with everything else, so a
+ *      market that never settles on an outcome costs its traders nothing but gas.
  *
  *      The invariant holds for the whole life of the market, right through the one-year claim
  *      window that starts at settlement. {sweepUnclaimed} retires it: once the window has
@@ -80,8 +80,9 @@ import {
  *      A resolution splits the pot exactly: at that moment
  *      `reserves[win] + totalSupply(win) == totalSets`, so paying every winning share 1:1 and
  *      handing `reserves[win]` to the LPs pro-rata distributes the collateral to the last wei.
- *      A void is not a settlement at all — it unwinds the market, so shares and LP stakes
- *      stop counting and everyone takes back what they put in, off the {depositOf} ledger.
+ *      A cancellation is not a settlement at all — it unwinds the market, so shares and LP
+ *      stakes stop counting and everyone takes back what they put in, off the {depositOf}
+ *      ledger.
  */
 contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgradeable {
     /// @notice ERC-1155 id used for liquidity-provider shares (outcomes use ids 0..n-1).
@@ -126,7 +127,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     /// @notice Category this market is filed under, in the factory's registry. The name a
     ///         reader sees is looked up there, per language.
     uint32 public categoryId;
-    /// @notice When the market settled (Resolved or Voided); 0 while it is still live. The
+    /// @notice When the market settled (Resolved or Cancelled); 0 while it is still live. The
     ///         claim window runs for {CLAIM_WINDOW} from this instant.
     uint64 public endedAt;
 
@@ -142,7 +143,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     uint256 public totalSets;
 
     /// @notice Trade fees charged so far and held in escrow: the treasury's on resolution,
-    ///         refunded to the traders on a void.
+    ///         refunded to the traders on a cancellation.
     uint256 public heldFees;
 
     /// @dev Winning outcome; meaningful only once status == Resolved.
@@ -150,7 +151,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
 
     /// @dev Net collateral each account has put into the market: up by what it paid in on the
     ///      seed, a buy and added funding, down by what it took out on a sell or a merge.
-    ///      Fees included, since they are still in escrow. This is what a void pays back.
+    ///      Fees included, since they are still in escrow. This is what cancelling pays back.
     mapping(address account => uint256 amount) private _deposited;
     /// @dev Sum of `_deposited` across every account. Shares are ordinary ERC-1155 tokens and
     ///      can change hands while the ledger cannot follow them, so a withdrawal stops at
@@ -160,7 +161,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
 
     /// @dev The pro-rata share settlement pays, snapshotted the moment the market ends
     ///      because redeeming moves both live figures. Resolved: LP shares over the losing
-    ///      reserves. Voided: deposits over the whole pot.
+    ///      reserves. Cancelled: deposits over the whole pot.
     uint256 private _shareBasis;
     uint256 private _sharePot;
 
@@ -281,9 +282,9 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     }
 
     /// @inheritdoc IPredictionMarket
-    function voidMarket() external onlyController nonReentrant {
+    function cancelMarket() external onlyController nonReentrant {
         _requireNotEnded();
-        status = MarketStatus.Voided;
+        status = MarketStatus.Cancelled;
         endedAt = uint64(block.timestamp);
 
         // Nobody was right or wrong here, so nobody is paid out of anyone else's stake:
@@ -295,7 +296,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         heldFees = 0;
         _shareBasis = _totalDeposited;
         _sharePot = totalSets;
-        emit MarketVoided(address(this));
+        emit MarketCancelled(address(this));
     }
 
     /// @inheritdoc IPredictionMarket
@@ -437,7 +438,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     /// @inheritdoc IPredictionMarket
     function mergeSets(uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
-        if (status == MarketStatus.Resolved || status == MarketStatus.Voided) revert MarketAlreadyEnded();
+        if (status == MarketStatus.Resolved || status == MarketStatus.Cancelled) revert MarketAlreadyEnded();
         uint256 n = outcomeCount;
         for (uint256 j = 0; j < n; ++j) {
             _burn(msg.sender, j, amount);
@@ -457,7 +458,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         _requireClaimWindowOpen();
 
         MarketStatus s = status;
-        if (s != MarketStatus.Resolved && s != MarketStatus.Voided) revert MarketNotResolved();
+        if (s != MarketStatus.Resolved && s != MarketStatus.Cancelled) revert MarketNotResolved();
         payout = _settleAccount(msg.sender);
         if (payout == 0) revert NothingToClaim();
 
@@ -563,7 +564,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
 
     /// @dev Reverts if the market has already reached a terminal status.
     function _requireNotEnded() private view {
-        if (status == MarketStatus.Resolved || status == MarketStatus.Voided) revert MarketAlreadyEnded();
+        if (status == MarketStatus.Resolved || status == MarketStatus.Cancelled) revert MarketAlreadyEnded();
     }
 
     /// @dev Reverts once the claim window has elapsed. The cut-off is the deadline itself,
@@ -577,7 +578,8 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     /// @dev Takes up to `amount` off `account`'s deposit ledger. Outcome shares are ordinary
     ///      ERC-1155 tokens, so a seller may never have deposited what they are now taking
     ///      out; the ledger stops at zero rather than underflowing, and the gap that leaves
-    ///      between `_totalDeposited` and `totalSets + heldFees` is what scales the void refund.
+    ///      between `_totalDeposited` and `totalSets + heldFees` is what scales the cancellation
+    ///      refund.
     function _withdrawDeposit(address account, uint256 amount) private {
         uint256 held = _deposited[account];
         uint256 cut = amount < held ? amount : held;
@@ -589,7 +591,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
 
     /// @dev What `account` is owed at the current settlement, without paying it. Resolved:
     ///      their winning shares 1:1, plus their pro-rata slice of the losing reserves.
-    ///      Voided: their own deposit back, scaled to what the pot actually holds.
+    ///      Cancelled: their own deposit back, scaled to what the pot actually holds.
     function _payoutOf(address account) private view returns (uint256 payout) {
         if (status == MarketStatus.Resolved) {
             payout = balanceOf(account, _winningOutcome);
@@ -597,7 +599,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
             if (lp > 0 && _shareBasis > 0) {
                 payout += Math.mulDiv(lp, _sharePot, _shareBasis);
             }
-        } else if (status == MarketStatus.Voided) {
+        } else if (status == MarketStatus.Cancelled) {
             uint256 deposit = _deposited[account];
             if (deposit == 0 || _shareBasis == 0) {
                 return 0;
@@ -614,7 +616,8 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
 
     /// @dev Clears whatever the account's claim rested on and books their payout against
     ///      `totalSets`. That is what makes redemption one-shot: a resolved market burns the
-    ///      shares and LP stake it has just paid for, a voided one empties the deposit ledger.
+    ///      shares and LP stake it has just paid for, a cancelled one empties the deposit
+    ///      ledger.
     function _settleAccount(address account) private returns (uint256 payout) {
         payout = _payoutOf(account);
 

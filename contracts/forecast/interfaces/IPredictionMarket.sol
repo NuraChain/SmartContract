@@ -38,9 +38,9 @@ interface IPredictionMarket {
      */
     function resolve(uint256 winningOutcome_) external;
 
-    /// @notice Voids the market; shares stop counting and every account redeems its own
+    /// @notice Cancels the market; shares stop counting and every account redeems its own
     ///         deposit back instead.
-    function voidMarket() external;
+    function cancelMarket() external;
 
     /**
      * @notice Updates the treasury protocol fees are forwarded to.
@@ -103,7 +103,7 @@ interface IPredictionMarket {
 
     /**
      * @notice Claims collateral for the caller: winning shares 1:1 plus their pro-rata slice
-     *         of the losing reserves (Resolved), or their own deposit back (Voided). One-shot
+     *         of the losing reserves (Resolved), or their own deposit back (Cancelled). One-shot
      *         per account, and the only way collateral leaves a settled market — nothing is
      *         ever pushed out.
      * @return payout Collateral paid to the caller.
@@ -130,7 +130,7 @@ interface IPredictionMarket {
     function pendingPayout(address account) external view returns (uint256);
 
     /// @notice Net collateral `account` has put into the market, trade fees included — what a
-    ///         void pays them back, scaled to whatever the pot still holds.
+    ///         cancellation pays them back, scaled to whatever the pot still holds.
     function depositOf(address account) external view returns (uint256);
 
 

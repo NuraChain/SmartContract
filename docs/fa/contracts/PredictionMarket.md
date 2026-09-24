@@ -47,15 +47,15 @@ PredictionMarket
 | `controller` / `treasury` / `status` | address/address/enum | public | mutable | کارخانه، خزانه، وضعیت چرخهٔ حیات. |
 | متادیتا + `creator` + سه timestamp | string/address/uint64 | public | set-once | در initialize نوشته می‌شوند؛ معامله نیازمند `block.timestamp < lockTime`. |
 | `categoryId` | uint32 | public | set-once | دستهٔ بازار در [رجیستری کارخانه](PredictionFactory.md#رجیستری-دسته‌ها)؛ خودِ بازار هیچ نامی برای دسته ذخیره نمی‌کند. |
-| `feeBps` | uint16 | public | set-once | کارمزد کل معامله؛ تا تعیین‌تکلیف در امانت می‌ماند، با resolve به خزانه می‌رود و با void برمی‌گردد. |
+| `feeBps` | uint16 | public | set-once | کارمزد کل معامله؛ تا تعیین‌تکلیف در امانت می‌ماند، با resolve به خزانه می‌رود و با cancel برمی‌گردد. |
 | `outcomeCount` | uint256 | public | set-once | تعداد خروجی‌ها n. |
 | `_outcomeNames` / `_reserves` | string[] / uint256[] | private | set-once / mutable | نام‌ها / رزرو مجازی FPMM به wei. |
 | `totalSets` | uint256 | public | mutable | وثیقهٔ پشت ست‌های کامل؛ موجودی بومی قرارداد منهای `heldFees`. |
-| `heldFees` | uint256 | public | mutable | کارمزدهای گرفته‌شده که در امانت مانده‌اند. با `resolve` به خزانه می‌روند و با `voidMarket` به صندوق بازگشت وجه اضافه می‌شوند. |
-| `endedAt` | uint64 | public | در resolve/void ثبت | زمان تعیین‌تکلیف؛ تا وقتی بازار زنده است صفر. مبدأ پنجرهٔ بازخرید. |
-| `_deposited` (private) | mapping | mutable | وثیقهٔ خالصی که هر حساب وارد بازار کرده: به اندازهٔ پولی که با seed و `buy` (با کارمزد) و `addFunding` پرداخته بالا می‌رود، و به اندازهٔ پولی که با `sell` و `mergeSets` گرفته پایین. همین چیزی است که void پس می‌دهد. با `depositOf` خوانده می‌شود. |
+| `heldFees` | uint256 | public | mutable | کارمزدهای گرفته‌شده که در امانت مانده‌اند. با `resolve` به خزانه می‌روند و با `cancelMarket` به صندوق بازگشت وجه اضافه می‌شوند. |
+| `endedAt` | uint64 | public | در resolve/cancel ثبت | زمان تعیین‌تکلیف؛ تا وقتی بازار زنده است صفر. مبدأ پنجرهٔ بازخرید. |
+| `_deposited` (private) | mapping | mutable | وثیقهٔ خالصی که هر حساب وارد بازار کرده: به اندازهٔ پولی که با seed و `buy` (با کارمزد) و `addFunding` پرداخته بالا می‌رود، و به اندازهٔ پولی که با `sell` و `mergeSets` گرفته پایین. همین چیزی است که cancel پس می‌دهد. با `depositOf` خوانده می‌شود. |
 | `_totalDeposited` (private) | uint256 | mutable | مجموع `_deposited`. سهام توکن ERC-1155 معمولی و قابل انتقال است و دفتر نمی‌تواند دنبالش برود، پس برداشت روی سپردهٔ خودِ فروشنده متوقف می‌شود به‌جای underflow؛ در نتیجه این عدد **کران بالای** `totalSets` است، نه مساوی آن. |
-| `_shareBasis` / `_sharePot` (private) | uint256 | در تعیین‌تکلیف ثبت | مخرج و صورتِ سهم تناسبی‌ای که تعیین‌تکلیف پرداخت می‌کند. در resolve: عرضهٔ LP روی `reserves[win]`. در void: ‏`_totalDeposited` روی `totalSets`. اسنپ‌شات گرفته می‌شود چون بازخرید هر دو عدد زنده را جابه‌جا می‌کند. |
+| `_shareBasis` / `_sharePot` (private) | uint256 | در تعیین‌تکلیف ثبت | مخرج و صورتِ سهم تناسبی‌ای که تعیین‌تکلیف پرداخت می‌کند. در resolve: عرضهٔ LP روی `reserves[win]`. در cancel: ‏`_totalDeposited` روی `totalSets`. اسنپ‌شات گرفته می‌شود چون بازخرید هر دو عدد زنده را جابه‌جا می‌کند. |
 | `_winningOutcome` | uint256 | private | در resolve ثبت | فقط وقتی Resolved معنی‌دار. |
 | `_entered` | uint256 | private | mutable | قفل reentrancy مبتنی بر storage (1 آزاد / 2 داخل)؛ در initialize =1. |
 
@@ -63,14 +63,14 @@ PredictionMarket
 
 | Modifier | شرط | جلوگیری از | استفاده در |
 | --- | --- | --- | --- |
-| `onlyController` | ‏msg.sender == controller | غیرکارخانه برای چرخهٔ حیات | pause/unpause/close/resolve/void/setTreasury |
+| `onlyController` | ‏msg.sender == controller | غیرکارخانه برای چرخهٔ حیات | pause/unpause/close/resolve/cancelMarket/setTreasury |
 | `nonReentrant` | قفل آزاد | reentrancy در مسیرهای پولی | buy, sell, addFunding, removeFunding, mergeSets, redeem |
 
 ## رویدادها
 
 اعلام مشترک در `PredictionEvents.sol`: ‏`LiquidityAdded`, `LiquidityRemoved`,
 `PredictionPlaced`, `PredictionSold`, `RewardClaimed`, ‏`MarketPaused/Unpaused/Closed/
-Resolved/Voided`، و ‏`UnclaimedSwept(market, treasury, amount)` هنگام جاروی باقیمانده.
+Resolved/Cancelled`، و ‏`UnclaimedSwept(market, treasury, amount)` هنگام جاروی باقیمانده.
 جزئیات در فایل انگلیسی همین سند.
 
 ## خطاها
@@ -88,7 +88,7 @@ NothingToClaim، NotController، Reentrancy، TransferFailed) با شرط دقی
 ### طبقه‌بندی
 
 - **کاربر / مالی:** ‏`buy`, `sell`, `addFunding`, `removeFunding`, `mergeSets`, `redeem`
-- **مدیریتی (فقط کارخانه):** ‏`pause`, `unpause`, `close`, `resolve`, `voidMarket`,
+- **مدیریتی (فقط کارخانه):** ‏`pause`, `unpause`, `close`, `resolve`, `cancelMarket`,
   `setTreasury`, `sweepUnclaimed`, `initialize`
 - **View:** ‏`winningOutcome`, `claimDeadline`, `pendingPayout`, `depositOf`,
   `getReserves`, `getPrices`, `calcBuy`, `calcSell`, `outcomeName`,
@@ -202,12 +202,12 @@ function redeem() external nonReentrant returns (uint256 payout);
   استخر LP (‏`lpBalance · _sharePot / _shareBasis`) با سوزاندن سهام LP‌اش. تقسیم دقیق
   است: در لحظهٔ حل ‏`reserves[win] + totalSupply(win) == totalSets`، پس پرداخت ۱:۱ به هر
   سهم برنده و دادن `reserves[win]` به LPها وثیقه را تا آخرین wei تقسیم می‌کند.
-- **Voided:** سهام و سهم LP اصلاً به حساب نمی‌آیند. فراخواننده سپردهٔ خودش را پس
+- **Cancelled:** سهام و سهم LP اصلاً به حساب نمی‌آیند. فراخواننده سپردهٔ خودش را پس
   می‌گیرد — ‏`_deposited · _sharePot / _shareBasis` — و سطر دفترش صفر می‌شود. همین
   مقیاس‌گذاری است که توانگری را نگه می‌دارد: ‏`_totalDeposited` فقط می‌تواند *جلوتر* از
   صندوق باشد (معامله‌گری که با سود فروخته، تفاوت را با خودش برده)، پس ضریب ≤ ۱ است و
   دقیقاً ۱ می‌شود هر وقت کسی بیشتر از آنچه آورده بیرون نبرده باشد. کارمزدها هم برمی‌گردند:
-  ‏`voidMarket` مقدار `heldFees` را به `totalSets` برمی‌گرداند، پس بازار void‌شده برای
+  ‏`cancelMarket` مقدار `heldFees` را به `totalSets` برمی‌گرداند، پس بازار لغوشده برای
   معامله‌گران جز هزینهٔ گس خرجی ندارد.
 
 گرد شدن به نفع استخر؛ payout به totalSets گیر می‌کند. پاک‌کردن مبنای ادعا (سوزاندن، یا
@@ -215,10 +215,10 @@ function redeem() external nonReentrant returns (uint256 payout);
 `NothingToClaim` می‌دهد. یک سال پس از تعیین‌تکلیف بازار هم `ClaimWindowClosed` می‌دهد
 (به `sweepUnclaimed` نگاه کنید).
 
-> **void به چه کسی پرداخت می‌کند.** دفتر دنبال پول است، نه دنبال توکن. خرید سهام از
+> **cancel به چه کسی پرداخت می‌کند.** دفتر دنبال پول است، نه دنبال توکن. خرید سهام از
 > دارندهٔ دیگر روی ERC-1155، *موقعیت* او را می‌خرد نه ادعای بازگشت وجهش را — بازگشت وجه
 > پیش کسی می‌ماند که پول را به بازار داده. بازارهایی که انتظار بازار ثانویهٔ سهام دارند
-> باید resolve شوند، نه void.
+> باید resolve شوند، نه cancel.
 
 ---
 
@@ -228,7 +228,7 @@ function redeem() external nonReentrant returns (uint256 payout);
 function sweepUnclaimed() external onlyController nonReentrant returns (uint256 amount);
 ```
 
-تعیین‌تکلیف بازار (`resolve` یا `voidMarket`) زمان `endedAt` را ثبت می‌کند و پنجرهٔ
+تعیین‌تکلیف بازار (`resolve` یا `cancelMarket`) زمان `endedAt` را ثبت می‌کند و پنجرهٔ
 `CLAIM_WINDOW` به طول یک سال از همان‌جا شروع می‌شود. در این یک سال `redeem` دقیقاً مثل
 قبل کار می‌کند و هیچ‌کس نمی‌تواند به وثیقهٔ بازار دست بزند. در `claimDeadline()` ورق
 برمی‌گردد: `redeem` برای همه `ClaimWindowClosed` می‌دهد و ادمین می‌تواند باقیمانده را
@@ -250,7 +250,7 @@ function sweepUnclaimed() external onlyController nonReentrant returns (uint256 
 
 `pause()/unpause()` توقف برگشت‌پذیر؛ ‏`close()` توقف دائمی؛
 `resolve(uint256 w)` اعلام برنده — **حتی قبل از lockTime ممکن است** (فرض اعتمادِ مستند؛
-موتور استخر این را بسته است) و `heldFees` را به خزانه می‌فرستد؛ ‏`voidMarket()` باز کردن
+موتور استخر این را بسته است) و `heldFees` را به خزانه می‌فرستد؛ ‏`cancelMarket()` باز کردن
 بازار: هرکس سپردهٔ خودش را همراه کارمزد پس می‌گیرد؛ ‏`setTreasury`؛ ‏`sweepUnclaimed()` انتقال باقیمانده به خزانه، فقط بعد از
 `endedAt + CLAIM_WINDOW`.
 
@@ -267,7 +267,7 @@ function sweepUnclaimed() external onlyController nonReentrant returns (uint256 
 (کوت استاتیک)، ‏`outcomeName(i)`، ‏`totalSets()`، ‏`endedAt()`، ‏`claimDeadline()`
 (برابر `endedAt + CLAIM_WINDOW`، و تا وقتی بازار زنده است صفر)،
 ‏`pendingPayout(account)` (سهم آن حساب؛ تا وقتی بازار زنده است یا پس از پرداخت، صفر)،
-‏`depositOf(account)` (وثیقهٔ خالصی که آن حساب گذاشته — همان چیزی که void پس می‌دهد) و
+‏`depositOf(account)` (وثیقهٔ خالصی که آن حساب گذاشته — همان چیزی که cancel پس می‌دهد) و
 `categoryId()`.
 به‌علاوه سطح ERC-1155: ‏`balanceOf`, `balanceOfBatch`, `isApprovedForAll`,
 `safeTransferFrom`, `safeBatchTransferFrom`, `setApprovalForAll`, `totalSupply(id)`,
@@ -291,7 +291,7 @@ function sweepUnclaimed() external onlyController nonReentrant returns (uint256 
 resolve ──┬─ برندگان ── ۱:۱ روی سهام برنده
           ├─ LPها    ── reserves[win] تناسبی
           └─ heldFees ──▶ Treasury.depositFee (تمام آن)
-voidMarket ─── همه ── سپردهٔ خودشان با کارمزد، مقیاس‌شده با صندوق
+cancelMarket ─── همه ── سپردهٔ خودشان با کارمزد، مقیاس‌شده با صندوق
 شرکت‌کننده ──redeem──◀ کوین   (فقط سهم خودش، یک‌بار، تا claimDeadline())
 ADMIN ──sweepUnclaimed بعد از claimDeadline()──▶ کل باقیماندهٔ موجودی ──▶ Treasury
 ```
@@ -302,8 +302,8 @@ ADMIN ──sweepUnclaimed بعد از claimDeadline()──▶ کل باقیم�
 | --- | --- |
 | Reentrancy | **مشکلی دیده نشد** — قفل storage + CEI در همهٔ مسیرهای پولی |
 | توانگری | **ناوردا اعمال می‌شود** — تست‌های fuzz/invariant آن را assert می‌کنند |
-| گرد کردن | خرید floor سهام، فروش ceil ورودی، بازگشت وجه در void floor — استخر با گرد شدن تخلیه نمی‌شود |
-| توانگری در void | **کران‌دار** — بازگشت وجه برابر `deposit · totalSets / _totalDeposited` است و `_totalDeposited ≥ totalSets`، پس مجموع پرداخت‌ها حداکثر به اندازهٔ صندوق است؛ خبری از «هرکه زودتر رسید» نیست |
+| گرد کردن | خرید floor سهام، فروش ceil ورودی، بازگشت وجه در cancel floor — استخر با گرد شدن تخلیه نمی‌شود |
+| توانگری در cancel | **کران‌دار** — بازگشت وجه برابر `deposit · totalSets / _totalDeposited` است و `_totalDeposited ≥ totalSets`، پس مجموع پرداخت‌ها حداکثر به اندازهٔ صندوق است؛ خبری از «هرکه زودتر رسید» نیست |
 | حل زودهنگام | **ملاحظهٔ طراحی/اعتماد** — resolve قبل از lockTime ممکن است؛ صحت به ADMIN_ROLE وابسته است |
 | MEV | buy/sell مرز دارند؛ addFunding بی‌deadline؛ removeFunding هیچ‌مرزی ندارد — شکاف مستند |
 | DoS | حلقه‌ها ≤ 16 خروجی؛ شکست send فقط payout خودِ فراخواننده را تحت تأثیر قرار می‌دهد |
@@ -317,7 +317,7 @@ ADMIN ──sweepUnclaimed بعد از claimDeadline()──▶ کل باقیم�
 
 قبل از معامله با `calcBuy`/`calcSell` کوت بگیرید و min*/deadline واقع‌بینانه بدهید.
 پس از تعیین‌تکلیف `redeem()` بزنید — تنها مسیر پرداخت است و `pendingPayout(account)`
-می‌گوید چقدر می‌پردازد. بعد از void آن عدد از `depositOf(account)` می‌آید، نه از موجودی سهام.
+می‌گوید چقدر می‌پردازد. بعد از cancel آن عدد از `depositOf(account)` می‌آید، نه از موجودی سهام.
 خطاهای رایج: ‏`TradingLocked` بعد از lock، ‏`SlippageExceeded` در نوسان،
 `InsufficientLiquidity` فروش بزرگ به استخر نامتوازن.
 
@@ -332,6 +332,6 @@ ADMIN ──sweepUnclaimed بعد از claimDeadline()──▶ کل باقیم�
 | `removeFunding(lpShares)` | external | nonpayable | LP | تبدیل LP به توکن‌های خروجی |
 | `mergeSets(amount)` | external | nonpayable | عموم | ست کامل ← وثیقه |
 | `redeem()` | external | nonpayable | دارندگان توکن | پرداخت برنده/بازگشت |
-| `pause/unpause/close/voidMarket/resolve/setTreasury` | external | nonpayable | Controller | چرخهٔ حیات |
+| `pause/unpause/close/cancelMarket/resolve/setTreasury` | external | nonpayable | Controller | چرخهٔ حیات |
 | `sweepUnclaimed()` | external | nonpayable | Controller | باقیمانده ← خزانه، بعد از پنجرهٔ بازخرید |
 | viewها | external | view | همه | قیمت/رزرو/کوت/نام |

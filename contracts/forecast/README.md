@@ -48,7 +48,7 @@ market is a ~45-byte proxy clone pointing at a single shared implementation.
  4. **Resolve (multisig)** — resolution needs `requiredConfirmations` of the factory's
     `resolutionSigners` to vote for the SAME outcome (`confirmResolution(marketId, outcome)`).
     The last confirming vote executes `resolve(winner)` on-chain in that transaction —
-    which is what releases coins/shares to winners. `voidMarket()` stays a single-admin
+    which is what releases coins/shares to winners. `cancelMarket()` stays a single-admin
     action: it only refunds, it can never pay anyone extra.
 5. **Redeem** — winners call `redeem()`: their winning shares are **burned** and they receive
    1 native token unit per share. Losing shares become worthless by construction.
@@ -61,17 +61,15 @@ Open ─────────────────────▶ Paused �
  │ ▲                                                  
  │ close()                (pause/unpause reversible)   
  ▼                                                     
-Closed ──┐                                             
-         │ resolve(winner)          voidMarket()       
-         ├──────────────▶ Resolved   └──────────▶ Voided
-         │                                │           │
-         └────────────────────────────────┴───────────┘
-                    terminal (no further trades)
+Closed ──┐
+         ├── resolve(winner) ──▶ Resolved     ┐ terminal
+         └── cancelMarket() ───▶ Cancelled    ┘ (no further trades)
 ```
 
 - `Resolved` — only the winning outcome is redeemable (1:1).
-- `Voided` — every outcome redeems for an equal `1/n` refund share of its balance.
-- `close()` permanently halts trading ahead of resolution (e.g. the event got cancelled early,
+- `Cancelled` — the market is called off; everyone takes back what they put in (pool: their
+  stake, fee-free; CPMM: their net deposit, escrowed fees included).
+- `close()` permanently halts trading ahead of resolution (e.g. the event ended early,
   or trading must stop before `lockTime`).
 
 ---
@@ -150,7 +148,7 @@ up), so the fee is never understated.
 
 **Fees are only collected when a market resolves.** The CPMM escrows every trade fee in
 `heldFees` and forwards it via `depositFee{value}` on `resolve`; the pool takes its house fee
-at resolution too. A voided market refunds the fees with everything else, so users pay nothing
+at resolution too. A cancelled market refunds the fees with everything else, so users pay nothing
 but gas. Liquidity providers earn no trading revenue — their return comes only from the
 reserves they hold at settlement.
 
@@ -192,7 +190,8 @@ equals the contract's native balance. Consequence:
 **Redemption** (`redeem()`, pull-payment — the market never pushes funds to anyone):
 
 - `Resolved`: burns *all* of your winning-outcome shares, pays `balance × 1` native.
-- `Voided`: burns your balances of every outcome, pays `sum ÷ n` (equal-refund basis).
+- `Cancelled`: pays back your own net deposit (fees included) off the `depositOf` ledger and
+  clears it, scaled down pro-rata only if the pot holds less than the ledger.
 - Shares are **burned before payment**, so double-claiming is impossible by construction,
   not by a flag. Payout is additionally capped at `totalSets` as a belt-and-braces guard.
 
@@ -203,12 +202,12 @@ equals the contract's native balance. Consequence:
 | Action | Anyone | Factory admin (`ADMIN_ROLE`) | Notes |
 | --- | --- | --- | --- |
 | `buy` / `sell` / `calcBuy` / `calcSell` | ✅ | — | Only while `Open` and `block.timestamp < lockTime` |
-| `bet` / `claim` (pool markets) | ✅ | — | Bets only while `Open` before `lockTime`; claims after Resolved/Voided |
-| `addFunding` / `removeFunding` / `mergeSets` | ✅ | — | Funding requires `Open`; `mergeSets` blocked after Resolved/Voided |
-| `redeem` | ✅ | — | Requires `Resolved` or `Voided` |
+| `bet` / `claim` (pool markets) | ✅ | — | Bets only while `Open` before `lockTime`; claims after Resolved/Cancelled |
+| `addFunding` / `removeFunding` / `mergeSets` | ✅ | — | Funding requires `Open`; `mergeSets` blocked after Resolved/Cancelled |
+| `redeem` | ✅ | — | Requires `Resolved` or `Cancelled` |
 | `createMarket` (payable) | — | ✅ | Clones + initializes + registers atomically |
 | `createMarket2` (pool) | — | ✅ | Same, minus seed liquidity — deliberately not payable |
-| `pause` / `unpause` / `close` / `voidMarket` | — | ✅ | Called through the factory, which relays to the clone and syncs its registry |
+| `pause` / `unpause` / `close` / `cancelMarket` | — | ✅ | Called through the factory, which relays to the clone and syncs its registry |
 | `resolve` | — | ✅ N-of-M multisig | Needs `requiredConfirmations` of the owner-appointed `resolutionSigners` to vote the SAME outcome (`confirmResolution`); the last vote executes it |
 | `setResolutionSigners(signers, required)` | — | Factory **owner** | Replaces the signer set + quorum atomically |
 | `setDefaultFees`, `setTreasury`, `repointTreasury` | — | ✅ | `repointTreasury` is per-market so gas stays bounded |
@@ -265,9 +264,9 @@ Read these before relying on the system:
   `lockTime` (pool markets revert until then). There is no dispute window or oracle
   integration.
 - **Admin can pause/close at will**, stranding traders in `Closed` until an eventual
-  resolve/void. Funds are never stealable — every path ends in pro-rata or winner-take-all
+  resolve/cancel. Funds are never stealable — every path ends in pro-rata or winner-take-all
   payout — but trading can be halted indefinitely.
-- **Void refunds round down** (`sum / n` floors), leaving negligible dust in the contract.
+- **Cancellation refunds round down** (pro-rata `mulDiv` floors), leaving negligible dust in the contract.
 - **After resolution, losing shares are deliberately dead**; only the winning side needs to
   stay backed (the invariant relaxes accordingly).
 - **Metadata is plain strings** (`title`, `description`, `category`, `imageURI`) stored
@@ -305,7 +304,7 @@ AMM, no shares, and no liquidity providers. How it works:
    proportional to their stake*. Payouts floor-round; sub-unit dust stays in the contract.
 6. **Claim** — winners pull their payout with `claim()` (one-shot `_claimed` flag, checked
    native transfer, burn-free accounting). `previewPayout(index)` shows what a claim would pay.
-   `voidMarket()` instead lets every bettor reclaim exactly their own stake, fee-free.
+   `cancelMarket()` instead lets every bettor reclaim exactly their own stake, fee-free.
 
 Both engines share the factory registry, status buckets, pagination, treasury, and event
 surface; `marketKind(marketId)` reports which engine a registered market runs on

@@ -35,12 +35,12 @@ PredictionPool
 
 | Variable | Type | Visibility | Mutability | Purpose |
 | --- | --- | --- | --- | --- |
-| `MAX_OUTCOMES` | `uint256` | public | constant | `16`; bounds per-outcome loops (incl. void-refund loop in `claim`). |
+| `MAX_OUTCOMES` | `uint256` | public | constant | `16`; bounds per-outcome loops (incl. cancel-refund loop in `claim`). |
 | `MAX_FEE_BPS` | `uint16` | public | constant | `1000`; house fee ≤ 10%. |
 | `CLAIM_WINDOW` | `uint64` | public | constant | `365 days`; how long after settlement winners may still `claim`. |
 | `controller` / `treasury` / `status` / metadata / `creator` / timestamps / `feeBps` | — | public | set-once | Same shapes as [PredictionMarket](PredictionMarket.md). |
 | `categoryId` | `uint32` | public | set-once | Category this market is filed under, in the [factory's registry](PredictionFactory.md#category-registry). The market stores no category name of its own. |
-| `endedAt` | `uint64` | public | set at resolve/void | Settlement timestamp; `0` while live. Anchors the claim window. |
+| `endedAt` | `uint64` | public | set at resolve/cancel | Settlement timestamp; `0` while live. Anchors the claim window. |
 | `outcomeCount` | `uint256` | public | set-once | n outcomes. |
 | `_outcomeNames` | `string[]` | private | set-once | Display names. |
 | `totalPool` | `uint256` | public | mutable | Total collateral bet across all outcomes. |
@@ -49,7 +49,7 @@ PredictionPool
 | `_stakedFor` | `mapping(uint256 => uint256)` | private | mutable | Key: outcome → total staked on it. |
 | `_stakeOf` | `mapping(address => mapping(uint256 => uint256))` | private | mutable | Keys: account → outcome → stake of that account on that outcome. |
 | `_claimed` | `mapping(address => bool)` | private | mutable | One-shot payment flag per account. |
-| `_totalStakeOf` | `mapping(address => uint256)` | private | mutable | Stake across all outcomes: exactly what a void pays back. Read via `stakeOf`. |
+| `_totalStakeOf` | `mapping(address => uint256)` | private | mutable | Stake across all outcomes: exactly what a cancellation pays back. Read via `stakeOf`. |
 | `_entered` | `uint256` | private | mutable | Storage reentrancy lock (1 free / 2 entered); =1 after initialize. |
 
 ## Structs / Enums
@@ -61,7 +61,7 @@ Shared types from `PredictionTypes.sol`: `MarketParams`, `MarketStatus`
 
 | Modifier | Condition | Prevents | Used by |
 | --- | --- | --- | --- |
-| `onlyController` | caller == factory | unauthorized lifecycle | pause/unpause/close/resolve/voidMarket/setTreasury |
+| `onlyController` | caller == factory | unauthorized lifecycle | pause/unpause/close/resolve/cancelMarket/setTreasury |
 | `nonReentrant` | lock free | reentrancy on money paths | resolve, bet, claim |
 
 ## Events
@@ -70,7 +70,7 @@ Shared types from `PredictionTypes.sol`: `MarketParams`, `MarketStatus`
 | --- | --- | --- | --- |
 | `BetPlaced` | `market, better, outcome, amount` | first three | Successful `bet` |
 | `RewardClaimed` | `market, claimant, amount` | market, claimant | Successful `claim` |
-| `MarketPaused/Unpaused/Closed/Voided/Resolved` | see shared events | — | Lifecycle |
+| `MarketPaused/Unpaused/Closed/Cancelled/Resolved` | see shared events | — | Lifecycle |
 | `UnclaimedSwept` | `market, treasury, amount` | market, treasury | `sweepUnclaimed`; kept apart from `FeeCollected` so residue never reads as house revenue |
 
 
@@ -92,7 +92,7 @@ for the common list):
 
 - **User / Financial:** `bet`, `claim`
 - **Administrative (controller-only):** `pause`, `unpause`, `close`, `resolve`,
-  `voidMarket`, `setTreasury`, `sweepUnclaimed`, `initialize` (factory once)
+  `cancelMarket`, `setTreasury`, `sweepUnclaimed`, `initialize` (factory once)
 - **View:** `winningOutcome`, `claimDeadline`, `pendingPayout`, `stakeOf`,
   `stakedFor`, `myStake`, `distributableAmount`, `previewPayout`,
   `impliedOdds`, `outcomeName`, `totalPool` (+ status/outcomeCount/endedAt/categoryId)
@@ -162,9 +162,9 @@ takes their own share, once.
 
 - **Resolved:** `payout = myStakeOn(winner) · _distributable / stakedFor(winner)`
   (floored; dust stays in contract). Zero stake on winner ⇒ `NothingToClaim`.
-- **Voided:** the caller's total stake across all outcomes — their own money back, in full
+- **Cancelled:** the caller's total stake across all outcomes — their own money back, in full
   and fee-free, whichever outcome they backed. The house fee is only ever taken at
-  resolution, so a voided pool has never charged one.
+  resolution, so a cancelled pool has never charged one.
 - Otherwise ⇒ `MarketNotResolved`.
 
 Effects first (`_claimed[sender] = true`) then `_sendNative(sender, payout)`; emits
@@ -179,14 +179,14 @@ Effects first (`_claimed[sender] = true`) then `_sendNative(sender, payout)`; em
 function sweepUnclaimed() external onlyController nonReentrant returns (uint256 amount);
 ```
 
-Settlement (`resolve` or `voidMarket`) stamps `endedAt`, starting a `CLAIM_WINDOW` of
+Settlement (`resolve` or `cancelMarket`) stamps `endedAt`, starting a `CLAIM_WINDOW` of
 one year during which `claim` works exactly as before and nothing can be taken out of
 the pool. At `claimDeadline()` the window flips: `claim` reverts `ClaimWindowClosed`
 for everyone, and the admin may collect what is left.
 
 - Reverts `MarketNotResolved` while `endedAt == 0` (a live pool is never sweepable).
 - Reverts `ClaimWindowOpen` before the deadline; `ZeroAmount` when nothing is left.
-- Sweeps the entire balance: unclaimed winner shares, void refunds nobody came back
+- Sweeps the entire balance: unclaimed winner shares, cancellation refunds nobody came back
   for, and the sub-unit rounding dust every pro-rata payout leaves behind. Zeroes
   `_distributable`, forwards via `IPredictionTreasury.depositFee`, emits
   `UnclaimedSwept`.
@@ -199,7 +199,7 @@ zero-stake outcome no longer strands its pool forever.
 ### Lifecycle (controller-only)
 
 `pause()/unpause()` (Open↔Paused betting halt), `close()` (permanent stop ahead of
-resolution — note this does NOT enable early resolution), `voidMarket()`
+resolution — note this does NOT enable early resolution), `cancelMarket()`
 (everyone refunds their own stake), `setTreasury(t)`, `sweepUnclaimed()`. Same guard
 semantics as [PredictionMarket](PredictionMarket.md).
 
@@ -217,7 +217,7 @@ distributableAmount()                // prize pool after fee (0 pre-resolve)
 previewPayout(i)                     // hypothetical: if resolved now to i, my payout
 impliedOdds(i)                       // stake share of whole pool, WAD (1e18)
 pendingPayout(account)               // this account's share, 0 while live or once paid
-stakeOf(account)                     // total stake across outcomes; what a void refunds
+stakeOf(account)                     // total stake across outcomes; what a cancellation refunds
 categoryId()                         // factory category id
 totalPool(), outcomeName(i), status(), outcomeCount()
 ```
@@ -240,7 +240,7 @@ Bettors ──bet{value}──▶ totalPool (per-outcome accounting)
 ADMIN ──resolve(w) after lockTime──▶ fee = pool·feeBps/BPS ──▶ Treasury
                                     └─ distributable ──▶ winners pro-rata
 Bettor ──claim──▶ native      (their own share only, once, until claimDeadline())
-Void path: ADMIN ──voidMarket──▶ each bettor claims own full stake back, fee-free
+Cancel path: ADMIN ──cancelMarket──▶ each bettor claims own full stake back, fee-free
 After claimDeadline(): ADMIN ──sweepUnclaimed──▶ whole remaining balance ──▶ Treasury
 ```
 
@@ -290,8 +290,8 @@ Common failures: `TradingLocked` (after lock), `MarketNotOpen` (paused/closed),
 | --- | --- | --- | --- | --- |
 | `initialize(controller,treasury,params)` | external | nonpayable | Factory, once | Clone setup |
 | `bet(outcomeIndex)` | external | payable | Anyone (Open,<lock) | Stake native on an outcome |
-| `claim()` | external | nonpayable | Stakeholders | Winner payout or void refund, once |
-| `pause/unpause/close/voidMarket/setTreasury` | external | nonpayable | Controller | Lifecycle/config |
+| `claim()` | external | nonpayable | Stakeholders | Winner payout or cancellation refund, once |
+| `pause/unpause/close/cancelMarket/setTreasury` | external | nonpayable | Controller | Lifecycle/config |
 | `resolve(w)` | external | nonpayable | Controller | Declare winner after lock; take fee |
 | `sweepUnclaimed()` | external | nonpayable | Controller | Residue → treasury, post-claim-window |
 | `winningOutcome/claimDeadline/endedAt/pendingPayout/stakeOf/categoryId/stakedFor/myStake/distributableAmount/previewPayout/impliedOdds/outcomeName/totalPool` | external | view | Anyone | Reads |

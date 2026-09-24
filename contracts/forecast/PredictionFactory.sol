@@ -38,7 +38,7 @@ import {
  * @title PredictionFactory
  * @notice Deploys prediction markets as EIP-1167 clones of a single implementation, keeps the
  *         canonical registry, and is the admin control plane every market trusts as its
- *         controller. Lifecycle actions (pause/close/resolve/void) go through the factory so
+ *         controller. Lifecycle actions (pause/close/resolve/cancel) go through the factory so
  *         the registry's per-market status stays authoritative and listings never have to
  *         cross-call the clones.
  */
@@ -387,15 +387,15 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
     }
 
     /// @inheritdoc IPredictionFactory
-    function voidMarket(uint256 marketId) external onlyRole(ADMIN_ROLE) {
-        IPredictionMarket(_records[marketId].market).voidMarket();
-        _setStatus(marketId, MarketStatus.Voided);
+    function cancelMarket(uint256 marketId) external onlyRole(ADMIN_ROLE) {
+        IPredictionMarket(_records[marketId].market).cancelMarket();
+        _setStatus(marketId, MarketStatus.Cancelled);
     }
 
     /**
      * @inheritdoc IPredictionFactory
      * @dev The market enforces the timing itself; the factory only supplies the admin gate.
-     *      Nothing is sweepable until a market has settled (Resolved or Voided) and its
+     *      Nothing is sweepable until a market has settled (Resolved or Cancelled) and its
      *      one-year claim window has run out, so this can never front-run a winner.
      */
     function sweepUnclaimed(uint256 marketId) external onlyRole(ADMIN_ROLE) returns (uint256 amount) {
@@ -652,7 +652,7 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
 
     /// @dev True once a market has reached a terminal status (mirror of the clones' rule).
     function _isEnded(MarketStatus status_) private pure returns (bool) {
-        return status_ == MarketStatus.Resolved || status_ == MarketStatus.Voided;
+        return status_ == MarketStatus.Resolved || status_ == MarketStatus.Cancelled;
     }
 
     /// @dev Appends one validated signer; reverts on zero or duplicate addresses.

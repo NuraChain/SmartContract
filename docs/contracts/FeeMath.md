@@ -8,7 +8,7 @@
 | Solidity file | `contracts/forecast/libraries/FeeMath.sol` |
 | Solidity version | `0.8.24` |
 | Contract type | `library` (internal pure; inlined; never deployed) |
-| Purpose | Basis-point fee helpers shared by CPMM buy/sell; the market escrows the fee and forwards it to the treasury only on resolve; a void refunds it |
+| Purpose | Basis-point fee helpers shared by CPMM buy/sell; the market escrows the fee and forwards it to the treasury only on resolve; a cancellation refunds it |
 
 ## State Variables
 

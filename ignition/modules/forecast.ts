@@ -29,7 +29,7 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  *   }
  *
  * `admin` defaults to the deployer and receives DEFAULT_ADMIN_ROLE + ADMIN_ROLE on the
- * factory — this key creates markets, pauses/closes/voids them, and manages fees.
+ * factory — this key creates markets, pauses/closes/cancels them, and manages fees.
  * Move it to a multisig for anything real.
  *
  * Resolution is MULTISIG. Resolving a market needs `requiredConfirmations` of the

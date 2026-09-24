@@ -40,8 +40,8 @@ interface IPredictionPool {
      */
     function resolve(uint256 winningOutcome_) external;
 
-    /// @notice Voids the market; every bettor gets their own stake back, fee-free.
-    function voidMarket() external;
+    /// @notice Cancels the market; every bettor gets their own stake back, fee-free.
+    function cancelMarket() external;
 
     /**
      * @notice Updates the treasury the resolution fee is forwarded to.
@@ -68,8 +68,8 @@ interface IPredictionPool {
 
     /**
      * @notice Claims the caller's payout: their pro-rata slice of the pool net of fee after
-     *        resolution, or their full stake back after a void. One-shot per account, and the
-     *        only way collateral leaves a settled pool — nothing is ever pushed out.
+     *        resolution, or their full stake back after a cancellation. One-shot per account,
+     *        and the only way collateral leaves a settled pool — nothing is ever pushed out.
      * @return payout Collateral paid to the caller.
      */
     function claim() external returns (uint256 payout);
@@ -93,7 +93,7 @@ interface IPredictionPool {
     ///         settlement, or 0 while the market is live or once they have been paid.
     function pendingPayout(address account) external view returns (uint256);
 
-    /// @notice What `account` has staked across every outcome — what a void pays them back.
+    /// @notice What `account` has staked across every outcome — what cancelling pays them back.
     function stakeOf(address account) external view returns (uint256);
 
 

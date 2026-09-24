@@ -44,8 +44,8 @@ event MarketClosed(address indexed market);
 /// @notice A market was resolved to a winning outcome.
 event MarketResolved(address indexed market, uint256 indexed winningOutcome);
 
-/// @notice A market was voided; every participant can take back what they put in.
-event MarketVoided(address indexed market);
+/// @notice A market was cancelled; every participant can take back what they put in.
+event MarketCancelled(address indexed market);
 
 /// @notice A buy trade: `buyer` spent `amountIn` collateral for `sharesOut` of `outcome`.
 event PredictionPlaced(

@@ -20,7 +20,7 @@ Two creation paths:
   needs no seed liquidity and attached value would be unrecoverable.
 
 Every clone trusts the factory as its **controller**; lifecycle calls
-(pause/close/resolve/void) go through the factory so the registry's per-market status
+(pause/close/resolve/cancel) go through the factory so the registry's per-market status
 stays authoritative without frontends cross-calling clones.
 
 ## Inheritance
@@ -37,7 +37,7 @@ Also uses OpenZeppelin `Clones` (library) and `EnumerableSet` (status buckets).
 | Interface | Interaction |
 | --- | --- |
 | `IPredictionFactory` | Implemented surface. |
-| `IPredictionMarket` | Called on fresh clones: `initialize(...)`; lifecycle relay functions (`pause`, `unpause`, `close`, `resolve`, `voidMarket`, `setTreasury`) share identical signatures across both engines, so one interface drives both kinds of clone. |
+| `IPredictionMarket` | Called on fresh clones: `initialize(...)`; lifecycle relay functions (`pause`, `unpause`, `close`, `resolve`, `cancelMarket`, `setTreasury`) share identical signatures across both engines, so one interface drives both kinds of clone. |
 
 ## State Variables
 
@@ -90,11 +90,11 @@ Used by `createMarket`/`createMarket2` (input + record) and all registry views.
 MarketKind : Amm(0), Pool(1)
 
 MarketStatus:
-  Open     (0) -- trading/liquidity live until lockTime
-  Paused   (1) -- reversible halt by admin
-  Closed   (2) -- permanent halt, awaiting resolution
-  Resolved (3) -- winner declared; winning shares redeem 1:1
-  Voided   (4) -- invalid resolution; refund basis
+  Open      (0) -- trading/liquidity live until lockTime
+  Paused    (1) -- reversible halt by admin
+  Closed    (2) -- permanent halt, awaiting resolution
+  Resolved  (3) -- winner declared; winning shares redeem 1:1
+  Cancelled (4) -- called off; everyone takes back what they put in
 ```
 
 Status values drive the registry buckets and what users may do on a clone.
@@ -133,7 +133,7 @@ Trade/lifecycle events are emitted by the clones themselves (shared declarations
 ### Classification
 
 - **Administrative:** `createMarket`, `createMarket2`, `pauseMarket`, `unpauseMarket`,
-  `closeMarket`, `voidMarket`, `sweepUnclaimed`,
+  `closeMarket`, `cancelMarket`, `sweepUnclaimed`,
   `setTreasury`, `repointTreasury`, `setDefaultFees`, `addCategory`,
   `setCategoryMeanings`, `setCategoryEnabled`
 - **Resolution multisig:** confirmResolution (signers), setResolutionSigners (owner)
@@ -200,7 +200,7 @@ transition is illegal, so registry and clone can never disagree:
 | `unpauseMarket(marketId)` *(ADMIN_ROLE)* | `unpause()` | Paused → Open |
 | `closeMarket(marketId)` *(ADMIN_ROLE)* | `close()` | → Closed (from not-ended states) |
 | `confirmResolution(marketId, winningOutcome)` *(signer)* | records a vote; at quorum calls `resolve(winningOutcome)` | → Resolved |
-| `voidMarket(marketId)` *(ADMIN_ROLE)* | `voidMarket()` | → Voided |
+| `cancelMarket(marketId)` *(ADMIN_ROLE)* | `cancelMarket()` | → Cancelled |
 | `sweepUnclaimed(marketId)` *(ADMIN_ROLE)* | `sweepUnclaimed()` | none — terminal status is unchanged |
 
 `marketId` out of range reverts with array-index panic.
@@ -311,8 +311,8 @@ function setDefaultFees(uint16 feeBps) external;                   // ADMIN_ROLE
 | `countByStatus(status)` | bucket size |
 
 Pagination clamps `end` to total; never reverts except `offset+limit` overflow panic
-(unreachable in practice). Note: there is no paged accessor for `Voided` other than
-`marketsByStatus(MarketStatus.Voided, ...)` directly.
+(unreachable in practice). Note: there is no paged accessor for `Cancelled` other than
+`marketsByStatus(MarketStatus.Cancelled, ...)` directly.
 
 ---
 
@@ -328,7 +328,7 @@ Moves `marketId` between status buckets and writes the record's status. No-op wh
 | all create/lifecycle/config functions | `ADMIN_ROLE` | Admin(s); role granted/revoked by DEFAULT_ADMIN_ROLE holder |
 | all views | none | Anyone |
 
-**CRITICAL ADMIN POWERS:** market creation (incl. choosing fees up to 10%), voiding,
+**CRITICAL ADMIN POWERS:** market creation (incl. choosing fees up to 10%), cancelling,
 treasury re-pointing, sweeping year-old unclaimed collateral, managing the category
 registry, and — owner-only — replacing the resolution signer set/quorum. Note what is
 *not* an admin power: no admin action can stop a participant from collecting their own
@@ -397,7 +397,7 @@ creation (`InvalidTiming`).
 | --- | --- | --- | --- | --- |
 | `createMarket(params)` | external | payable | ADMIN_ROLE | Deploy CPMM clone with seed |
 | `createMarket2(params)` | external | nonpayable | ADMIN_ROLE | Deploy parimutuel clone |
-| `pauseMarket/unpauseMarket/closeMarket/voidMarket(id)` | external | nonpayable | ADMIN_ROLE | Relay lifecycle to clone |
+| `pauseMarket/unpauseMarket/closeMarket/cancelMarket(id)` | external | nonpayable | ADMIN_ROLE | Relay lifecycle to clone |
 | `confirmResolution(id,outcome)` | external | nonpayable | Resolution signer | Vote winner; executes at quorum |
 | `setResolutionSigners(signers,n)` | external | nonpayable | Factory owner | Replace signer set + quorum |
 | `resolutionSigners/isResolutionSigner/requiredConfirmations/confirmationCount/confirmationOf` | external | view | Anyone | Multisig state reads |

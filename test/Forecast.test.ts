@@ -345,10 +345,10 @@ describe("Forecast resolution multisig", () => {
 /**
  * Payout.
  *
- * A settled market never moves money on its own. Resolving or voiding only fixes who is owed
+ * A settled market never moves money on its own. Resolving or cancelling only fixes who is owed
  * what; the collateral stays where it is until each participant comes and claims their own
- * share, once. A void is not a settlement at all — it unwinds the market, so shares and LP
- * stakes stop counting and everyone takes back what they put in.
+ * share, once. A cancellation is not a settlement at all — it unwinds the market, so shares
+ * and LP stakes stop counting and everyone takes back what they put in.
  */
 describe("Forecast payout", () => {
   /** Resolves a market through the 3-of-5 signer quorum. */
@@ -395,7 +395,7 @@ describe("Forecast payout", () => {
     await expect(poolC.connect(alice).claim()).to.be.revertedWithCustomError(poolC, "NothingToClaim");
   });
 
-  it("gives a voided pool's bettors their own stake back", async () => {
+  it("gives a cancelled pool's bettors their own stake back", async () => {
     const { factory, alice, bob } = await deployForecast();
     const [deployer] = await ethers.getSigners();
     const params = await marketParams(deployer.address);
@@ -404,7 +404,7 @@ describe("Forecast payout", () => {
 
     await poolC.connect(alice).bet(0n, { value: 7n * 10n ** 18n });
     await poolC.connect(bob).bet(1n, { value: 3n * 10n ** 18n });
-    await factory.voidMarket(0n);
+    await factory.cancelMarket(0n);
 
     // Opposite sides of a bet that never happened: both simply get their money back.
     expect(await poolC.stakeOf(alice.address)).to.equal(7n * 10n ** 18n);
@@ -449,7 +449,7 @@ describe("Forecast payout", () => {
     await expect(market.connect(alice).redeem()).to.be.revertedWithCustomError(market, "NothingToClaim");
   });
 
-  it("hands a voided CPMM market back to whoever funded it, fees included", async () => {
+  it("hands a cancelled CPMM market back to whoever funded it, fees included", async () => {
     const { factory, treasury, alice, bob } = await deployForecast();
     const [deployer] = await ethers.getSigners();
     const params = await marketParams(deployer.address);
@@ -463,8 +463,9 @@ describe("Forecast payout", () => {
     const bobSold = 5n * 10n ** 17n;
     await market.connect(bob).sell(0n, bobSold, bobShares, params.resolveTime);
 
-    // Every trade paid its 3% fee, but the fee waits in the market until it settles. A void
-    // gives back everything each account paid in, fee included, less what it already took out.
+    // Every trade paid its 3% fee, but the fee waits in the market until it settles.
+    // Cancelling gives back everything each account paid in, fee included, less what it already
+    // took out.
     expect(await market.heldFees()).to.be.greaterThan(0n);
     expect(await treasury.collectedFor(marketAddr)).to.equal(0n);
     const owed = { creator: seed, alice: 10n ** 18n, bob: 2n * 10n ** 18n - bobSold };
@@ -473,7 +474,7 @@ describe("Forecast payout", () => {
     expect(await market.depositOf(bob.address)).to.equal(owed.bob);
     expect(await ethers.provider.getBalance(marketAddr)).to.equal(owed.creator + owed.alice + owed.bob);
 
-    await factory.voidMarket(0n);
+    await factory.cancelMarket(0n);
     expect(await market.heldFees()).to.equal(0n);
 
     expect(await netOf(alice, () => market.connect(alice).redeem())).to.equal(owed.alice);
@@ -487,7 +488,7 @@ describe("Forecast payout", () => {
     await expect(market.connect(alice).redeem()).to.be.revertedWithCustomError(market, "NothingToClaim");
   });
 
-  it("scales a voided market's refunds to what it actually still holds", async () => {
+  it("scales a cancelled market's refunds to what it actually still holds", async () => {
     const { factory, alice } = await deployForecast();
     const all = await ethers.getSigners();
     const [deployer] = all;
@@ -507,7 +508,7 @@ describe("Forecast payout", () => {
     expect(await market.depositOf(carol.address)).to.equal(0n);
     expect(await market.depositOf(alice.address)).to.equal(10n ** 18n);
 
-    await factory.voidMarket(0n);
+    await factory.cancelMarket(0n);
 
     // Everyone still on the ledger is scaled down together, rather than paid in full until
     // the money runs out and the last one back finds an empty contract.
@@ -680,7 +681,7 @@ describe("Forecast claim window", () => {
 
     const rejector = await ethers.deployContract("PayoutRejector", [pool], deployer);
     await rejector.betPool(0n, { value: 10n ** 18n });
-    await factory.voidMarket(0n);
+    await factory.cancelMarket(0n);
     await networkHelpers.time.increaseTo(await poolC.claimDeadline());
 
     await expect(factory.connect(alice).sweepUnclaimed(0n)).to.be.revertedWithCustomError(

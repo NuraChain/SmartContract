@@ -33,7 +33,7 @@ import {
     MarketUnpaused,
     MarketClosed,
     MarketResolved,
-    MarketVoided,
+    MarketCancelled,
     UnclaimedSwept
 } from "./PredictionEvents.sol";
 
@@ -95,7 +95,7 @@ contract PredictionPool is IPredictionPool, Initializable {
     /// @notice Category this market is filed under, in the factory's registry. The name a
     ///         reader sees is looked up there, per language.
     uint32 public categoryId;
-    /// @notice When the pool settled (Resolved or Voided); 0 while it is still live. The
+    /// @notice When the pool settled (Resolved or Cancelled); 0 while it is still live. The
     ///         claim window runs for {CLAIM_WINDOW} from this instant.
     uint64 public endedAt;
 
@@ -121,7 +121,7 @@ contract PredictionPool is IPredictionPool, Initializable {
     /// @dev True once an account has been paid (pushed or pulled), or had nothing coming.
     mapping(address account => bool claimed) private _claimed;
 
-    /// @dev Stake of each account across all outcomes: what a void pays straight back.
+    /// @dev Stake of each account across all outcomes: what a cancellation pays straight back.
     mapping(address account => uint256 staked) private _totalStakeOf;
 
     /// @dev Reentrancy lock: 1 = not entered, 2 = entered (storage-based; see PredictionMarket).
@@ -232,11 +232,11 @@ contract PredictionPool is IPredictionPool, Initializable {
     }
 
     /// @inheritdoc IPredictionPool
-    function voidMarket() external onlyController nonReentrant {
+    function cancelMarket() external onlyController nonReentrant {
         _requireNotEnded();
-        status = MarketStatus.Voided;
+        status = MarketStatus.Cancelled;
         endedAt = uint64(block.timestamp);
-        emit MarketVoided(address(this));
+        emit MarketCancelled(address(this));
     }
 
     /// @inheritdoc IPredictionPool
@@ -277,7 +277,7 @@ contract PredictionPool is IPredictionPool, Initializable {
 
     /**
      * @notice Claims the caller's payout. After resolution: their pro-rata slice of the pool
-     *         net of fee, based on how much they staked on the winner. After a void: their
+     *         net of fee, based on how much they staked on the winner. After cancelling: their
      *         full original stake back across all outcomes, fee-free.
      * @return payout Collateral paid to the caller.
      */
@@ -286,7 +286,7 @@ contract PredictionPool is IPredictionPool, Initializable {
 
         if (_claimed[msg.sender]) revert NothingToClaim();
         MarketStatus s = status;
-        if (s != MarketStatus.Resolved && s != MarketStatus.Voided) revert MarketNotResolved();
+        if (s != MarketStatus.Resolved && s != MarketStatus.Cancelled) revert MarketNotResolved();
         payout = _payoutOf(msg.sender);
         if (payout == 0) revert NothingToClaim();
         _claimed[msg.sender] = true;
@@ -305,8 +305,8 @@ contract PredictionPool is IPredictionPool, Initializable {
         if (deadline == 0) revert MarketNotResolved();
         if (block.timestamp < deadline) revert ClaimWindowOpen();
 
-        // Everything still here: unclaimed winner shares, void refunds nobody came back for,
-        // and the sub-unit rounding dust every pro-rata payout leaves behind.
+        // Everything still here: unclaimed winner shares, cancellation refunds nobody came back
+        // for, and the sub-unit rounding dust every pro-rata payout leaves behind.
         amount = address(this).balance;
         if (amount == 0) revert ZeroAmount();
 
@@ -413,7 +413,7 @@ contract PredictionPool is IPredictionPool, Initializable {
 
     /// @dev Reverts if the market has already reached a terminal status.
     function _requireNotEnded() private view {
-        if (status == MarketStatus.Resolved || status == MarketStatus.Voided) revert MarketAlreadyEnded();
+        if (status == MarketStatus.Resolved || status == MarketStatus.Cancelled) revert MarketAlreadyEnded();
     }
 
     /// @dev Reverts once the claim window has elapsed. The cut-off is the deadline itself,
@@ -436,7 +436,7 @@ contract PredictionPool is IPredictionPool, Initializable {
             }
             return (_stakeOf[account][win] * _distributable) / total;
         }
-        // Voided: every bettor gets their own stake back, fee-free.
+        // Cancelled: every bettor gets their own stake back, fee-free.
         return _totalStakeOf[account];
     }
 

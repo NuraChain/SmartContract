@@ -29,9 +29,6 @@ import {
 import {
     BetPlaced,
     RewardClaimed,
-    MarketPaused,
-    MarketUnpaused,
-    MarketClosed,
     MarketResolved,
     MarketCancelled,
     UnclaimedSwept
@@ -183,27 +180,6 @@ contract PredictionPool is IPredictionPool, Initializable {
     // ----------------------------------------------------------------------------------------
     // Lifecycle (controller only)
     // ----------------------------------------------------------------------------------------
-
-    /// @inheritdoc IPredictionPool
-    function pause() external onlyController {
-        if (status != MarketStatus.Open) revert MarketNotOpen();
-        status = MarketStatus.Paused;
-        emit MarketPaused(address(this));
-    }
-
-    /// @inheritdoc IPredictionPool
-    function unpause() external onlyController {
-        if (status != MarketStatus.Paused) revert MarketNotOpen();
-        status = MarketStatus.Open;
-        emit MarketUnpaused(address(this));
-    }
-
-    /// @inheritdoc IPredictionPool
-    function close() external onlyController {
-        _requireNotEnded();
-        status = MarketStatus.Closed;
-        emit MarketClosed(address(this));
-    }
 
     /**
      * @notice Declares the winning outcome once betting has locked. Takes the house fee off

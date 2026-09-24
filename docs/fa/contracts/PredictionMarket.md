@@ -63,14 +63,13 @@ PredictionMarket
 
 | Modifier | شرط | جلوگیری از | استفاده در |
 | --- | --- | --- | --- |
-| `onlyController` | ‏msg.sender == controller | غیرکارخانه برای چرخهٔ حیات | pause/unpause/close/resolve/cancelMarket/setTreasury |
+| `onlyController` | ‏msg.sender == controller | غیرکارخانه برای چرخهٔ حیات | resolve/cancelMarket/setTreasury |
 | `nonReentrant` | قفل آزاد | reentrancy در مسیرهای پولی | buy, sell, addFunding, removeFunding, mergeSets, redeem |
 
 ## رویدادها
 
 اعلام مشترک در `PredictionEvents.sol`: ‏`LiquidityAdded`, `LiquidityRemoved`,
-`PredictionPlaced`, `PredictionSold`, `RewardClaimed`, ‏`MarketPaused/Unpaused/Closed/
-Resolved/Cancelled`، و ‏`UnclaimedSwept(market, treasury, amount)` هنگام جاروی باقیمانده.
+`PredictionPlaced`, `PredictionSold`, `RewardClaimed`, ‏`MarketResolved/Cancelled`، و ‏`UnclaimedSwept(market, treasury, amount)` هنگام جاروی باقیمانده.
 جزئیات در فایل انگلیسی همین سند.
 
 ## خطاها
@@ -88,8 +87,8 @@ NothingToClaim، NotController، Reentrancy، TransferFailed) با شرط دقی
 ### طبقه‌بندی
 
 - **کاربر / مالی:** ‏`buy`, `sell`, `addFunding`, `removeFunding`, `mergeSets`, `redeem`
-- **مدیریتی (فقط کارخانه):** ‏`pause`, `unpause`, `close`, `resolve`, `cancelMarket`,
-  `setTreasury`, `sweepUnclaimed`, `initialize`
+- **مدیریتی (فقط کارخانه):** ‏`resolve`, `cancelMarket`, `setTreasury`,
+  `sweepUnclaimed`, `initialize`
 - **View:** ‏`winningOutcome`, `claimDeadline`, `pendingPayout`, `depositOf`,
   `getReserves`, `getPrices`, `calcBuy`, `calcSell`, `outcomeName`,
   `totalSets` (+ سطح ERC-1155)
@@ -248,7 +247,6 @@ function sweepUnclaimed() external onlyController nonReentrant returns (uint256 
 
 ### چرخهٔ حیات (فقط controller)
 
-`pause()/unpause()` توقف برگشت‌پذیر؛ ‏`close()` توقف دائمی؛
 `resolve(uint256 w)` اعلام برنده — **حتی قبل از lockTime ممکن است** (فرض اعتمادِ مستند؛
 موتور استخر این را بسته است) و `heldFees` را به خزانه می‌فرستد؛ ‏`cancelMarket()` باز کردن
 بازار: هرکس سپردهٔ خودش را همراه کارمزد پس می‌گیرد؛ ‏`setTreasury`؛ ‏`sweepUnclaimed()` انتقال باقیمانده به خزانه، فقط بعد از
@@ -332,6 +330,6 @@ ADMIN ──sweepUnclaimed بعد از claimDeadline()──▶ کل باقیم�
 | `removeFunding(lpShares)` | external | nonpayable | LP | تبدیل LP به توکن‌های خروجی |
 | `mergeSets(amount)` | external | nonpayable | عموم | ست کامل ← وثیقه |
 | `redeem()` | external | nonpayable | دارندگان توکن | پرداخت برنده/بازگشت |
-| `pause/unpause/close/cancelMarket/resolve/setTreasury` | external | nonpayable | Controller | چرخهٔ حیات |
+| `cancelMarket/resolve/setTreasury` | external | nonpayable | Controller | چرخهٔ حیات |
 | `sweepUnclaimed()` | external | nonpayable | Controller | باقیمانده ← خزانه، بعد از پنجرهٔ بازخرید |
 | viewها | external | view | همه | قیمت/رزرو/کوت/نام |

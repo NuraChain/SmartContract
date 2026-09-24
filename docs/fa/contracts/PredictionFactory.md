@@ -22,7 +22,7 @@
   و ارزش الصاقی بازیابی‌ناپذیر می‌شد.
 
 هر کلون به کارخانه به‌عنوان **controller** اعتماد دارد؛ فراخوانی‌های چرخهٔ حیات
-(pause/close/resolve/cancel) از طریق کارخانه انجام می‌شود تا وضعیتِ رجیستری مرجع بماند.
+(resolve/cancel) از طریق کارخانه انجام می‌شود تا وضعیتِ رجیستری مرجع بماند.
 
 ## وراثت
 
@@ -38,7 +38,7 @@ PredictionFactory
 | اینترفیس | تعامل |
 | --- | --- |
 | `IPredictionFactory` | سطح پیاده‌سازی‌شده. |
-| `IPredictionMarket` | روی کلون‌های تازه: ‏`initialize(...)`؛ توابع رلهٔ چرخهٔ حیات (`pause/unpause/close/resolve/cancelMarket/setTreasury`) امضای یکسان در هر دو موتور دارند. |
+| `IPredictionMarket` | روی کلون‌های تازه: ‏`initialize(...)`؛ توابع رلهٔ چرخهٔ حیات (`resolve/cancelMarket/setTreasury`) امضای یکسان در هر دو موتور دارند. |
 
 ## متغیرهای State
 
@@ -83,10 +83,8 @@ MarketKind : Amm(0)، Pool(1)
 
 MarketStatus:
   Open      (0) -- معامله/نقدینگی فعال تا lockTime
-  Paused    (1) -- توقف برگشت‌پذیر توسط ادمین
-  Closed    (2) -- توقف دائمی، در انتظار حل
-  Resolved  (3) -- برنده اعلام شده؛ سهام برنده ۱:۱ بازخرید می‌شود
-  Cancelled (4) -- لغو شده؛ هر کس آنچه گذاشته پس می‌گیرد
+  Resolved  (1) -- برنده اعلام شده؛ سهام برنده ۱:۱ بازخرید می‌شود
+  Cancelled (2) -- لغو شده؛ هر کس آنچه گذاشته پس می‌گیرد
 ```
 
 ## Modifierها
@@ -122,15 +120,14 @@ MarketStatus:
 
 ### طبقه‌بندی
 
-- **مدیریتی:** ‏`createMarket`, `createMarket2`, `pauseMarket`, `unpauseMarket`,
-  `closeMarket`, `cancelMarket`, `sweepUnclaimed`,
+- **مدیریتی:** ‏`createMarket`, `createMarket2`, `cancelMarket`, `sweepUnclaimed`,
   `setTreasury`, `repointTreasury`, `setDefaultFees`, `addCategory`,
   `setCategoryMeanings`, `setCategoryEnabled`
 - **مولتی‌سگ حل:** ‏confirmResolution (امضاکننده‌ها)، ‏setResolutionSigners (مالک)
 - **View:** ‏marketCount, marketAt, marketAddress, marketKind, 	reasury, 
 esolutionSigners, 
 equiredConfirmations, confirmationCount, confirmationOf, isResolutionSigner,
-  `marketsPaged`, `marketsByStatus`, `activeMarkets`, `closedMarkets`,
+  `marketsPaged`, `marketsByStatus`, `activeMarkets`,
   `resolvedMarkets`, `countByStatus`
 - **Private:** ‏`_setStatus`
 
@@ -177,9 +174,6 @@ function createMarket2(MarketParams calldata params)
 
 | تابع | فراخوانی کلون | گذار وضعیت |
 | --- | --- | --- |
-| `pauseMarket(id)` *(ADMIN_ROLE)* | `pause()` | Open ← Paused |
-| `unpauseMarket(id)` *(ADMIN_ROLE)* | `unpause()` | Paused ← Open |
-| `closeMarket(id)` *(ADMIN_ROLE)* | `close()` | ← Closed |
 | `confirmResolution(id, winningOutcome)` *(امضاکننده)* | ثبت رای؛ در حد نصاب `resolve(winningOutcome)` را اجرا می‌کند | ← Resolved |
 | `cancelMarket(id)` *(ADMIN_ROLE)* | `cancelMarket()` | ← Cancelled |
 | `sweepUnclaimed(id)` *(ADMIN_ROLE)* | `sweepUnclaimed()` | ندارد — وضعیت پایانی دست‌نخورده می‌ماند |
@@ -278,7 +272,7 @@ marketsByCategory(7, 0, 20)                 // صفحه‌بندی‌شده، ب
 | `treasury()` | `_treasury` فعلی |
 | `marketsPaged(offset, limit)` | صفحهٔ رکوردها؛ offset ≥ total ⇒ آرایهٔ خالی |
 | `marketsByStatus(status, offset, limit)` | صفحه بر اساس سطل وضعیت |
-| `activeMarkets/closedMarkets/resolvedMarkets(offset, limit)` | wrapperهای راحت |
+| `activeMarkets/resolvedMarkets(offset, limit)` | wrapperهای راحت |
 | `countByStatus(status)` | اندازهٔ سطل |
 
 صفحه‌بندی `end` را به total گیر می‌دهد و جز سرریز offset+limit هرگز revert نمی‌شود.
@@ -348,7 +342,7 @@ ADMIN ──createMarket{value}──▶ initialize روی کلون (seed = سه
 | --- | --- | --- | --- | --- |
 | `createMarket(params)` | external | payable | ADMIN_ROLE | کلون CPMM با seed |
 | `createMarket2(params)` | external | nonpayable | ADMIN_ROLE | کلون پاری‌موچل |
-| `pauseMarket/unpauseMarket/closeMarket/cancelMarket(id)` | external | nonpayable | ADMIN_ROLE | رلهٔ چرخهٔ حیات |
+| `cancelMarket(id)` | external | nonpayable | ADMIN_ROLE | رلهٔ چرخهٔ حیات |
 | confirmResolution(id,outcome) | external | nonpayable | امضاکنندهٔ حل | رأی به برنده؛ در حد نصاب اجرا می‌شود |
 | setResolutionSigners(signers,n) | external | nonpayable | مالک کارخانه | تعویض مجموعهٔ امضاکننده‌ها + حد نصاب |
 | viewهای مولتی‌سگ | external | view | همه | وضعیت رأی‌ها و امضاکننده‌ها |

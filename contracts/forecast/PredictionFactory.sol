@@ -38,7 +38,7 @@ import {
  * @title PredictionFactory
  * @notice Deploys prediction markets as EIP-1167 clones of a single implementation, keeps the
  *         canonical registry, and is the admin control plane every market trusts as its
- *         controller. Lifecycle actions (pause/close/resolve/cancel) go through the factory so
+ *         controller. Lifecycle actions (resolve/cancel) go through the factory so
  *         the registry's per-market status stays authoritative and listings never have to
  *         cross-call the clones.
  */
@@ -273,24 +273,6 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
         _byCategory[effective.categoryId].add(marketId);
 
         emit MarketCreated(marketId, market, effective.creator, effective.categoryId, effective.outcomeNames.length, 0);
-    }
-
-    /// @inheritdoc IPredictionFactory
-    function pauseMarket(uint256 marketId) external onlyRole(ADMIN_ROLE) {
-        IPredictionMarket(_records[marketId].market).pause();
-        _setStatus(marketId, MarketStatus.Paused);
-    }
-
-    /// @inheritdoc IPredictionFactory
-    function unpauseMarket(uint256 marketId) external onlyRole(ADMIN_ROLE) {
-        IPredictionMarket(_records[marketId].market).unpause();
-        _setStatus(marketId, MarketStatus.Open);
-    }
-
-    /// @inheritdoc IPredictionFactory
-    function closeMarket(uint256 marketId) external onlyRole(ADMIN_ROLE) {
-        IPredictionMarket(_records[marketId].market).close();
-        _setStatus(marketId, MarketStatus.Closed);
     }
 
     /**
@@ -618,11 +600,6 @@ contract PredictionFactory is IPredictionFactory, AccessControl {
     /// @inheritdoc IPredictionFactory
     function activeMarkets(uint256 offset, uint256 limit) external view returns (MarketRecord[] memory) {
         return marketsByStatus(MarketStatus.Open, offset, limit);
-    }
-
-    /// @inheritdoc IPredictionFactory
-    function closedMarkets(uint256 offset, uint256 limit) external view returns (MarketRecord[] memory) {
-        return marketsByStatus(MarketStatus.Closed, offset, limit);
     }
 
     /// @inheritdoc IPredictionFactory

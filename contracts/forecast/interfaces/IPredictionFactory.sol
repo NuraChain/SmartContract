@@ -34,15 +34,6 @@ interface IPredictionFactory {
      */
     function createMarket2(MarketParams calldata params) external returns (uint256 marketId, address market);
 
-    /// @notice Pauses a market (admin only).
-    function pauseMarket(uint256 marketId) external;
-
-    /// @notice Unpauses a market (admin only).
-    function unpauseMarket(uint256 marketId) external;
-
-    /// @notice Closes a market (admin only).
-    function closeMarket(uint256 marketId) external;
-
     /**
      * @notice Casts a resolution signer's vote for a market's winning outcome. When any
      *         outcome accumulates `requiredConfirmations()` distinct votes, the market is
@@ -208,9 +199,6 @@ interface IPredictionFactory {
 
     /// @notice A page of Open markets.
     function activeMarkets(uint256 offset, uint256 limit) external view returns (MarketRecord[] memory);
-
-    /// @notice A page of Closed markets.
-    function closedMarkets(uint256 offset, uint256 limit) external view returns (MarketRecord[] memory);
 
     /// @notice A page of Resolved markets.
     function resolvedMarkets(uint256 offset, uint256 limit) external view returns (MarketRecord[] memory);

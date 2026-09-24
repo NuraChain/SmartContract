@@ -25,15 +25,6 @@ interface IPredictionPool {
 
     // --- lifecycle (controller only) ---
 
-    /// @notice Halts betting, reversibly.
-    function pause() external;
-
-    /// @notice Resumes betting after a pause.
-    function unpause() external;
-
-    /// @notice Permanently stops betting ahead of resolution.
-    function close() external;
-
     /**
      * @notice Declares the winning outcome; impossible before `lockTime`.
      * @param winningOutcome_ Index of the winning outcome.

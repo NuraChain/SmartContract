@@ -186,7 +186,7 @@ describe("Forecast resolution multisig", () => {
         .and.to.emit(factory, "ResolutionExecuted")
         .withArgs(0n, 0n, 3n);
 
-      expect(await poolC.status()).to.equal(3n); // Resolved
+      expect(await poolC.status()).to.equal(1n); // Resolved
       expect(await poolC.winningOutcome()).to.equal(0n);
 
       // House fee (default 300 bps) went to the treasury once.
@@ -217,7 +217,7 @@ describe("Forecast resolution multisig", () => {
       await factory.connect(signers[3]).confirmResolution(0n, 1n);
 
       const poolC = await ethers.getContractAt("PredictionPool", pool);
-      expect(await poolC.status()).to.equal(3n); // Resolved to outcome 1
+      expect(await poolC.status()).to.equal(1n); // Resolved to outcome 1
       expect(await poolC.winningOutcome()).to.equal(1n);
     });
 
@@ -284,7 +284,7 @@ describe("Forecast resolution multisig", () => {
       await factory.connect(signers[1]).confirmResolution(ev.args.marketId, 1n);
       await factory.connect(signers[2]).confirmResolution(ev.args.marketId, 1n);
 
-      expect(await market.status()).to.equal(3n);
+      expect(await market.status()).to.equal(1n);
       expect(await market.winningOutcome()).to.equal(1n);
     });
   });
@@ -319,7 +319,7 @@ describe("Forecast resolution multisig", () => {
       await factory.connect(bob).confirmResolution(0n, 0n);
 
       const poolC = await ethers.getContractAt("PredictionPool", pool);
-      expect(await poolC.status()).to.equal(3n);
+      expect(await poolC.status()).to.equal(1n);
     });
 
     it("validates uniqueness, zero addresses and quorum bounds", async () => {

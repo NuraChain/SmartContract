@@ -23,15 +23,6 @@ interface IPredictionMarket {
 
     // --- lifecycle (controller only) ---
 
-    /// @notice Halts trading, reversibly.
-    function pause() external;
-
-    /// @notice Resumes trading after a pause.
-    function unpause() external;
-
-    /// @notice Permanently stops trading ahead of resolution.
-    function close() external;
-
     /**
      * @notice Resolves the market to a winning outcome; winning shares become redeemable 1:1.
      * @param winningOutcome_ Index of the winning outcome.

@@ -20,7 +20,7 @@ Two creation paths:
   needs no seed liquidity and attached value would be unrecoverable.
 
 Every clone trusts the factory as its **controller**; lifecycle calls
-(pause/close/resolve/cancel) go through the factory so the registry's per-market status
+(resolve/cancel) go through the factory so the registry's per-market status
 stays authoritative without frontends cross-calling clones.
 
 ## Inheritance
@@ -37,7 +37,7 @@ Also uses OpenZeppelin `Clones` (library) and `EnumerableSet` (status buckets).
 | Interface | Interaction |
 | --- | --- |
 | `IPredictionFactory` | Implemented surface. |
-| `IPredictionMarket` | Called on fresh clones: `initialize(...)`; lifecycle relay functions (`pause`, `unpause`, `close`, `resolve`, `cancelMarket`, `setTreasury`) share identical signatures across both engines, so one interface drives both kinds of clone. |
+| `IPredictionMarket` | Called on fresh clones: `initialize(...)`; lifecycle relay functions (`resolve`, `cancelMarket`, `setTreasury`) share identical signatures across both engines, so one interface drives both kinds of clone. |
 
 ## State Variables
 
@@ -91,10 +91,8 @@ MarketKind : Amm(0), Pool(1)
 
 MarketStatus:
   Open      (0) -- trading/liquidity live until lockTime
-  Paused    (1) -- reversible halt by admin
-  Closed    (2) -- permanent halt, awaiting resolution
-  Resolved  (3) -- winner declared; winning shares redeem 1:1
-  Cancelled (4) -- called off; everyone takes back what they put in
+  Resolved  (1) -- winner declared; winning shares redeem 1:1
+  Cancelled (2) -- called off; everyone takes back what they put in
 ```
 
 Status values drive the registry buckets and what users may do on a clone.
@@ -132,15 +130,14 @@ Trade/lifecycle events are emitted by the clones themselves (shared declarations
 
 ### Classification
 
-- **Administrative:** `createMarket`, `createMarket2`, `pauseMarket`, `unpauseMarket`,
-  `closeMarket`, `cancelMarket`, `sweepUnclaimed`,
+- **Administrative:** `createMarket`, `createMarket2`, `cancelMarket`, `sweepUnclaimed`,
   `setTreasury`, `repointTreasury`, `setDefaultFees`, `addCategory`,
   `setCategoryMeanings`, `setCategoryEnabled`
 - **Resolution multisig:** confirmResolution (signers), setResolutionSigners (owner)
 - **View:** marketCount, marketAt, marketAddress, marketKind, 	reasury, 
 esolutionSigners, 
 equiredConfirmations, confirmationCount, confirmationOf, isResolutionSigner,
-  `marketsPaged`, `marketsByStatus`, `activeMarkets`, `closedMarkets`,
+  `marketsPaged`, `marketsByStatus`, `activeMarkets`,
   `resolvedMarkets`, `countByStatus`
 - **Private:** `_setStatus`
 
@@ -196,9 +193,6 @@ clone, then updates the registry bucket via `_setStatus`. The clone reverts firs
 transition is illegal, so registry and clone can never disagree:
 | Function | Clone call / effect | Registry transition |
 | --- | --- | --- |
-| `pauseMarket(marketId)` *(ADMIN_ROLE)* | `pause()` | Open → Paused |
-| `unpauseMarket(marketId)` *(ADMIN_ROLE)* | `unpause()` | Paused → Open |
-| `closeMarket(marketId)` *(ADMIN_ROLE)* | `close()` | → Closed (from not-ended states) |
 | `confirmResolution(marketId, winningOutcome)` *(signer)* | records a vote; at quorum calls `resolve(winningOutcome)` | → Resolved |
 | `cancelMarket(marketId)` *(ADMIN_ROLE)* | `cancelMarket()` | → Cancelled |
 | `sweepUnclaimed(marketId)` *(ADMIN_ROLE)* | `sweepUnclaimed()` | none — terminal status is unchanged |
@@ -307,7 +301,7 @@ function setDefaultFees(uint16 feeBps) external;                   // ADMIN_ROLE
 | `treasury()` | current `_treasury` |
 | `marketsPaged(offset, limit)` | page of records; empty array when offset ≥ total |
 | `marketsByStatus(status, offset, limit)` | paged ids from the status bucket resolved to records |
-| `activeMarkets` / `closedMarkets` / `resolvedMarkets(offset, limit)` | convenience wrappers over `marketsByStatus(Open/Closed/Resolved, …)` |
+| `activeMarkets` / `resolvedMarkets(offset, limit)` | convenience wrappers over `marketsByStatus(Open/Resolved, …)` |
 | `countByStatus(status)` | bucket size |
 
 Pagination clamps `end` to total; never reverts except `offset+limit` overflow panic
@@ -397,7 +391,7 @@ creation (`InvalidTiming`).
 | --- | --- | --- | --- | --- |
 | `createMarket(params)` | external | payable | ADMIN_ROLE | Deploy CPMM clone with seed |
 | `createMarket2(params)` | external | nonpayable | ADMIN_ROLE | Deploy parimutuel clone |
-| `pauseMarket/unpauseMarket/closeMarket/cancelMarket(id)` | external | nonpayable | ADMIN_ROLE | Relay lifecycle to clone |
+| `cancelMarket(id)` | external | nonpayable | ADMIN_ROLE | Relay lifecycle to clone |
 | `confirmResolution(id,outcome)` | external | nonpayable | Resolution signer | Vote winner; executes at quorum |
 | `setResolutionSigners(signers,n)` | external | nonpayable | Factory owner | Replace signer set + quorum |
 | `resolutionSigners/isResolutionSigner/requiredConfirmations/confirmationCount/confirmationOf` | external | view | Anyone | Multisig state reads |
@@ -408,5 +402,5 @@ creation (`InvalidTiming`).
 | `categoryMeaning(s)/categoryLanguages/categoryIds/categoryCount/categoryState/marketsByCategory/countByCategory` | external | view | Anyone | Category reads |
 | `setDefaultFees(f)` | external | nonpayable | ADMIN_ROLE | Default for feeBps=0 markets |
 | `marketCount/marketAt/marketAddress/marketKind/treasury` | external | view | Anyone | Registry reads |
-| `marketsPaged/marketsByStatus/activeMarkets/closedMarkets/resolvedMarkets/countByStatus` | external/public | view | Anyone | Paged listing |
+| `marketsPaged/marketsByStatus/activeMarkets/resolvedMarkets/countByStatus` | external/public | view | Anyone | Paged listing |
 

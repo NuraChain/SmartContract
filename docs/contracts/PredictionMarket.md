@@ -54,7 +54,7 @@ PredictionMarket
 | `CLAIM_WINDOW` | `uint64` | public | constant | `365 days`; how long after settlement winners may still `redeem`. |
 | `controller` | `address` | public | mutable | The factory; sole caller of lifecycle actions. |
 | `treasury` | `address` | public | mutable | Receives protocol fees. |
-| `status` | `MarketStatus` | public | mutable | Lifecycle state (Open/Paused/Closed/Resolved/Cancelled). |
+| `status` | `MarketStatus` | public | mutable | Lifecycle state (Open/Resolved/Cancelled). |
 | `title/description/imageURI` | `string` | public | immutable-in-practice | Metadata written once in `initialize`. |
 | `categoryId` | `uint32` | public | set-once | Category this market is filed under, in the [factory's registry](PredictionFactory.md#category-registry). The market stores no category name of its own. |
 | `creator` | `address` | public | set-once | Account credited as creator/first LP. |
@@ -89,7 +89,7 @@ compromised factory tries to initialize a market with a huge fee.
 
 | Modifier | Condition | Prevents | Used by |
 | --- | --- | --- | --- |
-| `onlyController` | `msg.sender == controller` | anyone but the factory driving lifecycle | `pause`, `unpause`, `close`, `resolve`, `cancelMarket`, `setTreasury` |
+| `onlyController` | `msg.sender == controller` | anyone but the factory driving lifecycle | `resolve`, `cancelMarket`, `setTreasury` |
 | `nonReentrant` | `_entered != 2` | reentrancy into value paths | `buy`, `sell`, `addFunding`, `removeFunding`, `mergeSets`, `redeem` |
 
 ## Events
@@ -103,7 +103,7 @@ Shared declarations live in `PredictionEvents.sol`:
 | `PredictionPlaced` | `market, buyer, outcome, amountIn, sharesOut` | first three | `buy` |
 | `PredictionSold` | `market, seller, outcome, sharesIn, amountOut` | first three | `sell` |
 | `RewardClaimed` | `market, claimant, amount` | market, claimant | `redeem` and `mergeSets` |
-| `MarketPaused/MarketUnpaused/MarketClosed/MarketCancelled` | `market` | market | lifecycle relays |
+| `MarketCancelled` | `market` | market | lifecycle relay |
 | `MarketResolved` | `market, winningOutcome` | both | `resolve` |
 | `UnclaimedSwept` | `market, treasury, amount` | market, treasury | `sweepUnclaimed`; logged apart from `FeeCollected` so residue never reads as trading revenue |
 
@@ -117,7 +117,7 @@ Shared declarations live in `PredictionEvents.sol`:
 | `InvalidOutcome()` | `outcomeIndex >= outcomeCount` | guarded paths |
 | `InvalidFee()` | feeBps > MAX or share > BPS | `initialize` |
 | `InvalidTiming()` | !(now < lockTime ≤ resolveTime) | `initialize` |
-| `MarketNotOpen()` | status ≠ Open where required | trading, addFunding, pause/unpause |
+| `MarketNotOpen()` | status ≠ Open where required | trading, addFunding |
 | `TradingLocked()` | `block.timestamp >= lockTime` | trading, addFunding |
 | `MarketNotResolved()` | redeem/claim before terminal | `redeem` |
 | `MarketAlreadyEnded()` | lifecycle action after terminal | close/resolve/cancel/mergeSets |
@@ -134,8 +134,8 @@ Shared declarations live in `PredictionEvents.sol`:
 ### Classification
 
 - **User / Financial:** `buy`, `sell`, `addFunding`, `removeFunding`, `mergeSets`, `redeem`
-- **Administrative (factory-only):** `pause`, `unpause`, `close`, `resolve`,
-  `cancelMarket`, `setTreasury`, `sweepUnclaimed`, `initialize` (factory calls once)
+- **Administrative (factory-only):** `resolve`, `cancelMarket`, `setTreasury`,
+  `sweepUnclaimed`, `initialize` (factory calls once)
 - **View:** `winningOutcome`, `claimDeadline`, `pendingPayout`, `depositOf`,
   `getReserves`, `getPrices`, `calcBuy`, `calcSell`, `outcomeName`,
   `totalSets` (+ ERC-1155 getters)
@@ -326,8 +326,6 @@ the same instant for everyone whether or not an admin has already collected.
 ### Lifecycle (controller-only)
 
 ```solidity
-pause()/unpause()        // reversible halt (Open↔Paused); MarketNotOpen otherwise
-close()                  // permanent stop betting/trading, await resolution
 resolve(uint256 w)       // declare winner; any time, even BEFORE lockTime (documented trust assumption); sends heldFees to the treasury
 cancelMarket()           // unwind: everyone redeems their own deposit back, fees included
 setTreasury(address)     // re-point fee sink; zero-checked
@@ -436,7 +434,7 @@ Common failures: `TradingLocked` after lockTime, `SlippageExceeded` under vol,
 | `removeFunding(lpShares)` | external | nonpayable | LP | Redeem LP into outcome tokens |
 | `mergeSets(amount)` | external | nonpayable | Anyone | Complete sets → collateral |
 | `redeem()` | external | nonpayable | Token holders | Winner/refund payout |
-| `pause/unpause/close/cancelMarket` | external | nonpayable | Controller | Lifecycle |
+| `cancelMarket` | external | nonpayable | Controller | Lifecycle |
 | `resolve(w)` | external | nonpayable | Controller | Declare winner |
 | `setTreasury(t)` | external | nonpayable | Controller | Fee sink |
 | `sweepUnclaimed()` | external | nonpayable | Controller | Residue → treasury, post-claim-window |

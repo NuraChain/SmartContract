@@ -60,8 +60,8 @@ claim موفق یا پرداختِ push‌شده؛ ‏`UnclaimedSwept(market, tr
 ### طبقه‌بندی
 
 - **کاربر / مالی:** ‏`bet`, `claim`
-- **مدیریتی (controller):** ‏`pause`, `unpause`, `close`, `resolve`, `cancelMarket`,
-  `setTreasury`, `sweepUnclaimed`, `initialize`
+- **مدیریتی (controller):** ‏`resolve`, `cancelMarket`, `setTreasury`,
+  `sweepUnclaimed`, `initialize`
 - **View:** ‏`winningOutcome`, `claimDeadline`, `pendingPayout`, `stakeOf`,
   `stakedFor`, `myStake`, `distributableAmount`, `previewPayout`,
   `impliedOdds`, `outcomeName`, `totalPool`
@@ -216,7 +216,7 @@ ADMIN ──resolve(w) بعد از lock──▶ fee ──▶ Treasury
 | `initialize(...)` | external | nonpayable | کارخانه، یک‌بار | راه‌اندازی کلون |
 | `bet(outcomeIndex)` | external | payable | عموم (Open,<lock) | شرط بستن کوین بومی |
 | `claim()` | external | nonpayable | ذی‌نفعان | پرداخت برنده یا بازگشت cancel، یک‌بار |
-| `pause/unpause/close/cancelMarket/setTreasury` | external | nonpayable | Controller | چرخهٔ حیات |
+| `cancelMarket/setTreasury` | external | nonpayable | Controller | چرخهٔ حیات |
 | `resolve(w)` | external | nonpayable | Controller | اعلام برنده بعد از lock؛ کسر کارمزد |
 | `sweepUnclaimed()` | external | nonpayable | Controller | باقیمانده ← خزانه، بعد از پنجرهٔ برداشت |
 | viewها | external | view | همه | ضرایب/شرط‌ها/پیش‌نمایش |

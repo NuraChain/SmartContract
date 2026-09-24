@@ -19,16 +19,12 @@ enum MarketKind {
 
 /**
  * @notice Lifecycle of a market.
- * - Open:     trading and liquidity are live (until lockTime).
- * - Paused:   temporarily halted by an admin; can return to Open.
- * - Closed:   permanently halted, awaiting resolution; no trading.
- * - Resolved: a winning outcome is set; winning shares redeem 1:1.
+ * - Open:      trading and liquidity are live (until lockTime).
+ * - Resolved:  a winning outcome is set; winning shares redeem 1:1.
  * - Cancelled: called off; everyone takes back what they put in (refund basis).
  */
 enum MarketStatus {
     Open,
-    Paused,
-    Closed,
     Resolved,
     Cancelled
 }

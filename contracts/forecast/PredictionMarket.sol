@@ -39,9 +39,6 @@ import {
     LiquidityAdded,
     LiquidityRemoved,
     RewardClaimed,
-    MarketPaused,
-    MarketUnpaused,
-    MarketClosed,
     MarketResolved,
     MarketCancelled,
     UnclaimedSwept
@@ -238,27 +235,6 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     // ----------------------------------------------------------------------------------------
     // Lifecycle (controller only)
     // ----------------------------------------------------------------------------------------
-
-    /// @inheritdoc IPredictionMarket
-    function pause() external onlyController {
-        if (status != MarketStatus.Open) revert MarketNotOpen();
-        status = MarketStatus.Paused;
-        emit MarketPaused(address(this));
-    }
-
-    /// @inheritdoc IPredictionMarket
-    function unpause() external onlyController {
-        if (status != MarketStatus.Paused) revert MarketNotOpen();
-        status = MarketStatus.Open;
-        emit MarketUnpaused(address(this));
-    }
-
-    /// @inheritdoc IPredictionMarket
-    function close() external onlyController {
-        _requireNotEnded();
-        status = MarketStatus.Closed;
-        emit MarketClosed(address(this));
-    }
 
     /// @inheritdoc IPredictionMarket
     function resolve(uint256 winningOutcome_) external onlyController nonReentrant {

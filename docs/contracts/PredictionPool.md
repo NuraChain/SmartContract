@@ -61,7 +61,7 @@ Shared types from `PredictionTypes.sol`: `MarketParams`, `MarketStatus`
 
 | Modifier | Condition | Prevents | Used by |
 | --- | --- | --- | --- |
-| `onlyController` | caller == factory | unauthorized lifecycle | pause/unpause/close/resolve/cancelMarket/setTreasury |
+| `onlyController` | caller == factory | unauthorized lifecycle | resolve/cancelMarket/setTreasury |
 | `nonReentrant` | lock free | reentrancy on money paths | resolve, bet, claim |
 
 ## Events
@@ -70,7 +70,7 @@ Shared types from `PredictionTypes.sol`: `MarketParams`, `MarketStatus`
 | --- | --- | --- | --- |
 | `BetPlaced` | `market, better, outcome, amount` | first three | Successful `bet` |
 | `RewardClaimed` | `market, claimant, amount` | market, claimant | Successful `claim` |
-| `MarketPaused/Unpaused/Closed/Cancelled/Resolved` | see shared events | — | Lifecycle |
+| `MarketCancelled/MarketResolved` | see shared events | — | Lifecycle |
 | `UnclaimedSwept` | `market, treasury, amount` | market, treasury | `sweepUnclaimed`; kept apart from `FeeCollected` so residue never reads as house revenue |
 
 
@@ -91,8 +91,8 @@ for the common list):
 ### Classification
 
 - **User / Financial:** `bet`, `claim`
-- **Administrative (controller-only):** `pause`, `unpause`, `close`, `resolve`,
-  `cancelMarket`, `setTreasury`, `sweepUnclaimed`, `initialize` (factory once)
+- **Administrative (controller-only):** `resolve`, `cancelMarket`, `setTreasury`,
+  `sweepUnclaimed`, `initialize` (factory once)
 - **View:** `winningOutcome`, `claimDeadline`, `pendingPayout`, `stakeOf`,
   `stakedFor`, `myStake`, `distributableAmount`, `previewPayout`,
   `impliedOdds`, `outcomeName`, `totalPool` (+ status/outcomeCount/endedAt/categoryId)
@@ -198,10 +198,8 @@ zero-stake outcome no longer strands its pool forever.
 
 ### Lifecycle (controller-only)
 
-`pause()/unpause()` (Open↔Paused betting halt), `close()` (permanent stop ahead of
-resolution — note this does NOT enable early resolution), `cancelMarket()`
-(everyone refunds their own stake), `setTreasury(t)`, `sweepUnclaimed()`. Same guard
-semantics as [PredictionMarket](PredictionMarket.md).
+`cancelMarket()` (everyone refunds their own stake), `setTreasury(t)`, `sweepUnclaimed()`.
+Same guard semantics as [PredictionMarket](PredictionMarket.md).
 
 ---
 
@@ -281,7 +279,7 @@ Deployed as clones by `createMarket2` (implementation deployed bare by
 Read `impliedOdds(i)` for live odds, `myStake(i)`/`previewPayout(i)` for user UI.
 Flow: wait `status == Open && timestamp < lockTime` → `bet{value}(i)` → listen for
 `MarketResolved(market, w)` → winners call `claim()`.
-Common failures: `TradingLocked` (after lock), `MarketNotOpen` (paused/closed),
+Common failures: `TradingLocked` (after lock), `MarketNotOpen` (already settled),
 `AlreadyClaimed`-style `NothingToClaim`, resolution impossible before lock.
 
 ## Function Reference
@@ -291,7 +289,7 @@ Common failures: `TradingLocked` (after lock), `MarketNotOpen` (paused/closed),
 | `initialize(controller,treasury,params)` | external | nonpayable | Factory, once | Clone setup |
 | `bet(outcomeIndex)` | external | payable | Anyone (Open,<lock) | Stake native on an outcome |
 | `claim()` | external | nonpayable | Stakeholders | Winner payout or cancellation refund, once |
-| `pause/unpause/close/cancelMarket/setTreasury` | external | nonpayable | Controller | Lifecycle/config |
+| `cancelMarket/setTreasury` | external | nonpayable | Controller | Lifecycle/config |
 | `resolve(w)` | external | nonpayable | Controller | Declare winner after lock; take fee |
 | `sweepUnclaimed()` | external | nonpayable | Controller | Residue → treasury, post-claim-window |
 | `winningOutcome/claimDeadline/endedAt/pendingPayout/stakeOf/categoryId/stakedFor/myStake/distributableAmount/previewPayout/impliedOdds/outcomeName/totalPool` | external | view | Anyone | Reads |

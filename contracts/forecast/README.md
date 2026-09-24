@@ -56,21 +56,15 @@ market is a ~45-byte proxy clone pointing at a single shared implementation.
 ### Lifecycle states (`MarketStatus`)
 
 ```
-            pause()          unpause()
-Open ─────────────────────▶ Paused ─────────────────────▶ Open
- │ ▲                                                  
- │ close()                (pause/unpause reversible)   
- ▼                                                     
-Closed ──┐
-         ├── resolve(winner) ──▶ Resolved     ┐ terminal
-         └── cancelMarket() ───▶ Cancelled    ┘ (no further trades)
+Open ──┬── resolve(winner) ──▶ Resolved     ┐ terminal
+       └── cancelMarket() ───▶ Cancelled    ┘ (no further trades)
 ```
 
 - `Resolved` — only the winning outcome is redeemable (1:1).
 - `Cancelled` — the market is called off; everyone takes back what they put in (pool: their
   stake, fee-free; CPMM: their net deposit, escrowed fees included).
-- `close()` permanently halts trading ahead of resolution (e.g. the event ended early,
-  or trading must stop before `lockTime`).
+- There is no pause or close: trading stops on its own at `lockTime`, and the only way to end
+  a market early is to resolve or cancel it.
 
 ---
 
@@ -207,7 +201,7 @@ equals the contract's native balance. Consequence:
 | `redeem` | ✅ | — | Requires `Resolved` or `Cancelled` |
 | `createMarket` (payable) | — | ✅ | Clones + initializes + registers atomically |
 | `createMarket2` (pool) | — | ✅ | Same, minus seed liquidity — deliberately not payable |
-| `pause` / `unpause` / `close` / `cancelMarket` | — | ✅ | Called through the factory, which relays to the clone and syncs its registry |
+| `cancelMarket` | — | ✅ | Called through the factory, which relays to the clone and syncs its registry |
 | `resolve` | — | ✅ N-of-M multisig | Needs `requiredConfirmations` of the owner-appointed `resolutionSigners` to vote the SAME outcome (`confirmResolution`); the last vote executes it |
 | `setResolutionSigners(signers, required)` | — | Factory **owner** | Replaces the signer set + quorum atomically |
 | `setDefaultFees`, `setTreasury`, `repointTreasury` | — | ✅ | `repointTreasury` is per-market so gas stays bounded |
@@ -263,9 +257,9 @@ Read these before relying on the system:
   can resolve against reality; and on CPMM markets the quorum may still execute before
   `lockTime` (pool markets revert until then). There is no dispute window or oracle
   integration.
-- **Admin can pause/close at will**, stranding traders in `Closed` until an eventual
-  resolve/cancel. Funds are never stealable — every path ends in pro-rata or winner-take-all
-  payout — but trading can be halted indefinitely.
+- **Admin can cancel at will**, ending a market before its outcome is known. Cancelling only
+  refunds — everyone takes back what they put in — so funds are never stealable, but a live
+  market can be called off at any time.
 - **Cancellation refunds round down** (pro-rata `mulDiv` floors), leaving negligible dust in the contract.
 - **After resolution, losing shares are deliberately dead**; only the winning side needs to
   stay backed (the invariant relaxes accordingly).

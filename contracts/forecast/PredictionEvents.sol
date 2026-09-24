@@ -32,15 +32,6 @@ event CategoryMeaningSet(uint32 indexed categoryId, bytes8 indexed lang, string 
 ///         the markets already filed under it.
 event CategoryEnabledSet(uint32 indexed categoryId, bool enabled);
 
-/// @notice A market was paused by an admin (trading halted, reversible).
-event MarketPaused(address indexed market);
-
-/// @notice A paused market was resumed.
-event MarketUnpaused(address indexed market);
-
-/// @notice A market was permanently closed ahead of resolution.
-event MarketClosed(address indexed market);
-
 /// @notice A market was resolved to a winning outcome.
 event MarketResolved(address indexed market, uint256 indexed winningOutcome);
 

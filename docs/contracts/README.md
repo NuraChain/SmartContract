@@ -149,8 +149,8 @@ Airdrop:
 - Deploy groups via `npx hardhat deploy --sc <group> --network nurachain`.
 - Categories: register ids with `addCategory(id, langs, meanings)` before creating any
   market; markets carry the id, the display name per language lives in the factory.
-- Create markets: `createMarket{value}` / `createMarket2`; drive lifecycle via
-  `pauseMarket/unpauseMarket/closeMarket/cancelMarket`; resolution itself is an N-of-M multisig (`confirmResolution` by `resolutionSigners` until `requiredConfirmations` agree).
+- Create markets: `createMarket{value}` / `createMarket2`; end a market early via
+  `cancelMarket`; resolution itself is an N-of-M multisig (`confirmResolution` by `resolutionSigners` until `requiredConfirmations` agree).
 - Payouts: participants always collect their own share, and nothing else moves the money.
   Settling a market only fixes who is owed what; each account then calls `redeem`
   (CPMM) or `claim` (pool) on the market clone. Cancelling a market refunds everyone what

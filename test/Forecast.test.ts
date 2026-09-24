@@ -414,7 +414,7 @@ describe("Forecast payout", () => {
   });
 
   it("pays CPMM share holders and liquidity providers when they redeem", async () => {
-    const { factory, signers, alice } = await deployForecast();
+    const { factory, treasury, signers, alice } = await deployForecast();
     const [deployer] = await ethers.getSigners();
     const params = await marketParams(deployer.address);
     const { marketId, market } = await createAmm(factory, params);
@@ -426,11 +426,16 @@ describe("Forecast payout", () => {
     // of the outcome about to win.
     const aliceShares = await market.balanceOf(alice.address, 1n);
     const lpPot = (await market.getReserves())[1];
-    const held = await ethers.provider.getBalance(marketAddr);
+    const fee = (10n ** 18n * 300n) / 10_000n;
+    expect(await market.heldFees()).to.equal(fee);
+    expect(await treasury.collectedFor(marketAddr)).to.equal(0n);
+    const held = (await ethers.provider.getBalance(marketAddr)) - fee;
 
     await resolveVia(factory, signers, marketId, 1n);
 
-    // Resolution moved nothing; it only fixed the split.
+    // Resolution paid nobody; it only fixed the split and earned the escrowed fee.
+    expect(await market.heldFees()).to.equal(0n);
+    expect(await treasury.collectedFor(marketAddr)).to.equal(fee);
     expect(await ethers.provider.getBalance(marketAddr)).to.equal(held);
     expect(await market.pendingPayout(alice.address)).to.equal(aliceShares);
 
@@ -444,8 +449,8 @@ describe("Forecast payout", () => {
     await expect(market.connect(alice).redeem()).to.be.revertedWithCustomError(market, "NothingToClaim");
   });
 
-  it("hands a voided CPMM market back to whoever funded it", async () => {
-    const { factory, alice, bob } = await deployForecast();
+  it("hands a voided CPMM market back to whoever funded it, fees included", async () => {
+    const { factory, treasury, alice, bob } = await deployForecast();
     const [deployer] = await ethers.getSigners();
     const params = await marketParams(deployer.address);
     const seed = 10n ** 18n;
@@ -454,21 +459,29 @@ describe("Forecast payout", () => {
 
     await market.connect(alice).buy(1n, 0n, params.resolveTime, { value: 10n ** 18n });
     await market.connect(bob).buy(0n, 0n, params.resolveTime, { value: 2n * 10n ** 18n });
+    const bobShares = await market.balanceOf(bob.address, 0n);
+    const bobSold = 5n * 10n ** 17n;
+    await market.connect(bob).sell(0n, bobSold, bobShares, params.resolveTime);
 
-    // Every trade leaves 3% with the treasury on the way in; the rest is the market's to
-    // give back, whichever outcome the buyer picked and whatever the shares are worth now.
-    const owed = { creator: seed, alice: 97n * 10n ** 16n, bob: 194n * 10n ** 16n };
+    // Every trade paid its 3% fee, but the fee waits in the market until it settles. A void
+    // gives back everything each account paid in, fee included, less what it already took out.
+    expect(await market.heldFees()).to.be.greaterThan(0n);
+    expect(await treasury.collectedFor(marketAddr)).to.equal(0n);
+    const owed = { creator: seed, alice: 10n ** 18n, bob: 2n * 10n ** 18n - bobSold };
     expect(await market.depositOf(deployer.address)).to.equal(owed.creator);
     expect(await market.depositOf(alice.address)).to.equal(owed.alice);
     expect(await market.depositOf(bob.address)).to.equal(owed.bob);
     expect(await ethers.provider.getBalance(marketAddr)).to.equal(owed.creator + owed.alice + owed.bob);
 
     await factory.voidMarket(0n);
+    expect(await market.heldFees()).to.equal(0n);
 
     expect(await netOf(alice, () => market.connect(alice).redeem())).to.equal(owed.alice);
     expect(await netOf(bob, () => market.connect(bob).redeem())).to.equal(owed.bob);
     expect(await netOf(deployer, () => market.redeem())).to.equal(owed.creator);
 
+    // The treasury never saw a wei of it.
+    expect(await treasury.collectedFor(marketAddr)).to.equal(0n);
     expect(await ethers.provider.getBalance(marketAddr)).to.equal(0n);
     expect(await market.totalSets()).to.equal(0n);
     await expect(market.connect(alice).redeem()).to.be.revertedWithCustomError(market, "NothingToClaim");
@@ -492,7 +505,7 @@ describe("Forecast payout", () => {
     await market.connect(carol).sell(1n, 5n * 10n ** 17n, shares, params.resolveTime);
 
     expect(await market.depositOf(carol.address)).to.equal(0n);
-    expect(await market.depositOf(alice.address)).to.equal(97n * 10n ** 16n);
+    expect(await market.depositOf(alice.address)).to.equal(10n ** 18n);
 
     await factory.voidMarket(0n);
 

@@ -80,7 +80,7 @@ the event surface, and differ only in engine:
 | Instruments | ERC-1155 outcome shares + LP shares | plain stake accounting |
 | Seed liquidity | required (payable creation) | none (creation reverts on value) |
 | Early resolution | possible **before** lockTime (trust assumption) | impossible — `LockNotReached` |
-| Fees | feeBps split protocol/LP per trade | one house fee off the whole pool at resolve |
+| Fees | feeBps per trade, escrowed until resolve; refunded on void | one house fee off the whole pool at resolve; none on void |
 
 ## Dependency Graph
 

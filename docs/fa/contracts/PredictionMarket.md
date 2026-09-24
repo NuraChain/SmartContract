@@ -15,7 +15,7 @@
 **ناوردای هسته** (در هر گذار state حفظ و در تست‌ها assert می‌شود):
 
 ```text
-برای هر خروجی i:‏  reserves[i] + totalUserSupply(i) == totalSets == موجودی قرارداد
+برای هر خروجی i:‏  reserves[i] + totalUserSupply(i) == totalSets == موجودی قرارداد − heldFees
 ```
 
 هر عملیات خرید/فروش/نقدینگی مقدار یکسانی به جمع همهٔ خروجی‌ها اضافه/کم می‌کند، پس برابری
@@ -47,12 +47,13 @@ PredictionMarket
 | `controller` / `treasury` / `status` | address/address/enum | public | mutable | کارخانه، خزانه، وضعیت چرخهٔ حیات. |
 | متادیتا + `creator` + سه timestamp | string/address/uint64 | public | set-once | در initialize نوشته می‌شوند؛ معامله نیازمند `block.timestamp < lockTime`. |
 | `categoryId` | uint32 | public | set-once | دستهٔ بازار در [رجیستری کارخانه](PredictionFactory.md#رجیستری-دسته‌ها)؛ خودِ بازار هیچ نامی برای دسته ذخیره نمی‌کند. |
-| `feeBps` | uint16 | public | set-once | کارمزد کل معامله؛ تمام آن به خزانه می‌رود. |
+| `feeBps` | uint16 | public | set-once | کارمزد کل معامله؛ تا تعیین‌تکلیف در امانت می‌ماند، با resolve به خزانه می‌رود و با void برمی‌گردد. |
 | `outcomeCount` | uint256 | public | set-once | تعداد خروجی‌ها n. |
 | `_outcomeNames` / `_reserves` | string[] / uint256[] | private | set-once / mutable | نام‌ها / رزرو مجازی FPMM به wei. |
-| `totalSets` | uint256 | public | mutable | وثیقهٔ پشت ست‌های کامل؛ برابر موجودی بومی قرارداد. |
+| `totalSets` | uint256 | public | mutable | وثیقهٔ پشت ست‌های کامل؛ موجودی بومی قرارداد منهای `heldFees`. |
+| `heldFees` | uint256 | public | mutable | کارمزدهای گرفته‌شده که در امانت مانده‌اند. با `resolve` به خزانه می‌روند و با `voidMarket` به صندوق بازگشت وجه اضافه می‌شوند. |
 | `endedAt` | uint64 | public | در resolve/void ثبت | زمان تعیین‌تکلیف؛ تا وقتی بازار زنده است صفر. مبدأ پنجرهٔ بازخرید. |
-| `_deposited` (private) | mapping | mutable | وثیقهٔ خالصی که هر حساب وارد بازار کرده: با seed و `buy` و `addFunding` بالا می‌رود، با `sell` و `mergeSets` پایین. همین چیزی است که void پس می‌دهد. خالصِ کارمزد است — کارمزد قبلاً به خزانه رفته و برنمی‌گردد. با `depositOf` خوانده می‌شود. |
+| `_deposited` (private) | mapping | mutable | وثیقهٔ خالصی که هر حساب وارد بازار کرده: به اندازهٔ پولی که با seed و `buy` (با کارمزد) و `addFunding` پرداخته بالا می‌رود، و به اندازهٔ پولی که با `sell` و `mergeSets` گرفته پایین. همین چیزی است که void پس می‌دهد. با `depositOf` خوانده می‌شود. |
 | `_totalDeposited` (private) | uint256 | mutable | مجموع `_deposited`. سهام توکن ERC-1155 معمولی و قابل انتقال است و دفتر نمی‌تواند دنبالش برود، پس برداشت روی سپردهٔ خودِ فروشنده متوقف می‌شود به‌جای underflow؛ در نتیجه این عدد **کران بالای** `totalSets` است، نه مساوی آن. |
 | `_shareBasis` / `_sharePot` (private) | uint256 | در تعیین‌تکلیف ثبت | مخرج و صورتِ سهم تناسبی‌ای که تعیین‌تکلیف پرداخت می‌کند. در resolve: عرضهٔ LP روی `reserves[win]`. در void: ‏`_totalDeposited` روی `totalSets`. اسنپ‌شات گرفته می‌شود چون بازخرید هر دو عدد زنده را جابه‌جا می‌کند. |
 | `_winningOutcome` | uint256 | private | در resolve ثبت | فقط وقتی Resolved معنی‌دار. |
@@ -127,8 +128,8 @@ function buy(uint256 outcomeIndex, uint256 minSharesOut, uint256 deadline)
 خرید سهام خروجی با کوین بومی الصاقی. جریان: چک deadline → چک قابل‌معامله بودن → تفکیک
 کارمزد با `FeeMath` (fee و invest = amountIn − fee) → محاسبه با
 `MarketMath.calcBuyShares` → چک slippage → effects: همهٔ رزروها += invest؛ رزرو
-خریداری‌شده -= sharesOut؛ totalSets += invest؛ افزودن invest به دفتر سپردهٔ خریدار؛
-ضرب سهام → تعامل: ارسال کل کارمزد به خزانه.
+خریداری‌شده -= sharesOut؛ totalSets += invest؛ ‏heldFees += fee؛ افزودن کل amountIn به
+دفتر سپردهٔ خریدار؛ ضرب سهام. فراخوانی خارجی ندارد: کارمزد تا تعیین‌تکلیف در امانت می‌ماند.
 **امنیت:** محافظت MEV با minSharesOut+deadline؛ CEI؛ کارمزد روی ورودی واقعی.
 
 ---
@@ -142,9 +143,10 @@ function sell(uint256 outcomeIndex, uint256 returnAmount, uint256 maxSharesIn, u
 
 معکوس خرید: سوزاندن `sharesIn` توکن خروجی و دریافت `returnAmount` خالص.
 ‏`grossFromNet` کارمزد را به بالا گرد می‌کند. effects: burn؛ رزرو سایر خروجی‌ها -= gross؛
-رزرو خروجی فروش‌شده += sharesIn − gross؛ totalSets -= gross؛ کم شدن gross از دفتر سپردهٔ
-فروشنده، با توقف روی صفر (ممکن است سهامی را بفروشد که کس دیگری خریده). سپس کل کارمزد به
-خزانه و پرداخت به فروشنده. مرز slippage برعکس است: بیشینهٔ توکنی که می‌دهید.
+رزرو خروجی فروش‌شده += sharesIn − gross؛ totalSets -= gross؛ ‏heldFees += fee؛ کم شدن
+returnAmount (پولی که واقعاً خارج شد) از دفتر سپردهٔ فروشنده، با توقف روی صفر (ممکن است
+سهامی را بفروشد که کس دیگری خریده). سپس پرداخت به فروشنده؛ کارمزد در امانت می‌ماند. مرز
+slippage برعکس است: بیشینهٔ توکنی که می‌دهید.
 
 ---
 
@@ -204,8 +206,9 @@ function redeem() external nonReentrant returns (uint256 payout);
   می‌گیرد — ‏`_deposited · _sharePot / _shareBasis` — و سطر دفترش صفر می‌شود. همین
   مقیاس‌گذاری است که توانگری را نگه می‌دارد: ‏`_totalDeposited` فقط می‌تواند *جلوتر* از
   صندوق باشد (معامله‌گری که با سود فروخته، تفاوت را با خودش برده)، پس ضریب ≤ ۱ است و
-  دقیقاً ۱ می‌شود هر وقت کسی بیشتر از آنچه آورده بیرون نبرده باشد. بازگشت وجه خالصِ
-  کارمزدهای پرداخت‌شده است — آن‌ها مال خزانه‌اند و برنمی‌گردند.
+  دقیقاً ۱ می‌شود هر وقت کسی بیشتر از آنچه آورده بیرون نبرده باشد. کارمزدها هم برمی‌گردند:
+  ‏`voidMarket` مقدار `heldFees` را به `totalSets` برمی‌گرداند، پس بازار void‌شده برای
+  معامله‌گران جز هزینهٔ گس خرجی ندارد.
 
 گرد شدن به نفع استخر؛ payout به totalSets گیر می‌کند. پاک‌کردن مبنای ادعا (سوزاندن، یا
 صفر کردن سطر دفتر) است که پرداخت را یک‌باره می‌کند: فراخوانی دوم چیزی نمی‌بیند و
@@ -247,8 +250,8 @@ function sweepUnclaimed() external onlyController nonReentrant returns (uint256 
 
 `pause()/unpause()` توقف برگشت‌پذیر؛ ‏`close()` توقف دائمی؛
 `resolve(uint256 w)` اعلام برنده — **حتی قبل از lockTime ممکن است** (فرض اعتمادِ مستند؛
-موتور استخر این را بسته است)؛ ‏`voidMarket()` باز کردن بازار: هرکس سپردهٔ خودش را پس
-می‌گیرد؛ ‏`setTreasury`؛ ‏`sweepUnclaimed()` انتقال باقیمانده به خزانه، فقط بعد از
+موتور استخر این را بسته است) و `heldFees` را به خزانه می‌فرستد؛ ‏`voidMarket()` باز کردن
+بازار: هرکس سپردهٔ خودش را همراه کارمزد پس می‌گیرد؛ ‏`setTreasury`؛ ‏`sweepUnclaimed()` انتقال باقیمانده به خزانه، فقط بعد از
 `endedAt + CLAIM_WINDOW`.
 
 ‏`removeFunding` دیگر بعد از تعیین‌تکلیف کار نمی‌کند (`MarketAlreadyEnded`): از آن به بعد
@@ -282,12 +285,13 @@ function sweepUnclaimed() external onlyController nonReentrant returns (uint256 
 
 ```text
 خریدار ──buy{value}──▶ بازار
-         ├─ fee ──▶ Treasury.depositFee (تمام آن)
+         ├─ fee ──▶ heldFees (امانت)
          └─ invest ──▶ رزروها ⇄ ضرب سهام برای خریدار
 فروشنده ──sell──◀ کوین (خالص کارمزد) ؛ ست‌ها سوزانده شدند
 resolve ──┬─ برندگان ── ۱:۱ روی سهام برنده
-          └─ LPها    ── reserves[win] تناسبی
-voidMarket ─── همه ── سپردهٔ خودشان، مقیاس‌شده با صندوق
+          ├─ LPها    ── reserves[win] تناسبی
+          └─ heldFees ──▶ Treasury.depositFee (تمام آن)
+voidMarket ─── همه ── سپردهٔ خودشان با کارمزد، مقیاس‌شده با صندوق
 شرکت‌کننده ──redeem──◀ کوین   (فقط سهم خودش، یک‌بار، تا claimDeadline())
 ADMIN ──sweepUnclaimed بعد از claimDeadline()──▶ کل باقیماندهٔ موجودی ──▶ Treasury
 ```

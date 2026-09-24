@@ -61,9 +61,13 @@ import {
  *          for every outcome i:  reserves[i] + totalUserSupply(i)  ==  totalSets  ==  collateral
  *
  *      A buy/sell/funding operation adds or removes the same amount from every outcome's total,
- *      so the equality across outcomes is preserved, and `totalSets` always equals the contract's
- *      native balance (the whole trade fee leaves for the treasury). Winning shares therefore
- *      always redeem 1:1 without the pool going insolvent.
+ *      so the equality across outcomes is preserved, and `totalSets + heldFees` always equals
+ *      the contract's native balance. Winning shares therefore always redeem 1:1 without the
+ *      pool going insolvent.
+ *
+ *      Trade fees are escrowed in {heldFees}, not paid out as they are charged. A resolution
+ *      sends them to the treasury; a void hands them back with everything else, so a market
+ *      that never settles on an outcome costs its traders nothing but gas.
  *
  *      The invariant holds for the whole life of the market, right through the one-year claim
  *      window that starts at settlement. {sweepUnclaimed} retires it: once the window has
@@ -134,20 +138,24 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     /// @dev Virtual AMM reserves per outcome (collateral base units).
     uint256[] private _reserves;
 
-    /// @notice Collateral backing outstanding complete sets (== contract native balance).
+    /// @notice Collateral backing outstanding complete sets (native balance minus {heldFees}).
     uint256 public totalSets;
+
+    /// @notice Trade fees charged so far and held in escrow: the treasury's on resolution,
+    ///         refunded to the traders on a void.
+    uint256 public heldFees;
 
     /// @dev Winning outcome; meaningful only once status == Resolved.
     uint256 private _winningOutcome;
 
-    /// @dev Net collateral each account has put into the market: up on the seed, a buy and
-    ///      added funding, down on a sell or a merge. This is what a void pays back. It is
-    ///      net of trade fees, which already left for the treasury and cannot be recalled.
+    /// @dev Net collateral each account has put into the market: up by what it paid in on the
+    ///      seed, a buy and added funding, down by what it took out on a sell or a merge.
+    ///      Fees included, since they are still in escrow. This is what a void pays back.
     mapping(address account => uint256 amount) private _deposited;
     /// @dev Sum of `_deposited` across every account. Shares are ordinary ERC-1155 tokens and
     ///      can change hands while the ledger cannot follow them, so a withdrawal stops at
     ///      the seller's own deposit instead of underflowing; that makes this an upper bound
-    ///      on `totalSets` rather than an equality, and the refund scales by the two.
+    ///      on `totalSets + heldFees` rather than an equality, and the refund scales by the two.
     uint256 private _totalDeposited;
 
     /// @dev The pro-rata share settlement pays, snapshotted the moment the market ends
@@ -262,6 +270,13 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         // What the losing reserves were worth is now the LPs' share of the pot.
         _shareBasis = totalSupply(LP_TOKEN_ID);
         _sharePot = _reserves[winningOutcome_];
+
+        // The market settled on an outcome, so the escrowed trade fees are earned.
+        uint256 fees = heldFees;
+        if (fees > 0) {
+            heldFees = 0;
+            IPredictionTreasury(treasury).depositFee{ value: fees }(address(this));
+        }
         emit MarketResolved(address(this), winningOutcome_);
     }
 
@@ -272,10 +287,12 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         endedAt = uint64(block.timestamp);
 
         // Nobody was right or wrong here, so nobody is paid out of anyone else's stake:
-        // shares and LP holdings stop counting and every account is owed its deposit back.
-        // The ledger can only run ahead of the pot — a trader who sold at a profit took the
-        // difference with them — so refunds scale by the two, which is the deposit itself
-        // whenever nobody left with more than they brought.
+        // shares and LP holdings stop counting and every account is owed its deposit back,
+        // escrowed trade fees included. The ledger can only run ahead of the pot — a trader
+        // who sold at a profit took the difference with them — so refunds scale by the two,
+        // which is the deposit itself whenever nobody left with more than they brought.
+        totalSets += heldFees;
+        heldFees = 0;
         _shareBasis = _totalDeposited;
         _sharePot = totalSets;
         emit MarketVoided(address(this));
@@ -310,21 +327,17 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         if (sharesOut < minSharesOut) revert SlippageExceeded();
 
         // Effects: add `invest` to every reserve, then hand the buyer their shares out of the
-        // bought outcome. That collateral stays in the contract; the fee does not.
+        // bought outcome. The fee stays in escrow until the market settles.
         uint256 n = outcomeCount;
         for (uint256 j = 0; j < n; ++j) {
             _reserves[j] += invest;
         }
         _reserves[outcomeIndex] -= sharesOut;
         totalSets += invest;
-        _deposited[msg.sender] += invest;
-        _totalDeposited += invest;
+        heldFees += fee;
+        _deposited[msg.sender] += amountIn;
+        _totalDeposited += amountIn;
         _mint(msg.sender, outcomeIndex, sharesOut, "");
-
-        // Interaction: forward the whole fee.
-        if (fee > 0) {
-            IPredictionTreasury(treasury).depositFee{ value: fee }(address(this));
-        }
         emit PredictionPlaced(address(this), msg.sender, outcomeIndex, amountIn, sharesOut);
     }
 
@@ -354,12 +367,10 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
         }
         _reserves[outcomeIndex] = _reserves[outcomeIndex] + sharesIn - gross;
         totalSets -= gross;
-        _withdrawDeposit(msg.sender, gross);
+        heldFees += fee;
+        _withdrawDeposit(msg.sender, returnAmount);
 
-        // Interactions: fee out, then pay the seller.
-        if (fee > 0) {
-            IPredictionTreasury(treasury).depositFee{ value: fee }(address(this));
-        }
+        // Interaction: pay the seller; the fee stays in escrow.
         _sendNative(msg.sender, returnAmount);
         emit PredictionSold(address(this), msg.sender, outcomeIndex, sharesIn, returnAmount);
     }
@@ -566,7 +577,7 @@ contract PredictionMarket is IPredictionMarket, Initializable, ERC1155SupplyUpgr
     /// @dev Takes up to `amount` off `account`'s deposit ledger. Outcome shares are ordinary
     ///      ERC-1155 tokens, so a seller may never have deposited what they are now taking
     ///      out; the ledger stops at zero rather than underflowing, and the gap that leaves
-    ///      between `_totalDeposited` and `totalSets` is what scales the void refund.
+    ///      between `_totalDeposited` and `totalSets + heldFees` is what scales the void refund.
     function _withdrawDeposit(address account, uint256 amount) private {
         uint256 held = _deposited[account];
         uint256 cut = amount < held ? amount : held;

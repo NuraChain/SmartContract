@@ -14,7 +14,7 @@
 **Core invariant** (maintained by every state transition, asserted in tests):
 
 ```text
-for every outcome i:  reserves[i] + totalUserSupply(i) == totalSets == contract balance
+for every outcome i:  reserves[i] + totalUserSupply(i) == totalSets == contract balance − heldFees
 ```
 
 A buy/sell/funding operation adds or removes the same amount from every outcome's total,
@@ -42,7 +42,7 @@ PredictionMarket
 | Interface | Interaction |
 | --- | --- |
 | `IPredictionMarket` | Implemented surface (`initialize`, trading, liquidity, lifecycle, views). |
-| `IPredictionTreasury` | `depositFee{value}(address(this))` forwards the whole trade fee after buys/sells. |
+| `IPredictionTreasury` | `depositFee{value}(address(this))` forwards the escrowed trade fees once, on `resolve`. |
 
 ## State Variables
 
@@ -64,10 +64,11 @@ PredictionMarket
 | `outcomeCount` | `uint256` | public | set-once | Number of outcomes n. |
 | `_outcomeNames` | `string[]` | private | set-once | Display names per index. |
 | `_reserves` | `uint256[]` | private | mutable | Virtual FPMM reserve per outcome (wei). |
-| `totalSets` | `uint256` | public | mutable | Collateral backing outstanding complete sets; equals contract native balance. |
+| `totalSets` | `uint256` | public | mutable | Collateral backing outstanding complete sets; contract native balance minus `heldFees`. |
+| `heldFees` | `uint256` | public | mutable | Trade fees charged so far, held in escrow. Sent to the treasury on `resolve`; folded back into the refund pot on `voidMarket`. |
 | `_winningOutcome` | `uint256` | private | set at resolve | Meaningful only when Resolved. |
-| `_deposited` | `mapping(address => uint256)` | private | mutable | Net collateral each account has put in: up on the seed, a buy and `addFunding`, down on a sell or a merge. What a void pays back; net of trade fees, which already left for the treasury. Read via `depositOf`. |
-| `_totalDeposited` | `uint256` | private | mutable | Sum of `_deposited`. Shares are transferable and the ledger cannot follow them, so a withdrawal clamps at the seller's own deposit rather than underflowing — making this an **upper bound** on `totalSets`, not an equality. |
+| `_deposited` | `mapping(address => uint256)` | private | mutable | Net collateral each account has put in: up by what it paid on the seed, a buy (fee included) and `addFunding`, down by what it received on a sell or a merge. What a void pays back. Read via `depositOf`. |
+| `_totalDeposited` | `uint256` | private | mutable | Sum of `_deposited`. Shares are transferable and the ledger cannot follow them, so a withdrawal clamps at the seller's own deposit rather than underflowing — making this an **upper bound** on `totalSets + heldFees`, not an equality. |
 | `_shareBasis` / `_sharePot` | `uint256` | private | set at settlement | Denominator and numerator of the pro-rata share settlement pays. Resolved: LP supply over `reserves[win]`. Voided: `_totalDeposited` over `totalSets`. Snapshotted because redeeming moves both live figures. |
 | `_entered` | `uint256` | private | mutable | Reentrancy lock: 1 = free, 2 = entered (storage-based; Paris target has no transient storage); set to 1 in `initialize`. |
 
@@ -192,12 +193,12 @@ function buy(uint256 outcomeIndex, uint256 minSharesOut, uint256 deadline)
 `invest = amountIn - fee` →
 `sharesOut = MarketMath.calcBuyShares(_reserves, i, invest)` → slippage check →
 effects: every reserve += `invest`; bought reserve -= sharesOut;
-`totalSets += invest`; `invest` added to the buyer's deposit ledger; mint shares →
-interaction: forward the whole `fee` to the treasury.
+`totalSets += invest`; `heldFees += fee`; the whole `amountIn` added to the buyer's deposit
+ledger; mint shares. No external call: the fee stays in escrow until the market settles.
 
 **Events:** `PredictionPlaced`. **Errors:** listed above.
-**Security:** MEV-protected by `minSharesOut`+`deadline`; reentrancy-guarded; CEI respected
-(treasury call last). Fees charged on the amount actually sent in.
+**Security:** MEV-protected by `minSharesOut`+`deadline`; reentrancy-guarded. Fees charged
+on the amount actually sent in.
 
 ---
 
@@ -211,8 +212,9 @@ function sell(uint256 outcomeIndex, uint256 returnAmount, uint256 maxSharesIn, u
 Inverse: burn `sharesIn` outcome tokens, receive `returnAmount` collateral net of fee.
 `grossFromNet` rounds the fee up (`FeeMath.grossFromNet`). Effects: burn; every other
 reserve -= gross; bought-outcome reserve += sharesIn − gross; `totalSets -= gross`;
-`gross` taken off the seller's deposit ledger, clamped at zero (they may be selling shares
-someone else bought). Interactions: the whole fee to the treasury, then `_sendNative(seller)`.
+`heldFees += fee`; `returnAmount` (what actually left) taken off the seller's deposit ledger,
+clamped at zero (they may be selling shares someone else bought). Interaction:
+`_sendNative(seller)`; the fee stays in escrow.
 Slippage bound is `maxSharesIn` (max tokens you give up).
 
 ---
@@ -282,8 +284,9 @@ comes and takes their own share, once.
   deposit back — `_deposited · _sharePot / _shareBasis` — and their ledger entry is
   cleared. The scaling is what keeps it solvent: `_totalDeposited` can only run *ahead* of
   the pot (a trader who sold at a profit took the difference with them), so the factor is
-  ≤ 1 and is exactly 1 whenever nobody left with more than they brought. Refunds are net
-  of trade fees already paid — those are the treasury's and cannot be recalled.
+  ≤ 1 and is exactly 1 whenever nobody left with more than they brought. Trade fees are
+  refunded too: `voidMarket` folds `heldFees` back into `totalSets`, so a voided market
+  costs its traders nothing but gas.
 
 Rounding dust favours the pool; payout clamped to `totalSets`. Clearing the claim's basis
 (the burn, or the ledger entry) is what makes redemption one-shot: a second call finds
@@ -325,8 +328,8 @@ the same instant for everyone whether or not an admin has already collected.
 ```solidity
 pause()/unpause()        // reversible halt (Open↔Paused); MarketNotOpen otherwise
 close()                  // permanent stop betting/trading, await resolution
-resolve(uint256 w)       // declare winner; any time, even BEFORE lockTime (documented trust assumption)
-voidMarket()             // unwind: everyone redeems their own deposit back
+resolve(uint256 w)       // declare winner; any time, even BEFORE lockTime (documented trust assumption); sends heldFees to the treasury
+voidMarket()             // unwind: everyone redeems their own deposit back, fees included
 setTreasury(address)     // re-point fee sink; zero-checked
 sweepUnclaimed()         // residue → treasury, only after endedAt + CLAIM_WINDOW
 ```
@@ -351,7 +354,8 @@ getPrices()    -> uint256[]          // marginal prices, WAD, sum ≈ 1e18 (Mark
 calcBuy(i, amountIn)  -> sharesOut   // static quote (net of fee)
 calcSell(i, returnAmt) -> sharesIn   // static quote (gross-of-fee)
 outcomeName(i) -> string             // display name; InvalidOutcome guard
-totalSets()                          // == contract balance (invariant anchor)
+totalSets()                          // == contract balance − heldFees (invariant anchor)
+heldFees()                           // escrowed trade fees; 0 once settled
 ```
 
 Plus ERC-1155 surface: `balanceOf`, `balanceOfBatch`, `isApprovedForAll`,
@@ -370,12 +374,13 @@ Plus ERC-1155 surface: `balanceOf`, `balanceOfBatch`, `isApprovedForAll`,
 
 ```text
 Buyer ──buy{value}──▶ market
-         ├─ fee ──▶ Treasury.depositFee (all of it)
+         ├─ fee ──▶ heldFees (escrow)
          └─ invest ──▶ reserves ⇄ shares minted to buyer
 Seller ──sell(shares)──◀ native (net of fee) ; sets burned
 resolve   ──┬─ winners  ── 1:1 on their winning shares
-            └─ LPs      ── reserves[win] pro-rata
-voidMarket ─── everyone  ── their own deposit back, scaled to the pot
+            ├─ LPs      ── reserves[win] pro-rata
+            └─ heldFees ──▶ Treasury.depositFee (all of it)
+voidMarket ─── everyone  ── their own deposit back, fees included, scaled to the pot
 Participant ──redeem──▶ native   (their own share only, once, until claimDeadline())
 ADMIN ──sweepUnclaimed after claimDeadline()──▶ whole remaining balance ──▶ Treasury
 ```
@@ -384,7 +389,7 @@ ADMIN ──sweepUnclaimed after claimDeadline()──▶ whole remaining balanc
 
 | Target | Call | Failure behaviour |
 | --- | --- | --- |
-| `IPredictionTreasury(treasury)` | `depositFee{value}(market)` | revert bubbles (blocks buy/sell if treasury broken — trusted infra) |
+| `IPredictionTreasury(treasury)` | `depositFee{value}(market)` | revert bubbles (blocks `resolve` if treasury broken — trusted infra; `setTreasury` repoints it) |
 | `payable(to).call{value}` (`_sendNative`) | payouts | `TransferFailed` on failure; recipients can make redeem/merge revert (their own funds only) |
 
 ## Security Analysis

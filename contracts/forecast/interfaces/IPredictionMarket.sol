@@ -129,8 +129,8 @@ interface IPredictionMarket {
     ///         settlement, or 0 while the market is live or once they have been paid.
     function pendingPayout(address account) external view returns (uint256);
 
-    /// @notice Net collateral `account` has put into the market — what a void pays them back,
-    ///         scaled to whatever the pot still holds. Fees already paid are not part of it.
+    /// @notice Net collateral `account` has put into the market, trade fees included — what a
+    ///         void pays them back, scaled to whatever the pot still holds.
     function depositOf(address account) external view returns (uint256);
 
 

@@ -148,9 +148,11 @@ One parameter per market, set at creation and hard-capped:
 On a sell, the fee is computed by grossing up: `gross = net · BPS / (BPS − feeBps)` (rounded
 up), so the fee is never understated.
 
-**The whole fee goes to the treasury**, forwarded immediately via `depositFee{value}` on both
-engines. Nothing is retained in the pool, so liquidity providers earn no trading revenue —
-their return comes only from the reserves they hold at settlement.
+**Fees are only collected when a market resolves.** The CPMM escrows every trade fee in
+`heldFees` and forwards it via `depositFee{value}` on `resolve`; the pool takes its house fee
+at resolution too. A voided market refunds the fees with everything else, so users pay nothing
+but gas. Liquidity providers earn no trading revenue — their return comes only from the
+reserves they hold at settlement.
 
 A market created with `feeBps = 0` inherits the factory default (`defaultFeeBps`); an explicit
 value passes through unchanged.
@@ -179,12 +181,12 @@ collateral; convert it via trading, `mergeSets`, or (after resolution) `redeem`.
 While trading, after every operation:
 
 ```
-for every outcome i:   reserve[i] + totalUserSupply(i)  ==  totalSets  ==  address(this).balance
+for every outcome i:   reserve[i] + totalUserSupply(i)  ==  totalSets  ==  address(this).balance − heldFees
 ```
 
 Why it holds: buys/sells/funding move identical amounts into/out of *every* outcome's total,
-fees leave through the treasury, which `totalSets` excludes, and `totalSets` always equals the
-contract's native balance. Consequence:
+escrowed fees sit in `heldFees`, which `totalSets` excludes, and `totalSets + heldFees` always
+equals the contract's native balance. Consequence:
 **winning shares can always redeem 1:1 — the pool cannot go insolvent.**
 
 **Redemption** (`redeem()`, pull-payment — the market never pushes funds to anyone):

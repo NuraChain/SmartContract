@@ -5,8 +5,8 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title FeeMath
- * @notice Basis-point fee helpers shared by buy and sell. The whole trade fee is forwarded
- *         to the treasury; nothing is retained in the pool.
+ * @notice Basis-point fee helpers shared by buy and sell. The market escrows the fee and
+ *         forwards it to the treasury only when it resolves; a void refunds it.
  */
 library FeeMath {
     /// @dev Basis-point denominator (1e4 = 100%).

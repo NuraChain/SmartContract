@@ -33,6 +33,9 @@ import { network } from "hardhat";
  *                               after the switch (e.g. an encoded `initializeV2(...)`). Empty
  *                               by default, which runs nothing.
  *   PROFILE_UPGRADE_DRY_RUN     Optional. Set to 1 to deploy and check, but not upgrade.
+ *   PROFILE_FORWARDER_ADDRESS   Optional. The ERC-2771 forwarder a new implementation is built
+ *                               with. Defaults to the proxy's current `trustedForwarder()`; a
+ *                               proxy on 1.0.0 has none, so a fresh NuraForwarder is deployed.
  *
  * No private keys here: the signer comes from the network config, as it does everywhere else.
  */
@@ -103,8 +106,20 @@ async function main() {
     candidate = target;
     console.log(`Candidate:       ${candidate}  (pre-deployed)`);
   } else {
-    console.log(`Deploying:       ${target} ...`);
-    const impl = await ethers.deployContract(target, [], signer);
+    // Env, else the live proxy's forwarder (upgrades must keep it), else a fresh NuraForwarder.
+    let forwarder = process.env.PROFILE_FORWARDER_ADDRESS?.trim() || "";
+    if (forwarder === "") {
+      try {
+        forwarder = await profile.trustedForwarder();
+      } catch {
+        console.log(`Deploying:       NuraForwarder (the proxy has none yet) ...`);
+        const deployed = await ethers.deployContract("NuraForwarder", [], signer);
+        await deployed.waitForDeployment();
+        forwarder = await deployed.getAddress();
+      }
+    }
+    console.log(`Deploying:       ${target} (forwarder ${forwarder}) ...`);
+    const impl = await ethers.deployContract(target, [forwarder], signer);
     await impl.waitForDeployment();
     candidate = await impl.getAddress();
     console.log(`Candidate:       ${candidate}  (new ${target})`);
@@ -126,6 +141,7 @@ async function main() {
   }
   const candidateVersion: string = await candidateContract.VERSION();
   console.log(`Candidate check: ${size} bytes (${MAX_CODE_SIZE - size} spare), UUPS ok, VERSION ${candidateVersion}`);
+  console.log(`Forwarder:       ${await candidateContract.trustedForwarder()}`);
 
   const data = process.env.PROFILE_UPGRADE_CALL?.trim() || "0x";
   if (!ethers.isHexString(data)) throw new Error(`PROFILE_UPGRADE_CALL must be hex calldata (got ${data}).`);

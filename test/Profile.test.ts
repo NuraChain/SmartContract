@@ -47,7 +47,8 @@ async function interfaceIdOf(name: string): Promise<string> {
 async function deployProfile() {
   const [admin, alice, bob, carol, operator, recovery, signer] = await ethers.getSigners();
 
-  const impl = await ethers.deployContract("NuraProfile", [], admin);
+  const forwarder = await ethers.deployContract("NuraForwarder", [], admin);
+  const impl = await ethers.deployContract("NuraProfile", [await forwarder.getAddress()], admin);
   const initData = impl.interface.encodeFunctionData("initialize", [admin.address]);
   const proxy = await ethers.deployContract("NuraProfileProxy", [await impl.getAddress(), initData], admin);
   const proxyAddress = await proxy.getAddress();
@@ -55,7 +56,7 @@ async function deployProfile() {
   const profile = await ethers.getContractAt("NuraProfile", proxyAddress, admin);
   const lens = await ethers.deployContract("NuraProfileLens", [proxyAddress], admin);
 
-  return { impl, proxy, proxyAddress, profile, lens, admin, alice, bob, carol, operator, recovery, signer };
+  return { forwarder, impl, proxy, proxyAddress, profile, lens, admin, alice, bob, carol, operator, recovery, signer };
 }
 
 /** Alice has profile #1 ("alice", display name, bio, avatar). */
@@ -94,7 +95,7 @@ describe("NuraProfile", () => {
       const { profile, admin } = await loadFixture(deployProfile);
 
       expect(await profile.owner()).to.equal(admin.address);
-      expect(await profile.VERSION()).to.equal("1.0.0");
+      expect(await profile.VERSION()).to.equal("1.1.0");
       expect(await profile.MAX_VALUE_LENGTH()).to.equal(4096n);
       expect(await profile.MIN_USERNAME_LENGTH()).to.equal(3n);
       expect(await profile.MAX_USERNAME_LENGTH()).to.equal(32n);
@@ -118,8 +119,8 @@ describe("NuraProfile", () => {
     });
 
     it("keeps its state in the ERC-7201 namespace it documents", async () => {
-      const { admin } = await loadFixture(deployProfile);
-      const v2 = await ethers.deployContract("NuraProfileV2Mock", [], admin);
+      const { admin, forwarder } = await loadFixture(deployProfile);
+      const v2 = await ethers.deployContract("NuraProfileV2Mock", [await forwarder.getAddress()], admin);
 
       expect(await v2.layoutSlot()).to.equal(erc7201("nura.storage.NuraProfile"));
     });
@@ -825,6 +826,76 @@ describe("NuraProfile", () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────────────────────
+  describe("sponsored calls (ERC-2771)", () => {
+    /** Signs a ForwardRequest as `from` for `data` on the profile; anyone can then `execute` it. */
+    async function forwardRequest(forwarder: any, from: any, to: string, data: string) {
+      const nonce = await forwarder.nonces(from.address);
+      const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 3600);
+      const request = { from: from.address, to, value: 0n, gas: 1_000_000n, nonce, deadline, data };
+      const signature = await from.signTypedData(
+        {
+          name: "NuraForwarder",
+          version: "1",
+          chainId: (await ethers.provider.getNetwork()).chainId,
+          verifyingContract: await forwarder.getAddress(),
+        },
+        {
+          ForwardRequest: [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "gas", type: "uint256" },
+            { name: "nonce", type: "uint256" },
+            { name: "deadline", type: "uint48" },
+            { name: "data", type: "bytes" },
+          ],
+        },
+        request,
+      );
+      return { from: from.address, to, value: 0n, gas: request.gas, deadline, data, signature };
+    }
+
+    it("lets a user with no NURA create and edit a profile while a sponsor pays the gas", async () => {
+      const { forwarder, profile, proxyAddress, admin: sponsor } = await loadFixture(deployProfile);
+      const user = ethers.Wallet.createRandom().connect(ethers.provider);
+      expect(await profile.trustedForwarder()).to.equal(await forwarder.getAddress());
+
+      const create = profile.interface.encodeFunctionData("createProfile", ["gasless", "Gasless", "", ""]);
+      await forwarder.connect(sponsor).execute(await forwardRequest(forwarder, user, proxyAddress, create));
+
+      const id = await profile.profileIdOf(user.address);
+      expect(id).to.equal(1n);
+      expect((await profile.getProfileRecord(id)).owner).to.equal(user.address);
+
+      const edit = profile.interface.encodeFunctionData("setFields", [id, [{ key: "bio", lang: "", value: "sponsored" }]]);
+      await forwarder.connect(sponsor).execute(await forwardRequest(forwarder, user, proxyAddress, edit));
+
+      expect(await profile.getField(id, "bio")).to.equal("sponsored");
+      expect(await ethers.provider.getBalance(user.address)).to.equal(0n);
+    });
+
+    it("refuses a relayed edit signed by someone other than the owner", async () => {
+      const { forwarder, profile, proxyAddress, admin: sponsor, bob, id } = await loadFixture(deployWithAlice);
+
+      const edit = profile.interface.encodeFunctionData("setField", [id, "bio", "hijacked"]);
+      await expect(
+        forwarder.connect(sponsor).execute(await forwardRequest(forwarder, bob, proxyAddress, edit)),
+      ).to.be.revertedWithCustomError(forwarder, "FailedCall");
+      expect(await profile.getField(id, "bio")).to.equal("Builder");
+    });
+
+    it("ignores an appended sender unless the call comes from the forwarder", async () => {
+      const { profile, proxyAddress, alice, bob, id } = await loadFixture(deployWithAlice);
+
+      const edit = profile.interface.encodeFunctionData("setField", [id, "bio", "hijacked"]);
+      const spoofed = ethers.concat([edit, alice.address]);
+      await expect(bob.sendTransaction({ to: proxyAddress, data: spoofed }))
+        .to.be.revertedWithCustomError(profile, "NotAuthorized")
+        .withArgs(id, bob.address);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────────────────
   describe("operators", () => {
     it("lets an approved operator edit content but nothing identity-level", async () => {
       const { profile, alice, bob, operator, id } = await loadFixture(deployWithAlice);
@@ -1358,7 +1429,7 @@ describe("NuraProfile", () => {
   // ──────────────────────────────────────────────────────────────────────────────────────
   describe("upgradeability", () => {
     it("upgrades to a V2 that keeps every profile, field, item and username intact", async () => {
-      const { profile, lens, proxyAddress, admin, alice, id } = await loadFixture(deployWithAlice);
+      const { profile, lens, proxyAddress, admin, alice, id, forwarder } = await loadFixture(deployWithAlice);
       const p = profile.connect(alice);
       await p.setLocalizedField(id, "bio", "fa", "بایو");
       await p.addWebsite(id, "https://nurachain.net", "Nura");
@@ -1366,7 +1437,7 @@ describe("NuraProfile", () => {
       const recordBefore = await profile.getProfileRecord(id);
       const fullBefore = await lens.getFullProfile(alice.address, "fa");
 
-      const v2 = await ethers.deployContract("NuraProfileV2Mock", [], admin);
+      const v2 = await ethers.deployContract("NuraProfileV2Mock", [await forwarder.getAddress()], admin);
       const v2Address = await v2.getAddress();
       const upgradeCall = v2.interface.encodeFunctionData("initializeV2", ["hello from v2"]);
       await expect(profile.upgradeToAndCall(v2Address, upgradeCall)).to.emit(profile, "Upgraded").withArgs(v2Address);
@@ -1378,7 +1449,7 @@ describe("NuraProfile", () => {
       expect(await upgraded.version()).to.equal("2.0.0-mock");
       expect(await upgraded.greeting()).to.equal("hello from v2");
       expect(await upgraded.bump.staticCall()).to.equal(1n);
-      expect(await upgraded.VERSION()).to.equal("1.0.0"); // inherited constant, as a real V2 would bump it
+      expect(await upgraded.VERSION()).to.equal("1.1.0"); // inherited constant, as a real V2 would bump it
 
       // V1 state, byte for byte.
       expect(await upgraded.getProfileRecord(id)).to.deep.equal(recordBefore);
@@ -1395,8 +1466,8 @@ describe("NuraProfile", () => {
     });
 
     it("refuses upgrades from anyone but the owner, and to anything that is not a UUPS implementation", async () => {
-      const { profile, lens, alice, admin } = await loadFixture(deployWithAlice);
-      const v2 = await ethers.deployContract("NuraProfileV2Mock", [], admin);
+      const { profile, lens, alice, admin, forwarder } = await loadFixture(deployWithAlice);
+      const v2 = await ethers.deployContract("NuraProfileV2Mock", [await forwarder.getAddress()], admin);
 
       await expect(profile.connect(alice).upgradeToAndCall(await v2.getAddress(), "0x")).to.be.revertedWithCustomError(
         profile,

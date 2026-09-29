@@ -75,6 +75,8 @@ contract NotAnExtension {
  *      functions. Used to prove an upgrade keeps every V1 profile intact.
  */
 contract NuraProfileV2Mock is NuraProfile {
+    constructor(address trustedForwarder_) NuraProfile(trustedForwarder_) {}
+
     /// @custom:storage-location erc7201:nura.storage.NuraProfileV2Mock
     struct LayoutV2 {
         uint256 counter;

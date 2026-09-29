@@ -24,7 +24,10 @@ NuraProfile
 ├── Initializable              -- initializer / reinitializer guards
 ├── Ownable2StepUpgradeable    -- contract admin (upgrade, extension registry, reservations)
 ├── UUPSUpgradeable            -- upgradeToAndCall, _authorizeUpgrade = onlyOwner
-└── ERC165Upgradeable          -- supportsInterface(INuraProfile)
+├── ERC165Upgradeable          -- supportsInterface(INuraProfile)
+└── ERC2771ContextUpgradeable  -- _msgSender() = the signer of a request relayed by NuraForwarder
+
+NuraForwarder     is ERC2771Forwarder       (EIP-712 domain "NuraForwarder", version "1")
 
 NuraProfileProxy  is ERC1967Proxy          (the address everyone uses)
 NuraProfileLens   (stateless, reads core via INuraProfile)
@@ -257,7 +260,7 @@ function removeExtensionField(uint256 profileId, string calldata extensionId, st
 `registerExtension` requires: non-zero address, id and address both unused, ERC-165 support for
 `IProfileExtension`, `extensionId() == id`, `profileRegistry() == address(this)`. These are the
 only external calls the core ever makes, all `view`, before any state write.
-`setExtensionField` resolves the extension id from `msg.sender`, requires the profile to exist
+`setExtensionField` resolves the extension id from `_msgSender()`, requires the profile to exist
 and the owner's approval, then writes into `extensionFields[pid][id]` (empty value removes).
 
 ---
@@ -277,7 +280,11 @@ leaks. `getProfileRecord`, `getField`, etc. are what the lens composes into `Pro
 
 - **Authorization tiers:** `_requireAuthorized` (owner or operator: content), `_requireOwner`
   (identity: rename, delete, recovery, extension approval), `_requireOwnerOrRecovery` (transfer
-  initiate/cancel). All re-read `owner` from storage; `msg.sender` only.
+  initiate/cancel). All re-read `owner` from storage and compare it to `_msgSender()`: the
+  caller, or the signer of a request relayed by the trusted `NuraForwarder` (ERC-2771).
+- **Sponsored calls:** a user signs a `ForwardRequest`, a sponsor submits it with
+  `NuraForwarder.execute` and pays the gas. The forwarder checks the signature and nonce, so a
+  sponsor can only submit what the user signed. Direct calls work exactly as before.
 - **Admin cannot touch content.** The contract owner's powers are `upgradeToAndCall`, the
   extension registry and username reservations. Tests assert every content/identity function
   rejects the admin.

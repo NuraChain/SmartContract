@@ -37,7 +37,7 @@ contract ProfileFuzzTest {
     NuraProfile private profile;
 
     function setUp() public {
-        NuraProfile impl = new NuraProfile();
+        NuraProfile impl = new NuraProfile(address(0));
         NuraProfileProxy proxy =
             new NuraProfileProxy(address(impl), abi.encodeCall(NuraProfile.initialize, (address(this))));
         profile = NuraProfile(address(proxy));

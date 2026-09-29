@@ -55,7 +55,8 @@ function probes(deployer: string) {
     // implementation, so it can only be estimated against a real implementation address.
     // The lens and verifier only store the addresses they are given.
     profile: [
-      { name: "NuraProfile", args: [] },
+      { name: "NuraForwarder", args: [] },
+      { name: "NuraProfile", args: [deployer] },
       { name: "NuraProfileLens", args: [deployer] },
       { name: "SocialVerifier", args: [deployer, deployer, deployer] },
     ],

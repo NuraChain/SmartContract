@@ -5,6 +5,8 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ERC165Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
+import {ContextUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
+import {ERC2771ContextUpgradeable} from "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 
 import {INuraProfile} from "./interfaces/INuraProfile.sol";
@@ -62,13 +64,24 @@ import {
  *      item retires the id rather than clearing its strings — ids are never reused, so the
  *      orphaned storage is unreachable through the API and clearing it would be an
  *      unbounded loop.
+ *
+ *      ERC-2771: calls relayed by the trusted forwarder (NuraForwarder) act as the user who
+ *      signed the request, so a sponsor can pay the gas. The forwarder is an immutable of the
+ *      implementation, so every upgrade must be constructed with the same one.
  */
-contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, ERC165Upgradeable {
+contract NuraProfile is
+    INuraProfile,
+    Initializable,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeable,
+    ERC165Upgradeable,
+    ERC2771ContextUpgradeable
+{
     using ProfileStrings for string;
     using ProfileStrings for bytes32;
 
     /// @notice Implementation version, for post-upgrade sanity checks.
-    string public constant VERSION = "1.0.0";
+    string public constant VERSION = "1.1.0";
     /// @notice Longest value (in bytes) a single field or attribute may hold. Bigger content
     ///         belongs off-chain, referenced by URI — that is what this cap enforces.
     uint256 public constant MAX_VALUE_LENGTH = 4096;
@@ -136,8 +149,9 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
     // Setup
     // ────────────────────────────────────────────────────────────────────────────────────────
 
+    /// @param trustedForwarder_ The ERC-2771 forwarder sponsored calls arrive through.
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
+    constructor(address trustedForwarder_) ERC2771ContextUpgradeable(trustedForwarder_) {
         _disableInitializers();
     }
 
@@ -168,22 +182,22 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
         string calldata avatar
     ) external returns (uint256 profileId) {
         Layout storage $ = _layout();
-        if ($.profileIdOf[msg.sender] != 0) revert AlreadyHasProfile(msg.sender);
+        if ($.profileIdOf[_msgSender()] != 0) revert AlreadyHasProfile(_msgSender());
 
         profileId = ++$.nextProfileId;
         ProfileRecord storage p = $.profiles[profileId];
-        p.owner = msg.sender;
+        p.owner = _msgSender();
         p.createdAt = uint40(block.timestamp);
         p.updatedAt = uint40(block.timestamp);
-        $.profileIdOf[msg.sender] = profileId;
+        $.profileIdOf[_msgSender()] = profileId;
 
         bytes32 name;
         if (bytes(username).length != 0) {
             name = username.toUsername();
-            _claimUsername($, profileId, msg.sender, name);
+            _claimUsername($, profileId, _msgSender(), name);
             p.username = name;
         }
-        emit ProfileCreated(profileId, msg.sender, name);
+        emit ProfileCreated(profileId, _msgSender(), name);
 
         if (bytes(displayName).length != 0) _setField($, profileId, ProfileKeys.DISPLAY_NAME, 0, displayName);
         if (bytes(bio).length != 0) _setField($, profileId, ProfileKeys.BIO, 0, bio);
@@ -197,10 +211,10 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
 
         bytes32 username = p.username;
         if (username != 0) delete $.usernameToProfile[username];
-        delete $.profileIdOf[msg.sender];
+        delete $.profileIdOf[_msgSender()];
         delete $.profiles[profileId];
 
-        emit ProfileDeleted(profileId, msg.sender, username);
+        emit ProfileDeleted(profileId, _msgSender(), username);
     }
 
     /// @inheritdoc INuraProfile
@@ -219,19 +233,19 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
     function acceptProfile(uint256 profileId) external {
         Layout storage $ = _layout();
         ProfileRecord storage p = _requireProfile($, profileId);
-        if (p.pendingOwner != msg.sender) revert NotPendingOwner(profileId, msg.sender);
-        if ($.profileIdOf[msg.sender] != 0) revert AlreadyHasProfile(msg.sender);
+        if (p.pendingOwner != _msgSender()) revert NotPendingOwner(profileId, _msgSender());
+        if ($.profileIdOf[_msgSender()] != 0) revert AlreadyHasProfile(_msgSender());
 
         address from = p.owner;
         delete $.profileIdOf[from];
-        $.profileIdOf[msg.sender] = profileId;
-        p.owner = msg.sender;
+        $.profileIdOf[_msgSender()] = profileId;
+        p.owner = _msgSender();
         p.pendingOwner = address(0);
         // The recovery address was the previous owner's choice; the new owner sets their own.
         p.recovery = address(0);
 
         _touch(p, profileId);
-        emit ProfileTransferred(profileId, from, msg.sender);
+        emit ProfileTransferred(profileId, from, _msgSender());
     }
 
     /// @inheritdoc INuraProfile
@@ -246,7 +260,7 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
     /// @inheritdoc INuraProfile
     function setRecoveryAddress(uint256 profileId, address recovery) external {
         ProfileRecord storage p = _requireOwner(_layout(), profileId);
-        if (recovery == msg.sender) revert InvalidAddress(recovery);
+        if (recovery == _msgSender()) revert InvalidAddress(recovery);
 
         p.recovery = recovery;
         emit RecoveryAddressSet(profileId, recovery);
@@ -255,10 +269,10 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
     /// @inheritdoc INuraProfile
     function setOperator(address operator, bool approved) external {
         if (operator == address(0)) revert ZeroAddress();
-        if (operator == msg.sender) revert InvalidAddress(operator);
+        if (operator == _msgSender()) revert InvalidAddress(operator);
 
-        _layout().operators[msg.sender][operator] = approved;
-        emit OperatorSet(msg.sender, operator, approved);
+        _layout().operators[_msgSender()][operator] = approved;
+        emit OperatorSet(_msgSender(), operator, approved);
     }
 
     // ────────────────────────────────────────────────────────────────────────────────────────
@@ -275,7 +289,7 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
         if (bytes(username).length != 0) next = username.toUsername();
         if (next == previous) revert UsernameUnchanged(next);
 
-        if (next != 0) _claimUsername($, profileId, msg.sender, next);
+        if (next != 0) _claimUsername($, profileId, _msgSender(), next);
         if (previous != 0) delete $.usernameToProfile[previous];
         p.username = next;
 
@@ -712,7 +726,7 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
         external
     {
         Layout storage $ = _layout();
-        bytes32 id = $.extensionIdOf[msg.sender];
+        bytes32 id = $.extensionIdOf[_msgSender()];
         if (id == 0) revert ExtensionNotRegistered(0);
         ProfileRecord storage p = _requireProfile($, profileId);
         if (!$.extensionApprovals[profileId][id]) revert ExtensionNotApproved(profileId, id);
@@ -738,9 +752,9 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
         bytes32 id = extensionId.toKey();
         ProfileRecord storage p = _requireProfile($, profileId);
 
-        bool isTheExtension = $.extensionIdOf[msg.sender] == id;
-        if (!isTheExtension && msg.sender != p.owner && !$.operators[p.owner][msg.sender]) {
-            revert NotAuthorized(profileId, msg.sender);
+        bool isTheExtension = $.extensionIdOf[_msgSender()] == id;
+        if (!isTheExtension && _msgSender() != p.owner && !$.operators[p.owner][_msgSender()]) {
+            revert NotAuthorized(profileId, _msgSender());
         }
 
         bytes32 k = key.toKey();
@@ -1007,6 +1021,23 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
     // Internal: authorization
     // ────────────────────────────────────────────────────────────────────────────────────────
 
+    function _msgSender() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (address) {
+        return ERC2771ContextUpgradeable._msgSender();
+    }
+
+    function _msgData() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (bytes calldata) {
+        return ERC2771ContextUpgradeable._msgData();
+    }
+
+    function _contextSuffixLength()
+        internal
+        view
+        override(ContextUpgradeable, ERC2771ContextUpgradeable)
+        returns (uint256)
+    {
+        return ERC2771ContextUpgradeable._contextSuffixLength();
+    }
+
     function _requireProfile(Layout storage $, uint256 profileId) private view returns (ProfileRecord storage p) {
         p = $.profiles[profileId];
         if (p.owner == address(0)) revert ProfileNotFound(profileId);
@@ -1017,14 +1048,14 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
         p = $.profiles[profileId];
         address owner = p.owner;
         if (owner == address(0)) revert ProfileNotFound(profileId);
-        if (msg.sender != owner && !$.operators[owner][msg.sender]) revert NotAuthorized(profileId, msg.sender);
+        if (_msgSender() != owner && !$.operators[owner][_msgSender()]) revert NotAuthorized(profileId, _msgSender());
     }
 
     /// @dev Owner only: identity-level actions (rename, delete, recovery, extension approvals).
     function _requireOwner(Layout storage $, uint256 profileId) private view returns (ProfileRecord storage p) {
         p = $.profiles[profileId];
         if (p.owner == address(0)) revert ProfileNotFound(profileId);
-        if (msg.sender != p.owner) revert NotProfileOwner(profileId, msg.sender);
+        if (_msgSender() != p.owner) revert NotProfileOwner(profileId, _msgSender());
     }
 
     /// @dev Owner or the recovery address: transfer initiation and cancellation.
@@ -1035,7 +1066,7 @@ contract NuraProfile is INuraProfile, Initializable, Ownable2StepUpgradeable, UU
     {
         p = $.profiles[profileId];
         if (p.owner == address(0)) revert ProfileNotFound(profileId);
-        if (msg.sender != p.owner && msg.sender != p.recovery) revert NotOwnerOrRecovery(profileId, msg.sender);
+        if (_msgSender() != p.owner && _msgSender() != p.recovery) revert NotOwnerOrRecovery(profileId, _msgSender());
     }
 
     function _requireItem(Layout storage $, uint256 profileId, uint256 itemId) private view {

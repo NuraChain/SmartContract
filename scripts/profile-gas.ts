@@ -25,7 +25,7 @@ async function main() {
   const { ethers } = await network.getOrCreate();
   const [admin, alice, bob, operator] = await ethers.getSigners();
 
-  const impl = await ethers.deployContract("NuraProfile", [], admin);
+  const impl = await ethers.deployContract("NuraProfile", [ethers.ZeroAddress], admin);
   const initData = impl.interface.encodeFunctionData("initialize", [admin.address]);
   const proxy = await ethers.deployContract("NuraProfileProxy", [await impl.getAddress(), initData], admin);
   const profile = await ethers.getContractAt("NuraProfile", await proxy.getAddress(), alice);

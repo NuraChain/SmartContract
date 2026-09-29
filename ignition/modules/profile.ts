@@ -4,8 +4,10 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  * Everything in contracts/profile — deployed by `npm run deploy:nurachain:profile`,
  * or `npx hardhat deploy --sc profile --network <network>`.
  *
- * Four deployments, one address that matters:
+ * Five deployments, one address that matters:
  *
+ *   NuraForwarder      the ERC-2771 forwarder: a user signs a request, a sponsor submits it and
+ *                      pays the gas. Baked into the implementation, so upgrades reuse it.
  *   NuraProfile        the UUPS implementation. Its constructor disables initializers, so
  *                      the bare implementation can never be claimed; only the proxy is live.
  *   NuraProfileProxy   ERC-1967 proxy, initialized atomically with `initialize(owner)`.
@@ -42,7 +44,8 @@ export default buildModule("profile", (m) => {
   const verifierAdmin = m.getParameter("verifierAdmin", m.getAccount(0));
   const verifierSigner = m.getParameter("verifierSigner", m.getAccount(0));
 
-  const implementation = m.contract("NuraProfile", []);
+  const forwarder = m.contract("NuraForwarder", []);
+  const implementation = m.contract("NuraProfile", [forwarder]);
 
   // initialize(owner) runs inside the proxy constructor, so there is no window in which an
   // uninitialized proxy could be claimed by someone else.
@@ -55,5 +58,5 @@ export default buildModule("profile", (m) => {
   const lens = m.contract("NuraProfileLens", [proxy]);
   const verifier = m.contract("SocialVerifier", [verifierAdmin, verifierSigner, proxy]);
 
-  return { profile, implementation, proxy, lens, verifier };
+  return { profile, forwarder, implementation, proxy, lens, verifier };
 });

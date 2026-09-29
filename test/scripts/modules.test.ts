@@ -237,12 +237,13 @@ describe("ignition modules", () => {
   describe("profile", () => {
     it("deploys implementation, initialized proxy, lens and verifier, all pointing at the proxy", async () => {
       const [deployer] = await ethers.getSigners();
-      const { profile, implementation, proxy, lens, verifier } = await ignition.deploy(profileModule);
+      const { profile, forwarder, implementation, proxy, lens, verifier } = await ignition.deploy(profileModule);
 
       const proxyAddress = await proxy.getAddress();
       expect(await profile.getAddress()).to.equal(proxyAddress);
       expect(await profile.owner()).to.equal(deployer.address);
-      expect(await profile.VERSION()).to.equal("1.0.0");
+      expect(await profile.VERSION()).to.equal("1.1.0");
+      expect(await profile.trustedForwarder()).to.equal(await forwarder.getAddress());
       expect(await profile.profilesCreated()).to.equal(0n);
 
       // ERC-1967 implementation slot points at the bare implementation, which is locked.

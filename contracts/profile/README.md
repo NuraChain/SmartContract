@@ -404,6 +404,11 @@ contract Achievements is IProfileExtension, ERC165 {
   verifies `proxiableUUID` and the EIP-170 size, upgrades, and reads the slot back. The test suite
   upgrades to a V2 mock and checks every V1 profile, field, item, username and the admin survive.
 - `VERSION()` on the implementation is the post-upgrade sanity check.
+- **Sponsored gas (ERC-2771).** The implementation is constructed with a trusted forwarder
+  (`NuraForwarder`, EIP-712 domain `"NuraForwarder"` / `"1"`). A user signs a `ForwardRequest`,
+  a sponsor calls `execute` and pays the gas, and the profile sees the user as the caller. The
+  forwarder is an immutable, so every upgrade must be built with the same one:
+  `profile-upgrade.ts` reads it from the live proxy (or deploys one when upgrading from 1.0.0).
 
 ---
 
@@ -469,7 +474,7 @@ Reviewed against the checklist in the brief. Findings and how each is handled:
 | Concern | Status |
 | --- | --- |
 | Reentrancy | No native-coin handling (no `receive`/`fallback`; the proxy rejects value), no token transfers, no external calls in user paths. The only outgoing calls are the ERC-165 handshake in the admin-only `registerExtension`, all `view`, made before state is written. |
-| Authorization bypass | Three tiers (`_requireAuthorized`, `_requireOwner`, `_requireOwnerOrRecovery`) each re-read `owner` from storage; `msg.sender`-based (no `tx.origin`). Operators are owner-keyed and cannot reach identity actions. Tests cover every function from every wrong caller, including the admin. |
+| Authorization bypass | Three tiers (`_requireAuthorized`, `_requireOwner`, `_requireOwnerOrRecovery`) each re-read `owner` from storage; `_msgSender()`-based (no `tx.origin`): the caller, or the signer of a request relayed by the trusted `NuraForwarder`. Operators are owner-keyed and cannot reach identity actions. Tests cover every function from every wrong caller, including the admin. |
 | Storage collisions / upgrade attacks | ERC-7201 namespace for all core state (slot pinned by test); OZ modules namespaced; implementation locked; `onlyProxy` on `upgradeToAndCall`; `proxiableUUID` checked on upgrade; owner two-step. Remaining risk is the owner key — put it behind a multisig. |
 | Username squatting | Names cost a profile slot (one per address) and gas; reservations for brand/system names; verification badges via extensions rather than revocation. A username can never look like an address (`0x` prefix rejected). |
 | Invalid UTF-8 / homoglyphs | Usernames and language tags are ASCII-only with case folding — no Unicode confusables in identifiers. Values are opaque bytes: the contract makes no UTF-8 assumption, and frontends must escape/sanitize before rendering. |

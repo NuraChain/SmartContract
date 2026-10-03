@@ -13,7 +13,7 @@
     "test:scripts": "hardhat test mocha test/scripts/params.test.ts test/scripts/modules.test.ts",
     "test:profile": "hardhat test mocha test/Profile.test.ts",
     "gas:profile": "hardhat run scripts/profile-gas.ts",
-    "coverage": "hardhat test mocha --coverage test/BridgeToken.test.ts test/Airdrop.test.ts test/Vault.test.ts test/Profile.test.ts test/scripts/params.test.ts",
+    "coverage": "hardhat test mocha --coverage test/BridgeToken.test.ts test/Airdrop.test.ts test/Vault.test.ts test/Profile.test.ts test/Arcade.test.ts test/scripts/params.test.ts",
     "typecheck": "tsc --noEmit",
     "clean": "hardhat clean",
     "preflight:nurachain": "hardhat run scripts/preflight.ts --network nurachain",
@@ -24,6 +24,7 @@
     "deploy:nurachain:vault": "hardhat deploy --sc vault --network nurachain",
     "deploy:nurachain:forecast": "hardhat deploy --sc forecast --network nurachain",
     "deploy:nurachain:profile": "hardhat deploy --sc profile --network nurachain",
+    "deploy:nurachain:arcade": "hardhat deploy --sc arcade --network nurachain",
     "setup:nurachain:vault": "hardhat run scripts/vault-setup.ts --network nurachain",
     "setup:nurachain:profile": "hardhat run scripts/profile-setup.ts --network nurachain",
     "upgrade:nurachain:profile": "hardhat run scripts/profile-upgrade.ts --network nurachain"

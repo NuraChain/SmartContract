@@ -74,6 +74,7 @@ npx hardhat deploy --sc univ3   --network nurachain   # only contracts/univ3
 npx hardhat deploy --sc vault   --network nurachain   # only contracts/vault
 npx hardhat deploy --sc forecast --network nurachain  # only contracts/forecast
 npx hardhat deploy --sc profile --network nurachain   # only contracts/profile
+npx hardhat deploy --sc arcade  --network nurachain   # only contracts/arcade
 ```
 
 `--sc vault` needs a `--parameters` file for the ERC20 address it locks — see
@@ -831,6 +832,8 @@ contracts/vault/
   test/VaultInvariant.t.sol  stateful invariant runs: solvency, conservation, capacity
 contracts/airdrop/
   mocks/AirdropMocks.sol     re-entrant and payout-rejecting claimants, tests only
+contracts/arcade/
+  ArcadeAchievements.sol     ERC-1155 achievements, backend-minted; per-id metadata URI, soulbound or tradeable per id
 contracts/profile/
   NuraProfile.sol            UUPS profile registry: usernames, localized fields, items, extensions
   NuraProfileProxy.sol       the ERC-1967 proxy — the address everyone uses
@@ -850,6 +853,7 @@ ignition/modules/
   vault.ts                   deploys contracts/vault   (--sc vault)
   forecast.ts                deploys contracts/forecast (--sc forecast)
   profile.ts                 deploys contracts/profile (--sc profile): impl, proxy, lens, verifier
+  arcade.ts                  deploys contracts/arcade  (--sc arcade)
 scripts/
   preflight.ts               pre-deploy check: chain id, funding, gas, contract sizes
   write-init-code-hash.ts    regenerates the V3 pool init code hash

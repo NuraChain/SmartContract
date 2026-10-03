@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 
 import airdropModule from "../../ignition/modules/airdrop.ts";
+import arcadeModule from "../../ignition/modules/arcade.ts";
 import profileModule from "../../ignition/modules/profile.ts";
 import tokenModule from "../../ignition/modules/token.ts";
 import univ3Module from "../../ignition/modules/univ3.ts";
@@ -308,6 +309,28 @@ describe("ignition modules", () => {
 
       expect(await verifier.verifiedHandle(1n, "github")).to.equal("nura-deployer");
       expect((await lens.getProfile(deployer.address, "")).displayName).to.equal("Deployer");
+    });
+  });
+
+  describe("arcade", () => {
+    it("deploys with the deployer as admin and minter and an empty uri", async () => {
+      const [deployer] = await ethers.getSigners();
+      const { achievements } = await ignition.deploy(arcadeModule);
+
+      expect(await achievements.hasRole(await achievements.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(true);
+      expect(await achievements.hasRole(await achievements.MINTER_ROLE(), deployer.address)).to.equal(true);
+      expect(await achievements.uri(0n)).to.equal("");
+    });
+
+    it("carries the admin and uri overrides through to the constructor", async () => {
+      const [, other] = await ethers.getSigners();
+      const uri = "https://arcade.example/nft/{id}.json";
+      const { achievements } = await ignition.deploy(arcadeModule, {
+        parameters: { arcade: { admin: other.address, uri } },
+      });
+
+      expect(await achievements.hasRole(await achievements.DEFAULT_ADMIN_ROLE(), other.address)).to.equal(true);
+      expect(await achievements.uri(0n)).to.equal(uri);
     });
   });
 });

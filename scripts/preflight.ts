@@ -60,6 +60,7 @@ function probes(deployer: string) {
       { name: "NuraProfileLens", args: [deployer] },
       { name: "SocialVerifier", args: [deployer, deployer, deployer] },
     ],
+    arcade: [{ name: "ArcadeAchievements", args: [deployer, ""] }],
   };
 }
 

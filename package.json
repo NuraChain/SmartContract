@@ -32,12 +32,12 @@
     "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^4.0.0",
     "@types/chai": "^5.2.2",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^26.6.3",
-    "chai": "^6.2.2",
-    "dotenv": "^18.0.4",
+    "@types/node": "^26.6.4",
+    "chai": "^6.3.0",
+    "dotenv": "^18.0.5",
     "ethers": "^6.15.0",
-    "hardhat": "^3.18.0",
-    "mocha": "^12.0.2",
+    "hardhat": "^3.18.1",
+    "mocha": "^12.0.3",
     "typescript": "~7.0.2"
   },
   "dependencies": {

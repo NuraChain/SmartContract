@@ -211,6 +211,13 @@ Ask and I'll do that downgrade.
 **Fund the deployer first** with Nurachain's native gas token — the deployer is
 whatever address `DEPLOYER_PRIVATE_KEY` corresponds to, and preflight prints it.
 
+**Deploying from a seed phrase** instead of a private key: set `DEPLOYER_MNEMONIC`
+(quoted, space-separated words) in `.env`. It takes precedence over
+`DEPLOYER_PRIVATE_KEY`. The deployer is the account at
+`m/44'/60'/0'/0/<DEPLOYER_MNEMONIC_INDEX>`, which defaults to index 0, the same address as
+MetaMask's first account. Set `DEPLOYER_MNEMONIC_PASSPHRASE` only if the wallet uses a
+BIP-39 passphrase. Run preflight to confirm the derived address before funding it.
+
 ### Verification
 
 Nurachain's explorer is [explorer.nurachain.net](https://explorer.nurachain.net) — its

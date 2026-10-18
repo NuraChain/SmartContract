@@ -764,6 +764,28 @@ const nurachainChainId = process.env.NURACHAIN_CHAIN_ID
   ? Number(process.env.NURACHAIN_CHAIN_ID)
   : undefined;
 
+// The deployer comes from either a seed phrase or a private key. The choice is made here,
+// when the config loads, because Hardhat needs the accounts shape up front; the secrets
+// themselves still resolve lazily through configVariable(). DEPLOYER_MNEMONIC wins when
+// it is set in the environment. Otherwise we fall back to DEPLOYER_PRIVATE_KEY, which may
+// live in .env or the encrypted keystore. A mnemonic kept only in the keystore is not
+// detected, because the keystore is not readable at this point.
+//
+// The deployer is the single account derived at DEPLOYER_MNEMONIC_INDEX (default 0) on
+// the standard Ethereum path m/44'/60'/0'/0/<index>, which is MetaMask's first account at
+// index 0. count is 1 so eth_accounts[0], the address deploy diagnostics check, is that
+// account and nothing else gets derived.
+const deployerAccounts = process.env.DEPLOYER_MNEMONIC?.trim()
+  ? {
+      mnemonic: configVariable("DEPLOYER_MNEMONIC"),
+      initialIndex: process.env.DEPLOYER_MNEMONIC_INDEX ? Number(process.env.DEPLOYER_MNEMONIC_INDEX) : 0,
+      count: 1,
+      ...(process.env.DEPLOYER_MNEMONIC_PASSPHRASE
+        ? { passphrase: configVariable("DEPLOYER_MNEMONIC_PASSPHRASE") }
+        : {}),
+    }
+  : [configVariable("DEPLOYER_PRIVATE_KEY")];
+
 // Nurachain is not a chain hardhat-verify knows, so its explorer has to be described
 // here. It is filed under the `blockscout` slot for one reason: that is the provider
 // hardhat-verify drives without an API key, and explorer.nurachain.net has no key to
@@ -808,7 +830,7 @@ export default defineConfig({
       chainType: "l1",
       chainId: nurachainChainId,
       url: configVariable("NURACHAIN_RPC_URL"),
-      accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
+      accounts: deployerAccounts,
 
       // The node has reported eth_gasPrice and eth_maxPriorityFeePerGas as 0 while still
       // rejecting anything under its floor; left alone, Ignition prices deploys off those

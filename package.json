@@ -19,6 +19,7 @@
     "preflight:nurachain": "hardhat run scripts/preflight.ts --network nurachain",
     "deploy:nurachain": "hardhat deploy --network nurachain",
     "deploy:nurachain:token": "hardhat deploy --sc token --network nurachain",
+    "deploy:nurachain:wnura": "hardhat deploy --sc wnura --network nurachain",
     "deploy:nurachain:airdrop": "hardhat deploy --sc airdrop --network nurachain",
     "deploy:nurachain:univ3": "hardhat deploy --sc univ3 --network nurachain",
     "deploy:nurachain:vault": "hardhat deploy --sc vault --network nurachain",

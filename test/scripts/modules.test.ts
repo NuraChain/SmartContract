@@ -7,6 +7,7 @@ import profileModule from "../../ignition/modules/profile.ts";
 import tokenModule from "../../ignition/modules/token.ts";
 import univ3Module from "../../ignition/modules/univ3.ts";
 import vaultModule from "../../ignition/modules/vault.ts";
+import wnuraModule from "../../ignition/modules/wnura.ts";
 
 const { ethers, ignition } = await network.getOrCreate();
 
@@ -79,6 +80,20 @@ describe("ignition modules", () => {
 
       const adminRole = await bridgeUSDT.DEFAULT_ADMIN_ROLE();
       expect(await bridgeUSDT.hasRole(adminRole, other.address)).to.equal(true);
+    });
+  });
+
+  describe("wnura", () => {
+    it("deploys a working wrapped native coin", async () => {
+      const [deployer] = await ethers.getSigners();
+      const { wnura } = await ignition.deploy(wnuraModule);
+
+      expect(await wnura.name()).to.equal("Wrapped NURA");
+      expect(await wnura.symbol()).to.equal("WNURA");
+      expect(await wnura.decimals()).to.equal(18n);
+
+      await wnura.deposit({ value: 1n });
+      expect(await wnura.balanceOf(deployer.address)).to.equal(1n);
     });
   });
 

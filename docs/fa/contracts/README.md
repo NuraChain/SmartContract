@@ -16,7 +16,6 @@
 | [BridgeETH.md](BridgeETH.md) | ‏`BridgeETH` | token/BridgeETH.sol | توکن ERC20 |
 | [BridgeBTC.md](BridgeBTC.md) | ‏`BridgeBTC` | token/BridgeBTC.sol | توکن ERC20 |
 | [Airdrop.md](Airdrop.md) | ‏`Airdrop` | airdrop/Airdrop.sol | ایردراپ کوین بومی |
-| [CollateralizedNFT.md](CollateralizedNFT.md) | ‏`CollateralizedNFT` | vault/CollateralizedNFT.sol | خزانهٔ ERC721 |
 | [PredictionFactory.md](PredictionFactory.md) | ‏`PredictionFactory` | forecast/PredictionFactory.sol | کارخانهٔ کلون + رجیستری |
 | [PredictionMarket.md](PredictionMarket.md) | ‏`PredictionMarket` | forecast/PredictionMarket.sol | بازار CPMM (ERC-1155) |
 | [PredictionPool.md](PredictionPool.md) | ‏`PredictionPool` | forecast/PredictionPool.sol | بازار پاری‌موچل |
@@ -28,7 +27,7 @@
 | [TestAndVendoredContracts.md](TestAndVendoredContracts.md) | ماک‌ها + یونی‌سواپ V3 | various | تستی/vendored |
 
 اینترفیس‌ها (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,
-`IPredictionTreasury`, `IBackingToken`) داخل بخش *Interfaces* قراردادهای پیاده‌ساز
+`IPredictionTreasury`) داخل بخش *Interfaces* قراردادهای پیاده‌ساز
 مستند شده‌اند. انواع مشترک: ‏`PredictionTypes.sol` (‏`MarketKind`، ‏`MarketStatus`،
 ‏`MarketParams`، ‏`MarketRecord`)، ‏`PredictionErrors.sol` و `PredictionEvents.sol`
 (اعلام سطح فایل — یک نقطهٔ اعلام، topicهای یکسان در همهٔ قراردادها).
@@ -36,20 +35,20 @@
 ## معماری هسته
 
 ```text
- گروه Bridge                    گروه Forecast                      گروه Vault
- ───────────                    ─────────────                      ──────────
- رله(minter/burner)             ADMIN_ROLE                         ادمین/minters
-      │                               │                                  │
- BridgeUSDT/BridgeBNB        PredictionFactory ──createMarket──▶ CollateralizedNFT
-      ▲                            │        └─createMarket2▶ کلون EIP-1167   ▲
-      │ mint/adminBurn             │ ساخت کلون‌های EIP-1167      │             │ deposit/
-      │                       PredictionMarket  PredictionPool   │             │ redeem
- کاربران ◀──────── Transfer ──────────│──────────────────│──────────┘            │
-                                      ▼                  ▼                       │
-                              معامله CPMM/شرط‌بندی    شرط‌بندی/claim                 │
-                                      │ کارمزد پروتکل/خانه                توکن ERC20 پشتوانه
-                                      ▼                                         │
-                                PredictionTreasury ──withdraw──▶ feeRecipient ◀─┘
+ گروه Bridge                    گروه Forecast
+ ───────────                    ─────────────
+ رله(minter/burner)             ADMIN_ROLE
+      │                               │
+ BridgeUSDT/BridgeBNB        PredictionFactory
+      ▲                            │        └─createMarket2▶ کلون EIP-1167
+      │ mint/adminBurn             │ ساخت کلون‌های EIP-1167
+      │                       PredictionMarket  PredictionPool
+ کاربران ◀──────── Transfer ──────────│──────────────────│
+                                      ▼                  ▼
+                              معامله CPMM/شرط‌بندی    شرط‌بندی/claim
+                                      │ کارمزد پروتکل/خانه
+                                      ▼
+                                PredictionTreasury ──withdraw──▶ feeRecipient
 ```
 
 ### دو موتور پیش‌بینی
@@ -81,7 +80,6 @@ PredictionFactory
     └── PredictionTypes/Events/Errors
 
 BridgeUSDT / BridgeBNB ──▶ BridgeToken ──▶ استک OZ ERC20
-CollateralizedNFT ──▶ OZ ERC721 + AccessControl + ReentrancyGuard + SafeERC20 ──▶ IERC20 خارجی
 Airdrop ──▶ OZ AccessControl + Pausable + ReentrancyGuard + EIP712 + ECDSA
 WNURA (مستقل)، MockToken ──▶ OZ ERC20 (تست)
 ```
@@ -92,7 +90,6 @@ WNURA (مستقل)، MockToken ──▶ OZ ERC20 (تست)
 | --- | --- | --- |
 | توکن‌های پل | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | ضرب بدون پشتوانه، سوزاندن مصادره‌ای، pause سراسری، sweep |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | تخلیه، قیمت‌گذاری مجدد، توقف؛ signer تعیین صلاحیت |
-| Vault | DEFAULT_ADMIN/MINTER + کلید ضرب عمومی | اندازهٔ قفل آینده، باز کردن مسابقهٔ mint رایگان، برداشت **فقط بخش آزاد** |
 | کارخانهٔ Forecast | ADMIN_ROLE + مالک + امضاکننده‌های حل | ساخت بازار (کارمزد ≤ ۱۰٪)، cancel، تغییر خزانه‌ها؛ حل نیازمند حد نصاب N-از-M (مثلاً ۳ از ۵)؛ مالک می‌تواند مجموعه را عوض کند |
 | بازارها | به controller (کارخانه) اعتماد دارند | چرخهٔ حیات فقط از طریق رلهٔ کارخانه |
 | Treasury | مالک Ownable2Step | برداشت همهٔ کارمزدها، تغییر گیرنده |
@@ -111,9 +108,6 @@ WNURA (مستقل)، MockToken ──▶ OZ ERC20 (تست)
 
 پل ورود/خروج:
   رله روی ورود mint می‌کند؛ BURNER روی خروج می‌سوزاند
-
-Vault:
-  deposit ERC20 ─▶ mint NFT (رزرو lockAmount) ─▶ owner با redeem پرداخت می‌گیرد
 
 ایردراپ:
   بک‌اند Claim(account,deadline) را امضا می‌کند ─▶ getReward() ─▶ پرداخت بومی

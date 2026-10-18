@@ -2,18 +2,16 @@ import { expect } from "chai";
 
 import {
   coinAmount,
-  formatUnits,
   parseClaims,
   parseFromFile,
   parseReward,
-  parseWholeTokens,
 } from "../../scripts/lib/params.ts";
 
 /**
  * Unit tests for the deployment input layer.
  *
  * Nothing here touches a network, a file or an environment variable — these are the pure
- * functions the deploy task and scripts/vault-setup.ts run every input through, and they are
+ * functions the deploy task runs every input through, and they are
  * the last thing between a typo and a contract that is deployed wrong. A cap parsed loosely
  * is immutable once the Airdrop constructor runs; a reward parsed as wei instead of coin is a
  * pool short by eighteen orders of magnitude.
@@ -151,68 +149,6 @@ describe("deployment input parsing", () => {
     it("handles zero and one wei", () => {
       expect(coinAmount(0n)).to.equal("0");
       expect(coinAmount(1n)).to.equal("0.000000000000000001");
-    });
-  });
-
-  describe("formatUnits", () => {
-    it("groups a whole amount at 18 decimals", () => {
-      expect(formatUnits(2_500_000n * 10n ** 18n, 18)).to.equal("2,500,000");
-      expect(formatUnits(250n * 10n ** 18n, 18)).to.equal("250");
-    });
-
-    it("works at other decimal counts", () => {
-      // The reason the setup script reads decimals() instead of assuming 18.
-      expect(formatUnits(2_500_000n * 10n ** 6n, 6)).to.equal("2,500,000");
-      expect(formatUnits(1234n, 2)).to.equal("12.34");
-      expect(formatUnits(1234n, 0)).to.equal("1,234");
-    });
-
-    it("trims trailing zeros from the fraction but keeps leading ones", () => {
-      expect(formatUnits(1_500_000_000_000_000_000n, 18)).to.equal("1.5");
-      expect(formatUnits(1_000_000_000_000_000_001n, 18)).to.equal("1.000000000000000001");
-      expect(formatUnits(10n ** 15n, 18)).to.equal("0.001");
-    });
-
-    it("handles zero and sub-unit amounts", () => {
-      expect(formatUnits(0n, 18)).to.equal("0");
-      expect(formatUnits(1n, 18)).to.equal("0.000000000000000001");
-    });
-
-    it("does not lose precision on very large balances", () => {
-      const huge = (2n ** 200n) * 10n ** 18n;
-      expect(formatUnits(huge, 18)).to.equal(BigInt(2n ** 200n).toLocaleString("en-US"));
-    });
-  });
-
-  describe("parseWholeTokens", () => {
-    const FALLBACK = 2_500_000n;
-
-    it("falls back when the variable is unset or blank", () => {
-      expect(parseWholeTokens(undefined, "VAULT_RESERVE", FALLBACK)).to.equal(FALLBACK);
-      expect(parseWholeTokens("", "VAULT_RESERVE", FALLBACK)).to.equal(FALLBACK);
-      expect(parseWholeTokens("   ", "VAULT_RESERVE", FALLBACK)).to.equal(FALLBACK);
-    });
-
-    it("reads a whole number with or without separators", () => {
-      expect(parseWholeTokens("1000", "VAULT_RESERVE", FALLBACK)).to.equal(1000n);
-      expect(parseWholeTokens("2_500_000", "VAULT_RESERVE", FALLBACK)).to.equal(2_500_000n);
-      expect(parseWholeTokens("2,500,000", "VAULT_RESERVE", FALLBACK)).to.equal(2_500_000n);
-    });
-
-    it("throws rather than falling back when the value is set but invalid", () => {
-      // Silently defaulting here would fund a deployment with 2,500,000 after someone
-      // explicitly asked for something else.
-      for (const input of ["0", "-5", "1.5", "abc", "1e6"]) {
-        expect(() => parseWholeTokens(input, "VAULT_RESERVE", FALLBACK), input).to.throw(
-          "VAULT_RESERVE must be a positive whole number",
-        );
-      }
-    });
-
-    it("names the variable and echoes the raw value in the error", () => {
-      expect(() => parseWholeTokens("1.5", "VAULT_RESERVE", FALLBACK)).to.throw(
-        'VAULT_RESERVE must be a positive whole number of tokens, got "1.5".',
-      );
     });
   });
 });

@@ -43,14 +43,6 @@ function probes(deployer: string) {
       { name: "QuoterV2", args: [deployer, deployer] },
       { name: "TickLens", args: [] },
     ],
-    // The backing token address is only stored, so the deployer's own address estimates the
-    // same gas the real deployment will. The real one comes from ignition/params.json.
-    vault: [
-      {
-        name: "CollateralizedNFT",
-        args: [deployer, deployer, 250n * 10n ** 18n, "Backed Position", "BPOS", ""],
-      },
-    ],
     // The proxy is not probed: its constructor delegatecalls `initialize` into the
     // implementation, so it can only be estimated against a real implementation address.
     // The lens and verifier only store the addresses they are given.

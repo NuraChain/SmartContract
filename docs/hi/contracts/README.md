@@ -12,7 +12,6 @@
 | `BridgeToken` | contracts/token/BridgeToken.sol | एब्स्ट्रैक्ट ERC20 आधार |
 | `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | ब्रिज टोकन (18 दशमलव) |
 | `Airdrop` | airdrop/Airdrop.sol | EIP-712 हस्ताक्षरित नेटिव-कॉइन वितरण |
-| `CollateralizedNFT` | vault/CollateralizedNFT.sol | ERC20-समर्थित ERC721 वॉल्ट |
 | `PredictionFactory` | forecast/PredictionFactory.sol | क्लोन फ़ैक्ट्री + रजिस्ट्री |
 | `PredictionMarket` | forecast/PredictionMarket.sol | CPMM पूर्वानुमान बाज़ार (ERC-1155) |
 | `PredictionPool` | forecast/PredictionPool.sol | पैरिम्युचुअल बाज़ार |
@@ -24,16 +23,16 @@
 | Uniswap V3 (vendored) | contracts/univ3 | थर्ड-पार्टी ट्री, समूह-स्तर पर दस्तावेज़ित |
 
 इंटरफेस (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,
-`IPredictionTreasury`, `IBackingToken`) और साझा प्रकार अंग्रेज़ी संस्करण में उनके कॉन्ट्रैक्ट्स के भीतर दस्तावेज़ित हैं।
+`IPredictionTreasury`) और साझा प्रकार अंग्रेज़ी संस्करण में उनके कॉन्ट्रैक्ट्स के भीतर दस्तावेज़ित हैं।
 
 ## मुख्य आर्किटेक्चर
 
 ```text
-   BridgeUSDT/BridgeBNB          PredictionFactory ──createMarket──▶ CollateralizedNFT
+   BridgeUSDT/BridgeBNB          PredictionFactory
         ▲                             │        └─createMarket2▶ EIP-1167 clone
-        │ mint/adminBurn              │ clones                       │
-   users ◀── Transfer ──── PredictionMarket   PredictionPool         │
-                                   ▼                  ▼                 ▼
+        │ mint/adminBurn              │ clones
+   users ◀── Transfer ──── PredictionMarket   PredictionPool
+                                   ▼                  ▼
                             CPMM trading/bets     betting/claims ─▶ Treasury
 ```
 
@@ -55,7 +54,6 @@
 | --- | --- | --- |
 | ब्रिज टोकन | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | बिना समर्थन मिंट, ज़ब्ती बर्न, वैश्विक पॉज़, रेस्क्यू |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | निकासी, पुनःमूल्यांकन, रोकथाम; signer पात्रता तय करता है |
-| Vault | DEFAULT_ADMIN/MINTER + public-mint स्विच | भविष्य का lock आकार, मुफ़्त-mint दौड़, **केवल अनारक्षित** निकासी |
 | Forecast फ़ैक्ट्री | ADMIN_ROLE | बाज़ार बनाना (शुल्क ≤ 10%), सबका resolve/cancel, ट्रेज़री पुनर्निर्देशन |
 | बाज़ार | controller (फ़ैक्ट्री) पर भरोसा | lifecycle केवल फ़ैक्ट्री रिले से |
 | Treasury | Ownable2Step मालिक | सारे शुल्क निकालना, प्राप्तकर्ता बदलना |
@@ -68,7 +66,6 @@
 CPMM ट्रेड:    buy{value}(i,minOut,deadline) ─▶ fee ─▶ Treasury ; MarketResolved(w) के बाद: redeem()
 Pool बेट:      bet{value}(i) lockTime तक ─▶ एडमिन resolve ─▶ claim() आनुपातिक
 Bridge:        रिलेयर आने पर mint करता है; BURNER जाते समय burn करता है
-Vault:         deposit ─▶ mint NFT (lockAmount आरक्षण) ── redeem मालिक को भुगतान
 Airdrop:       बैकएंड Claim(account,deadline) साइन करता है ─▶ getReward() ─▶ नेटिव भुगतान
 ```
 

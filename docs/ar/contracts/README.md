@@ -13,7 +13,6 @@
 | `BridgeToken` | ‏contracts/token/BridgeToken.sol | أساس ERC20 مجرّد (abstract) |
 | `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | رموز ممثلة للجسر (18 رقمًا عشريًا) |
 | `Airdrop` | airdrop/Airdrop.sol | توزيع عملة أصلية موقّع بـ EIP-712 |
-| `CollateralizedNFT` | vault/CollateralizedNFT.sol | خزنة NFT مدعومة بـ ERC20 |
 | `PredictionFactory` | forecast/PredictionFactory.sol | مصنع استنساخ + سجل |
 | `PredictionMarket` | forecast/PredictionMarket.sol | سوق تنبؤ CPMM (‏ERC-1155) |
 | `PredictionPool` | forecast/PredictionPool.sol | سوق تنبؤ باريموتيول |
@@ -25,19 +24,19 @@
 | Uniswap V3 (مُورَّد) | contracts/univ3 | شجرة طرف ثالث موثقة كمجموعة |
 
 الواجهات (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,
-`IPredictionTreasury`, `IBackingToken`) والأنواع المشتركة (`MarketKind`, `MarketStatus`,
+`IPredictionTreasury`) والأنواع المشتركة (`MarketKind`, `MarketStatus`,
 `MarketParams`, `MarketRecord`) موثقة داخل عقودها في النسخة الإنجليزية.
 
 ## البنية الأساسية
 
 ```text
-   BridgeUSDT/BridgeBNB          PredictionFactory ──createMarket──▶ CollateralizedNFT
+   BridgeUSDT/BridgeBNB          PredictionFactory
         ▲                             │        └─createMarket2▶ EIP-1167 clone
-        │ mint/adminBurn              │ clones                    │
-   users ◀── Transfer ──── PredictionMarket   PredictionPool       │
-                                   ▼                  ▼               │
-                            CPMM trading/bets     betting/claims         │
-                                   ▼                                       ▼
+        │ mint/adminBurn              │ clones
+   users ◀── Transfer ──── PredictionMarket   PredictionPool
+                                   ▼                  ▼
+                            CPMM trading/bets     betting/claims
+                                   ▼
                           PredictionTreasury ──withdraw──▶ feeRecipient
 ```
 
@@ -59,7 +58,6 @@
 | --- | --- | --- |
 | رموز الجسر | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | ضرب بلا دعم، إحراق مصادَر، إيقاف شامل، إنقاذ |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | تصفية، إعادة تسعير، إيقاف؛ الموقّع يحدد الاستحقاق |
-| الخزنة (Vault) | DEFAULT_ADMIN/MINTER + مفتاح السك العام | حجم قفل المستقبل، فتح سباق السك المجاني، سحب **الجزء الحر فقط** |
 | مصنع Forecast | ADMIN_ROLE | إنشاء الأسواق (رسوم ≤ 10%)، حل/إلغاء كل سوق، تغيير الخزينة |
 | الأسواق | تثق بـ controller (المصنع) | دورة الحياة عبر رلي المصنع فقط |
 | Treasury | مالك Ownable2Step | سحب كل الرسوم، تغيير المستلم |
@@ -72,7 +70,6 @@
 تداول CPMM:  buy{value}(i,minOut,deadline) ─▶ رسوم ─▶ Treasury ؛ بعد MarketResolved(w): redeem()
 رهان Pool:   bet{value}(i) حتى lockTime ─▶ حل الأدمين ─▶ claim() تناسبيًا للفائزين
 الجسر:       الرلّي يضرب عند الإيداع؛ BURNER يحرق عند الخروج
-Vault:       deposit ─▶ mint NFT (يحجز lockAmount) ─▶ redeem يدفع للمالك
 التوزيع:     الخادم يوقّع Claim(account,deadline) ─▶ getReward() ─▶ دفع أصلي
 ```
 

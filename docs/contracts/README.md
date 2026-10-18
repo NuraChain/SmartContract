@@ -29,7 +29,6 @@ vendored code are covered by dedicated files as noted below.
 | [BridgeETH.md](BridgeETH.md) | `BridgeETH` | `contracts/token/BridgeETH.sol` | ERC20 token |
 | [BridgeBTC.md](BridgeBTC.md) | `BridgeBTC` | `contracts/token/BridgeBTC.sol` | ERC20 token |
 | [Airdrop.md](Airdrop.md) | `Airdrop` | `contracts/airdrop/Airdrop.sol` | native-coin airdrop |
-| [CollateralizedNFT.md](CollateralizedNFT.md) | `CollateralizedNFT` | `contracts/vault/CollateralizedNFT.sol` | ERC721 vault |
 | [PredictionFactory.md](PredictionFactory.md) | `PredictionFactory` | `contracts/forecast/PredictionFactory.sol` | clone factory + registry |
 | [PredictionMarket.md](PredictionMarket.md) | `PredictionMarket` | `contracts/forecast/PredictionMarket.sol` | CPMM market (ERC-1155) |
 | [PredictionPool.md](PredictionPool.md) | `PredictionPool` | `contracts/forecast/PredictionPool.sol` | parimutuel market |
@@ -42,7 +41,7 @@ vendored code are covered by dedicated files as noted below.
 | [TestAndVendoredContracts.md](TestAndVendoredContracts.md) | mocks + Uniswap V3 tree | various | test-only / vendored |
 
 Interfaces (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,
-`IPredictionTreasury`, `IBackingToken`) are documented within their implementing
+`IPredictionTreasury`) are documented within their implementing
 contracts' *Interfaces* sections. Shared types: `PredictionTypes.sol`
 (`MarketKind`, `MarketStatus`, `MarketParams`, `MarketRecord`),
 `PredictionErrors.sol` (file-level custom errors), `PredictionEvents.sol`
@@ -55,20 +54,20 @@ contracts' *Interfaces* sections. Shared types: `PredictionTypes.sol`
                         │                Nurachain 1020                │
                         └──────────────────────────────────────────────┘
 
- Bridge group                    Forecast group                     Vault group
- ────────────                    ──────────────                     ───────────
- relayer(minter/burner)          ADMIN_ROLE                         admin/minters
-      │                               │                                  │
- BridgeUSDT/BridgeBNB        PredictionFactory ──createMarket──▶ CollateralizedNFT
-      ▲                            │        └─createMarket2▶ EIP-1167 clone   ▲
-      │ mint/adminBurn             │ create EIP-1167 clones     │             │ deposit/
-      │                       PredictionMarket  PredictionPool  │             │ redeem
- users ◀──────── Transfer ────────────│──────────────────│──────────┘             │
-                                      ▼                  ▼                        │
-                              CPMM trading/bets    betting/claims                  │
-                                      │ protocol/house fee                 backing ERC20
-                                      ▼                                          │
-                                PredictionTreasury ──withdraw──▶ feeRecipient ◀──┘
+ Bridge group                    Forecast group
+ ────────────                    ──────────────
+ relayer(minter/burner)          ADMIN_ROLE
+      │                               │
+ BridgeUSDT/BridgeBNB        PredictionFactory
+      ▲                            │        └─createMarket2▶ EIP-1167 clone
+      │ mint/adminBurn             │ create EIP-1167 clones
+      │                       PredictionMarket  PredictionPool
+ users ◀──────── Transfer ────────────│──────────────────│
+                                      ▼                  ▼
+                              CPMM trading/bets    betting/claims
+                                      │ protocol/house fee
+                                      ▼
+                                PredictionTreasury ──withdraw──▶ feeRecipient
 ```
 
 ### The two prediction engines
@@ -103,8 +102,6 @@ PredictionFactory
 
 BridgeUSDT / BridgeBNB ──▶ BridgeToken ──▶ OZ ERC20 stack (Burnable/Pausable/Permit/AccessControl)
 
-CollateralizedNFT ──▶ OZ ERC721 + AccessControl + ReentrancyGuard + SafeERC20 ──▶ external IERC20
-
 Airdrop ──▶ OZ AccessControl + Pausable + ReentrancyGuard + EIP712 + ECDSA
 
 WNURA (standalone Dapphub WETH9 lineage), MockToken ──▶ OZ ERC20 (tests)
@@ -116,12 +113,11 @@ WNURA (standalone Dapphub WETH9 lineage), MockToken ──▶ OZ ERC20 (tests)
 | --- | --- | --- |
 | Bridge tokens | `DEFAULT_ADMIN_ROLE`, `MINTER_ROLE`, `BURNER_ROLE`, `PAUSER_ROLE` | unbacked mint, confiscating burn, global pause, rescue sweep |
 | Airdrop | `DEFAULT_ADMIN_ROLE`, `PAUSER_ROLE`, `SIGNER_ROLE` | drain (`withdraw`), reprice, halt; signer decides eligibility |
-| Vault | `DEFAULT_ADMIN_ROLE`, `MINTER_ROLE`; public-mint switch | future lock size, open free-mint race, withdraw **unreserved** tail only |
 | Forecast factory | `ADMIN_ROLE` (+ DEFAULT admin of roles) | create markets (fees ≤ 10%), resolve/cancel every market, re-point treasuries |
 | Markets | trust their `controller` (the factory) | lifecycle only reachable through the factory relay |
 | Treasury | `Ownable2Step` owner | withdraw all fees, change recipient (two-step ownership) |
 
-Deployment wiring: each Ignition module (`ignition/modules/{token,airdrop,vault,
+Deployment wiring: each Ignition module (`ignition/modules/{token,airdrop,
 forecast,univ3}.ts`) grants its admin role(s) to the deployer by default — move them to
 a multisig before real value flows.
 
@@ -138,9 +134,6 @@ Bet a pool market:
 
 Bridge in/out:
   relayer mints on inbound proof ──▶ user; BURNER burns on exit
-
-Vault:
-  funder deposits ERC20 ──▶ minter mints NFT (reserves lockAmount) ──▶ owner redeems (payout)
 
 Airdrop:
   backend signs Claim(account,deadline) ──▶ user getReward() ──▶ native payout
@@ -160,8 +153,7 @@ Airdrop:
 - Fee policy: factory `setDefaultFees(feeBps)` (default for `feeBps=0` requests; the whole
   fee goes to the treasury),
   treasury `setFeeRecipient`/`withdraw`.
-- Recovery paths: `rescueERC20` (tokens), `withdrawExcessTokens` (vault tail),
-  airdrop/treasury `withdraw`, forecast `sweepUnclaimed(marketId)` (a settled market's
+- Recovery paths: `rescueERC20` (tokens), airdrop/treasury `withdraw`, forecast `sweepUnclaimed(marketId)` (a settled market's
   leftover collateral, one year after it settled).
 
 ## Deployment Information (recorded in repository)
@@ -186,8 +178,7 @@ Airdrop:
 
 - No proxy upgrades except the profile registry: `NuraProfile` is UUPS behind an ERC-1967
   proxy, upgradeable only by its two-step owner, with no admin path to user content (see
-  [NuraProfile.md](NuraProfile.md)). Everything else has its behaviour fixed at deployment
-  (the vault README calls this out as deliberate for CollateralizedNFT).
+  [NuraProfile.md](NuraProfile.md)). Everything else has its behaviour fixed at deployment.
 - Clone implementations `_disableInitializers()`; clones initialize atomically at
   creation (no takeover window).
 - Money paths use checks-effects-interactions plus storage-based reentrancy locks.
@@ -206,17 +197,17 @@ vendored Uniswap V3 is documented at group level with provenance pointers
 ```text
 Documentation completed.
 
-Contracts discovered:            14 first-party concrete/library/mock groups
+Contracts discovered:            13 first-party concrete/library/mock groups
                                  (+ vendored Uniswap V3 tree, group-level doc)
-Contracts documented:            14
+Contracts documented:            13
 Functions discovered/documented: all public/external/internal functions of the
-                                 14 first-party units are covered by their files
+                                 13 first-party units are covered by their files
 Events documented:               18 shared/file-level events + inherited standards
 Errors documented:               17 shared errors + per-contract errors
 Modifiers documented:            onlyController, nonReentrant, onlyController-only
                                  lifecycle guards, onlyRole/onlyOwner/whenNotPaused
 Interfaces documented:           IPredictionFactory, IPredictionMarket,
-                                 IPredictionPool, IPredictionTreasury, IBackingToken
+                                 IPredictionPool, IPredictionTreasury
 
 Missing documentation:           0
 ```

@@ -7,7 +7,7 @@ import { formatEther, parseEther } from "ethers";
  * These functions decide how much money a deployment commits to. `parseReward("200")` is the
  * difference between 200 coin per claim and 200 wei; `parseFromFile` reads a cap that becomes
  * immutable the moment the constructor runs. They used to live as private helpers inside
- * hardhat.config.ts and scripts/vault-setup.ts, where nothing could reach them — the only way
+ * hardhat.config.ts, where nothing could reach them — the only way
  * to exercise a rounding or regex mistake was to run a real deploy and read the output.
  *
  * Everything here is pure: no environment, no filesystem, no network. Callers own those.
@@ -91,49 +91,3 @@ export function coinAmount(wei: bigint): string {
   return fraction === "0" ? grouped : `${grouped}.${fraction}`;
 }
 
-/**
- * Formats a scaled token amount at the token's own decimals, grouped for reading.
- *
- * @dev Deliberately not ethers' formatUnits: this groups the whole part and trims trailing
- *      zeros from the fraction, so 2500000e18 reads as "2,500,000" rather than "2500000.0".
- */
-export function formatUnits(value: bigint, decimals: number): string {
-  const base = 10n ** BigInt(decimals);
-  const whole = value / base;
-  const fraction = value % base;
-
-  const grouped = whole.toLocaleString("en-US");
-  if (fraction === 0n) {
-    return grouped;
-  }
-
-  return `${grouped}.${fraction.toString().padStart(decimals, "0").replace(/0+$/, "")}`;
-}
-
-/**
- * A positive whole number of tokens from an environment variable, unscaled.
- *
- * @param raw      The raw variable, or undefined when it is unset.
- * @param name     Variable name, for the error message.
- * @param fallback Used when the variable is unset or empty.
- * @throws if it is set but is not a positive whole number. Silently falling back there would
- *         fund a deployment with the default after someone asked for something else.
- */
-export function parseWholeTokens(
-  raw: string | undefined,
-  name: string,
-  fallback: bigint,
-): bigint {
-  const trimmed = raw?.trim();
-
-  if (trimmed === undefined || trimmed === "") {
-    return fallback;
-  }
-
-  const digits = stripSeparators(trimmed);
-  if (!/^\d+$/.test(digits) || BigInt(digits) === 0n) {
-    throw new Error(`${name} must be a positive whole number of tokens, got "${raw}".`);
-  }
-
-  return BigInt(digits);
-}

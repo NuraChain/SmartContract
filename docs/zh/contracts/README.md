@@ -12,7 +12,6 @@
 | `BridgeToken` | contracts/token/BridgeToken.sol | 抽象 ERC20 基类 |
 | `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | 跨链桥代币（18 位小数） |
 | `Airdrop` | airdrop/Airdrop.sol | EIP-712 签名的原生币空投 |
-| `CollateralizedNFT` | vault/CollateralizedNFT.sol | 由单一 ERC20 支撑的 ERC721 金库 |
 | `PredictionFactory` | forecast/PredictionFactory.sol | 克隆工厂 + 注册表 |
 | `PredictionMarket` | forecast/PredictionMarket.sol | CPMM 预测市场 (ERC-1155) |
 | `PredictionPool` | forecast/PredictionPool.sol | 帕里穆彻尔预测市场 |
@@ -24,16 +23,16 @@
 | Uniswap V3（第三方引入） | contracts/univ3 | 以组为单位记录的外部代码树 |
 
 接口（`IPredictionFactory`、`IPredictionMarket`、`IPredictionPool`、
-`IPredictionTreasury`、`IBackingToken`）与共享类型已在英文版的对应合约文档中说明。
+`IPredictionTreasury`）与共享类型已在英文版的对应合约文档中说明。
 
 ## 核心架构
 
 ```text
-   BridgeUSDT/BridgeBNB          PredictionFactory ──createMarket──▶ CollateralizedNFT
+   BridgeUSDT/BridgeBNB          PredictionFactory
         ▲                             │        └─createMarket2▶ EIP-1167 克隆
-        │ mint/adminBurn              │ clones                       │
-   users ◀── Transfer ──── PredictionMarket   PredictionPool         │
-                                   ▼                  ▼                 ▼
+        │ mint/adminBurn              │ clones
+   users ◀── Transfer ──── PredictionMarket   PredictionPool
+                                   ▼                  ▼
                             CPMM 交易/投注        投注/领取 ─▶ Treasury
 ```
 
@@ -55,7 +54,6 @@
 | --- | --- | --- |
 | 桥接代币 | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | 无支撑增发、没收性销毁、全局暂停、救援转移 |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | 抽干资金池、重新定价、暂停；签名者决定资格 |
-| Vault | DEFAULT_ADMIN/MINTER + 公开铸币开关 | 未来锁定量、开放免费铸造竞赛、仅可提取**未预留部分** |
 | Forecast 工厂 | ADMIN_ROLE | 创建市场（费率 ≤ 10%）、结算/取消全部市场、重定向金库 |
 | 各市场 | 信任其 controller（工厂） | 生命周期仅能经工厂中继 |
 | Treasury | Ownable2Step 所有者 | 提取全部手续费、更换收款人 |
@@ -68,7 +66,6 @@
 CPMM 交易：   buy{value}(i,minOut,deadline) ─▶ fee ─▶ Treasury ；MarketResolved(w) 后：redeem()
 奖池下注：    bet{value}(i) 直至 lockTime ─▶ 管理员 resolve ─▶ 获胜者 claim() 按比例分配
 跨链桥：      中继者在入金时 mint；BURNER 在出金时 burn
-Vault：       deposit ─▶ mint NFT（预留 lockAmount） ── redeem 向持有者付款
 空投：        后端签署 Claim(account,deadline) ─▶ getReward() ─▶ 原生币支付
 ```
 

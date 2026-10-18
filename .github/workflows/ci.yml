@@ -102,7 +102,7 @@ jobs:
 
       - run: npm ci
 
-      # Property tests at 256 runs each, plus stateful invariant runs over the vault.
+      # Property tests at 256 runs each, plus stateful invariant runs over the profile registry.
       # Slower than the Mocha suite and worth its own job so a failure names itself.
       - name: Run the Solidity suite
         run: npm run test:solidity

@@ -12,7 +12,6 @@ Documentação de todos os contratos do repositório, gerada a partir do código
 | `BridgeToken` | contracts/token/BridgeToken.sol | base ERC20 abstrata |
 | `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | tokens de ponte (18 decimais) |
 | `Airdrop` | airdrop/Airdrop.sol | distribuição de moeda nativa assinada com EIP-712 |
-| `CollateralizedNFT` | vault/CollateralizedNFT.sol | cofre ERC721 lastreado por um ERC20 |
 | `PredictionFactory` | forecast/PredictionFactory.sol | fábrica de clones + registro |
 | `PredictionMarket` | forecast/PredictionMarket.sol | mercado de previsão CPMM (ERC-1155) |
 | `PredictionPool` | forecast/PredictionPool.sol | mercado parimutuel |
@@ -24,16 +23,16 @@ Documentação de todos os contratos do repositório, gerada a partir do código
 | Uniswap V3 (vendored) | contracts/univ3 | árvore de terceiros documentada como grupo |
 
 As interfaces (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,
-`IPredictionTreasury`, `IBackingToken`) e os tipos compartilhados estão documentados dentro dos contratos na versão inglesa.
+`IPredictionTreasury`) e os tipos compartilhados estão documentados dentro dos contratos na versão inglesa.
 
 ## Arquitetura central
 
 ```text
-   BridgeUSDT/BridgeBNB          PredictionFactory ──createMarket──▶ CollateralizedNFT
+   BridgeUSDT/BridgeBNB          PredictionFactory
         ▲                             │        └─createMarket2▶ clone EIP-1167
-        │ mint/adminBurn              │ clones                       │
-   users ◀── Transfer ──── PredictionMarket   PredictionPool         │
-                                   ▼                  ▼                 ▼
+        │ mint/adminBurn              │ clones
+   users ◀── Transfer ──── PredictionMarket   PredictionPool
+                                   ▼                  ▼
                             trading CPMM/apostas  apostas/claims ─▶ Treasury
 ```
 
@@ -55,7 +54,6 @@ Ambos são registrados na mesma fábrica e compartilham estados, tesouraria e su
 | --- | --- | --- |
 | Tokens de ponte | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | mint sem lastro, queima confiscatória, pausa global, resgate |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | drenar, reprecificar, pausar; o assinante define elegibilidade |
-| Vault | DEFAULT_ADMIN/MINTER + chave de mint público | tamanho futuro do bloqueio, abrir mint livre, sacar **apenas a parte livre** |
 | Fábrica Forecast | ADMIN_ROLE | criar mercados (taxa ≤ 10%), resolver/cancelar todos, redirecionar tesourarias |
 | Mercados | confiam no controller (fábrica) | ciclo de vida só via relé da fábrica |
 | Tesouraria | dono Ownable2Step | sacar todas as taxas, mudar destinatário |
@@ -68,7 +66,6 @@ Cada módulo Ignition concede o papel admin ao implantador por padrão — mova-
 Operar CPMM:  buy{value}(i,minOut,deadline) ─▶ fee ─▶ Treasury ; após MarketResolved(w): redeem()
 Apostar Pool: bet{value}(i) até lockTime ─▶ resolve do admin ─▶ claim() proporcional
 Ponte:        o relayer faz mint na entrada; BURNER queima na saída
-Vault:        deposit ─▶ mint NFT (reserva lockAmount) ── redeem paga ao dono
 Airdrop:      o backend assina Claim(account,deadline) ─▶ getReward() ─▶ pagamento nativo
 ```
 

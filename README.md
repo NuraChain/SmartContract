@@ -73,7 +73,6 @@ npx hardhat deploy --sc token    --network nurachain   # only contracts/token (b
 npx hardhat deploy --sc wnura    --network nurachain   # only contracts/token/WNURA.sol
 npx hardhat deploy --sc airdrop  --network nurachain   # only contracts/airdrop
 npx hardhat deploy --sc univ3    --network nurachain   # only contracts/univ3
-npx hardhat deploy --sc vault    --network nurachain   # only contracts/vault
 npx hardhat deploy --sc forecast --network nurachain   # only contracts/forecast
 npx hardhat deploy --sc profile  --network nurachain   # only contracts/profile
 npx hardhat deploy --sc arcade   --network nurachain   # only contracts/arcade
@@ -83,9 +82,6 @@ npx hardhat deploy --sc arcade   --network nurachain   # only contracts/arcade
 `0xf0a4eC07916feBa4432121Ed5969887D9b939cD0`, and `univ3` uses that one unless you pass
 `{ "v3": { "wnura": "0x..." } }` in `--parameters`.
 
-`--sc vault` needs a `--parameters` file for the ERC20 address it locks — see
-[The collateralized NFT vault](#the-collateralized-nft-vault).
-
 Or through npm:
 
 ```bash
@@ -93,7 +89,6 @@ npm run deploy:nurachain:token
 npm run deploy:nurachain:wnura
 npm run deploy:nurachain:airdrop
 npm run deploy:nurachain:univ3
-npm run deploy:nurachain:vault -- --parameters ./ignition/params.json
 npm run deploy:nurachain:forecast
 npm run deploy:nurachain:profile
 npm run deploy:nurachain:arcade
@@ -205,15 +200,11 @@ npm run deploy:nurachain:token
 npm run deploy:nurachain:wnura
 npm run deploy:nurachain:airdrop
 npm run deploy:nurachain:univ3
-npm run deploy:nurachain:vault -- --parameters ./ignition/params.json
 npm run deploy:nurachain:forecast
 npm run deploy:nurachain:profile
 npm run deploy:nurachain:arcade
 
-# 3. Fund and verify the vault reserve
-npm run setup:nurachain:vault
-
-# 4. Register the profile registry's verifier extension and print its state
+# 3. Register the profile registry's verifier extension and print its state
 npm run setup:nurachain:profile
 ```
 
@@ -445,212 +436,6 @@ and switch on the protocol's cut of swap fees (up to 1/4). Moving it to a multis
 deliberate manual step — `factory.setOwner(multisig)`: handing away control should not be
 a side effect of a deploy script.
 
-## The collateralized NFT vault
-
-`contracts/vault/CollateralizedNFT.sol` is an ERC721 where every NFT is a claim on a fixed
-amount of an ERC20 the contract holds. Mint an NFT and a slice of the reserve is set aside
-for it; redeem the NFT and exactly that slice comes back.
-
-The lifecycle, end to end:
-
-```
-2,500,000 tokens deposited      deposit(2_500_000e18)   -> availableBacking 2,500,000
-        |                                                  remainingMintCapacity 10,000
-        v
-mint an NFT                     mint(alice)             -> tokenId 1
-        |                                                  lockedAmount[1] = 250e18
-        |                                                  totalReserved   = 250e18
-        v                                                  capacity        = 9,999
-250 tokens reserved for it      the tokens do not move; they are booked, not sent
-        |
-        v
-alice holds, or sells, NFT #1   a transfer carries the lock with it; the amount does not change
-        |
-        v
-the holder redeems              redeem(1)               -> NFT #1 burned
-        |                                                  250e18 sent to its owner
-        v                                                  lockedAmount[1] deleted
-250 tokens returned                                        totalReserved   = 0
-```
-
-`10,000` is nowhere in the contract. Capacity is always computed as
-`availableBacking() / lockAmount`, so it follows the balance and the configured lock rather
-than a constant that could drift out of step with either.
-
-### What it guarantees
-
-Two invariants, both held by construction rather than by a check that could be forgotten:
-
-1. `totalReserved == sum(lockedAmount[id])` over outstanding NFTs. Every write to
-   `lockedAmount` moves `totalReserved` by the same amount in the same call.
-2. `totalReserved <= backingToken.balanceOf(vault)`. Minting is the only thing that raises
-   `totalReserved`, and it first checks the unreserved balance covers it. The only ways out
-   are redemption, which lowers both sides equally, and `withdrawExcessTokens`, which is
-   bounded by `availableBacking()`.
-
-Together those mean an NFT that exists can always be redeemed for the amount it was minted
-with — including after the admin has swept every unreserved token out.
-
-### Per-NFT amounts are frozen at mint
-
-`setLockAmount` decides what the *next* mint reserves. It does not touch any NFT that already
-exists:
-
-```
-lockAmount = 250e18       NFT #1 -> 250, NFT #2 -> 250
-setLockAmount(500e18)
-lockAmount = 500e18       NFT #3 -> 500, NFT #4 -> 500
-
-NFT #1 and #2 still redeem for 250 each.
-```
-
-Each NFT carries its own number in `lockedAmount[tokenId]` until it is redeemed, so no
-configuration change can inflate or deflate what an outstanding position is worth.
-
-### Deploying it
-
-The ERC20 address has no default and cannot have one: it is immutable after construction, and
-a wrong value produces a contract that can never pay anybody. Put it in
-`ignition/params.json`:
-
-```json
-{
-  "vault": {
-    "token": "0xTheERC20AlreadyDeployedOnNurachain",
-    "admin": "0xYourMultisig",
-    "lockAmount": "250000000000000000000n",
-    "name": "Backed Position",
-    "symbol": "BPOS",
-    "baseURI": "https://your.api/vault/"
-  }
-}
-```
-
-```bash
-npm run preflight:nurachain      # gas estimates and the EIP-170 size check
-npx hardhat deploy --sc vault --network nurachain --parameters ./ignition/params.json
-npm run setup:nurachain:vault    # funds the reserve, then verifies and prints the state
-```
-
-Like the airdrop module, `ignition/modules/vault.ts` deploys and stops — it does not move the
-reserve in, because funding needs an allowance from whoever holds the tokens and that is not
-always the deploying key. `scripts/vault-setup.ts` is the second half: it finds the deployed
-vault in the Ignition journal, reads back the token it is pinned to, scales 2,500,000 by that
-token's real `decimals()`, deposits the shortfall, and then checks what it printed:
-
-```
-Vault:          0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
-NFT:            Backed Position (BPOS)
-Backing token:  0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
-                USDT, 18 decimals
-Lock per NFT:   250 USDT (250000000000000000000 base units)
-
-Target reserve: 2,500,000 USDT
-Held now:       0 USDT
-
-Depositing 2,500,000 USDT...
-
-State
-  token balance:          2,500,000 USDT
-  total reserved:         0 USDT
-  available backing:      2,500,000 USDT
-  NFTs minted:            0
-  NFTs redeemed:          0
-  NFTs outstanding:       0
-  lock amount:            250 USDT
-  remaining capacity:     10000 NFTs
-
-Verified. 10000 more NFTs can be backed at the current lock amount.
-```
-
-Re-running it is the intended way to top up: it deposits the difference between the current
-balance and the target and does nothing when the target is already met. `VAULT_RESERVE` sets
-a different target in whole tokens, `VAULT_ADDRESS` points it at a contract Ignition did not
-deploy, and `VAULT_SKIP_FUNDING=1` makes it report without moving anything. No key ever
-appears in it — the signer comes from the network config, as everywhere else.
-
-`lockAmount` is in the token's own decimals. The default of `250e18` assumes 18 of them; on a
-6-decimal token, 250 tokens is `250000000`, and passing the 18-decimal default instead would
-reserve 250 trillion per NFT and back nothing. The setup script checks the configured amount
-against the token's real `decimals()` and says so if it does not divide cleanly.
-
-### Minting is free, so it is gated
-
-This is the part to decide before launch. An NFT is backed *out of the reserve* rather than
-paid for, so `mint` followed by `redeem` is a round trip that hands the caller 250 tokens for
-nothing but gas. With minting open to everyone, the entire 2,500,000 belongs to whoever asks
-first.
-
-So `publicMintEnabled` starts `false` and only `MINTER_ROLE` can mint. That leaves two sane
-shapes:
-
-- **Keep it closed.** A backend or a separate contract holds `MINTER_ROLE` and decides who
-  gets an NFT — after a payment, a whitelist, a signature, whatever the eligibility rule is.
-- **Open it deliberately.** `setPublicMintEnabled(true)` makes the reserve a first-come
-  giveaway. That is a real design, but it should be the one you meant.
-
-Nothing in the contract charges for a mint, on purpose: what a mint is worth depends on the
-programme, and baking a price into the collateral logic would make the two impossible to
-change independently.
-
-### API
-
-| Function                                     | Who              | Does                                                     |
-| -------------------------------------------- | ---------------- | -------------------------------------------------------- |
-| `deposit(amount)`                            | anyone           | Pulls backing tokens in. A raw `transfer` works too       |
-| `mint(recipient)`                            | minter or public | One NFT, reserving the current `lockAmount`               |
-| `mintBatch(recipient, quantity)`             | minter or public | `quantity` NFTs, reserving `quantity * lockAmount`        |
-| `redeem(tokenId)`                            | the NFT's owner  | Burns it and pays the owner its locked amount             |
-| `burn(tokenId)`                              | the NFT's owner  | Alias for `redeem`, refund included                       |
-| `setLockAmount(newAmount)`                   | admin            | Sets what future mints reserve. Existing NFTs unaffected  |
-| `setPublicMintEnabled(bool)`                 | admin            | Opens minting to everyone, or closes it to `MINTER_ROLE`  |
-| `setBaseURI(newBaseURI)`                     | admin            | Metadata prefix; `tokenURI` appends the id                |
-| `withdrawExcessTokens(to, amount)`           | admin            | Unreserved tokens only, bounded by `availableBacking()`   |
-| `rescueERC20(token, to, amount)`             | admin            | Any token except the backing one                          |
-
-Views: `tokenBalance()`, `availableBacking()`, `remainingMintCapacity()`, `totalSupply()`,
-`lockedAmount(tokenId)`, `totalReserved()`, `totalMinted()`, `totalRedeemed()`, and
-`vaultState()`, which returns all of it in one call.
-
-### What it deliberately does not have
-
-Each of these would be a way to take collateral from holders, so none is here:
-
-- **No pausing.** A pausable `redeem` is an admin switch for freezing other people's
-  collateral. Minting can be stopped instead — revoke `MINTER_ROLE` and turn public minting
-  off — which closes the programme without touching anything already issued.
-- **No `ERC721Burnable`.** Its `burn` destroys an NFT without releasing the lock, which would
-  strand that collateral and break invariant 1 permanently. `redeem` is the only path that
-  burns, and it always pays out.
-- **No mutable token address.** Repointing it would leave every outstanding NFT claiming a
-  token the contract no longer holds.
-- **No proxy.** The redemption rule holders are trusting cannot be rewritten under them.
-- **No redemption to a third address, and no operator redemption.** `redeem` pays
-  `ownerOf(tokenId)` and requires the caller to be that owner. An approval lets someone move
-  your NFT, not cash it out.
-
-### Vault caveats
-
-- **Admin and minter keys still matter.** `DEFAULT_ADMIN_ROLE` can change what future NFTs
-  are worth, grant `MINTER_ROLE`, open public minting, and sweep unreserved tokens.
-  `MINTER_ROLE` reaches the same unreserved balance by a longer route — mint to itself, then
-  redeem — because minting is free and redeeming pays out. Neither can touch collateral
-  already behind someone else's NFT; that is exactly what the reserve accounting protects,
-  and it holds even if both keys are lost or hostile. Everything short of that is real
-  power, so multisig both.
-- **Non-standard ERC20s.** All transfers go through `SafeERC20`, so tokens that return
-  nothing (USDT-style) work and tokens that return `false` revert rather than silently fail.
-  Fee-on-transfer tokens are handled on deposit — the event records what actually arrived —
-  but a **rebasing** token whose balance shrinks can push the contract below `totalReserved`
-  and break solvency. Back this with a plain non-rebasing ERC20.
-- **A paused backing token freezes redemptions.** `contracts/token` has `PAUSER_ROLE`; if the
-  backing token is one of those, whoever holds that role can stop every payout. Nothing in
-  this contract can work around it.
-- **Not IERC721Enumerable.** There is no `tokenOfOwnerByIndex` — per-transfer enumeration
-  charges every holder gas to serve what an indexer rebuilds from `Transfer` logs for free.
-  `totalSupply()` is provided anyway.
-- **Not audited.**
-
 ## The profile registry
 
 `contracts/profile` is a decentralized, extensible identity primitive: one profile per
@@ -704,13 +489,13 @@ Narrower slices, for when you are working on one thing:
 
 ```bash
 npm run test:fuzz      # property tests only (256 randomised runs each)
-npm run test:invariant # stateful invariant runs over the vault and the profile registry
+npm run test:invariant # stateful invariant runs over the profile registry
 npm run test:profile   # the profile registry, its lens, its extension and its upgrade path
 npm run gas:profile    # gas table for every profile operation
 npm run test:security  # signature binding, reentrancy, access control, admin bounds
 npm run test:scripts   # the deployment layer: input parsing + every Ignition module
 
-npx hardhat test mocha test/Vault.test.ts          # one file
+npx hardhat test mocha test/Airdrop.test.ts        # one file
 npx hardhat test mocha --grep "protocol fee"       # one describe
 npx hardhat test solidity --grep testFuzz_capacity # one property
 ```
@@ -722,7 +507,7 @@ Two runners, because they are good at different things.
 | Suite | Files | Covers |
 | ----- | ----- | ------ |
 | Mocha / TypeScript | `test/**/*.test.ts` | Behaviour, events, revert reasons, access control, signature binding, reentrancy, AMM integration, and the deployment layer |
-| Solidity | `contracts/**/test/*.t.sol` | Property tests over arbitrary lock amounts and balances, plus stateful invariant runs against the vault |
+| Solidity | `contracts/**/test/*.t.sol` | Property tests over the profile registry's inputs, plus stateful invariant runs against its item lists |
 
 The Solidity suite is Hardhat 3's native runner. It needs no Foundry install and no
 `forge-std` dependency — cheatcodes are reached through the hevm address directly, and
@@ -738,10 +523,6 @@ Three groups are worth knowing about specifically:
   in-process chain and inspected. Without these a module could name a contract that no
   longer exists or pass constructor arguments in the wrong order and the whole suite would
   still be green, because everything else deploys with `ethers.deployContract`.
-- **`contracts/vault/test/VaultInvariant.t.sol`** — the vault's solvency claims, checked
-  against random sequences of every state transition it has rather than against sequences
-  someone thought of. The handler holds the admin role, so retuning the lock and sweeping
-  unreserved collateral are both in the search space.
 - **`test/Profile.test.ts`** — the profile registry from every caller's point of view, plus an
   upgrade to a V2 mock that must keep every profile intact, and an "indexer" that replays the
   event stream and diffs the result against the lens. `contracts/profile/test/*.t.sol` adds the
@@ -769,7 +550,6 @@ Two rules worth keeping, both learned from breakage rather than taste:
 ```
 contracts/token/BridgeToken.sol         100.00% lines   100.00% branches
 contracts/airdrop/Airdrop.sol           100.00% lines   100.00% branches
-contracts/vault/CollateralizedNFT.sol   100.00% lines   100.00% branches
 contracts/profile/NuraProfile.sol       100.00% lines   100.00% statements
 contracts/profile/NuraProfileLens.sol   100.00% lines   100.00% statements
 contracts/profile/libraries/ProfileStrings.sol   100.00% lines   100.00% statements
@@ -851,12 +631,6 @@ contracts/univ3/
   VENDORED.md, LICENSE       upstream versions, the GPL-2.0, and the expired BUSL
 contracts/mocks/
   MockToken.sol              dev-chain stand-in asset with optional faucet, tests only
-contracts/vault/
-  CollateralizedNFT.sol      ERC721 backed 1:1 by a reserve of one ERC20
-  IBackingToken.sol          IERC20Metadata, so scripts can reach an external token
-  mocks/VaultMocks.sol       misbehaving ERC20s and a re-entrant receiver, tests only
-  test/VaultFuzz.t.sol       property tests over arbitrary locks and balances
-  test/VaultInvariant.t.sol  stateful invariant runs: solvency, conservation, capacity
 contracts/airdrop/
   mocks/AirdropMocks.sol     re-entrant and payout-rejecting claimants, tests only
 contracts/arcade/
@@ -878,14 +652,12 @@ ignition/modules/
   wnura.ts                   deploys contracts/token/WNURA.sol alone (--sc wnura)
   airdrop.ts                 deploys contracts/airdrop (--sc airdrop)
   univ3.ts                   deploys contracts/univ3   (--sc univ3)
-  vault.ts                   deploys contracts/vault   (--sc vault)
   forecast.ts                deploys contracts/forecast (--sc forecast)
   profile.ts                 deploys contracts/profile (--sc profile): impl, proxy, lens, verifier
   arcade.ts                  deploys contracts/arcade  (--sc arcade)
 scripts/
   preflight.ts               pre-deploy check: chain id, funding, gas, contract sizes
   write-init-code-hash.ts    regenerates the V3 pool init code hash
-  vault-setup.ts             funds the vault reserve, then verifies and prints its state
   profile-setup.ts           registers the verifier extension on the profile registry, prints state
   profile-upgrade.ts         UUPS upgrade with owner, size and proxiableUUID checks
   profile-gas.ts             gas table for every profile operation
@@ -900,10 +672,9 @@ test/
   univ3/Router.test.ts       20 tests: single/multi-hop, slippage, native, quoter
   univ3/Positions.test.ts    20 tests: NFT lifecycle, permit, tokenURI
   univ3/Oracle.test.ts       12 tests: observations, TWAP, cardinality at 3s blocks
-  Vault.test.ts              88 tests: solvency, redemption, admin bounds, reentrancy
   Profile.test.ts            70 tests: usernames, localization, items, operators, transfer,
                              extensions, verifier, upgrade, event replay
-  scripts/params.test.ts     33 tests: deployment input parsing, away from any network
+  scripts/params.test.ts     24 tests: deployment input parsing, away from any network
   scripts/modules.test.ts    Ignition module deployments: every module deployed and inspected
 .github/workflows/ci.yml     build, Mocha, Solidity fuzz/invariant, coverage
 hardhat.config.ts            three solc versions, networks, and the `deploy --sc` task

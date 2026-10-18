@@ -12,7 +12,6 @@ Depodaki tüm sözleşmelerin belgeleri, `contracts/` altındaki gerçek kaynakt
 | `BridgeToken` | contracts/token/BridgeToken.so­l | soyut ERC20 tabanı |
 | `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | köprü tokenları (18 ondalık) |
 | `Airdrop` | airdrop/Airdrop.sol | EIP-712 imzalı yerel coin dağıtımı |
-| `CollateralizedNFT` | vault/CollateralizedNFT.sol | tek bir ERC20 ile desteklenen ERC721 kasa |
 | `PredictionFactory` | forecast/PredictionFactory.sol | klon fabrikası + kayıt defteri |
 | `PredictionMarket` | forecast/PredictionMarket.sol | CPMM tahmin piyasası (ERC-1155) |
 | `PredictionPool` | forecast/PredictionPool.sol | parimütüel piyasa |
@@ -24,16 +23,16 @@ Depodaki tüm sözleşmelerin belgeleri, `contracts/` altındaki gerçek kaynakt
 | Uniswap V3 (vendored) | contracts/univ3 | grup düzeyinde belgelenmiş üçüncü taraf ağacı |
 
 Arayüzler (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,
-`IPredictionTreasury`, `IBackingToken`) ve paylaşılan tipler İngilizce sürümde kendi sözleşmeleri içinde belgelenmiştir.
+`IPredictionTreasury`) ve paylaşılan tipler İngilizce sürümde kendi sözleşmeleri içinde belgelenmiştir.
 
 ## Çekirdek mimari
 
 ```text
-   BridgeUSDT/BridgeBNB          PredictionFactory ──createMarket──▶ CollateralizedNFT
+   BridgeUSDT/BridgeBNB          PredictionFactory
         ▲                             │        └─createMarket2▶ EIP-1167 klonu
-        │ mint/adminBurn              │ clones                       │
-   users ◀── Transfer ──── PredictionMarket   PredictionPool         │
-                                   ▼                  ▼                 ▼
+        │ mint/adminBurn              │ clones
+   users ◀── Transfer ──── PredictionMarket   PredictionPool
+                                   ▼                  ▼
                             CPMM alım-satım/bahis  bahis/talep ──▶ Treasury
 ```
 
@@ -55,7 +54,6 @@ Arayüzler (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,
 | --- | --- | --- |
 | Köprü tokenları | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | karşılıksız mint, el koyma yanması, genel duraklatma, kurtarma |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | boşaltma, yeniden fiyatlama, duraklatma; imzalayan uygunluğu belirler |
-| Vault | DEFAULT_ADMIN/MINTER + herkese açık mint anahtarı | gelecekteki kilim miktarı, ücretsiz-mint yarışını açmak, yalnızca **boşta kısmı** çekmek |
 | Forecast fabrikası | ADMIN_ROLE | piyasa oluşturmak (komisyon ≤ %10), hepsini çözmek/iptal etmek, hazineyi yönlendirmek |
 | Piyasalar | controller'larına (fabrika) güvenir | yaşam döngüsü yalnızca fabrika rölesi üzerinden |
 | Hazine | Ownable2Step sahibi | tüm komisyonları çekmek, alıcıyı değiştirmek |
@@ -68,7 +66,6 @@ Her Ignition modülü varsayılan olarak admin rolünü dağıtana verir — ger
 CPMM işlemi:  buy{value}(i,minOut,deadline) ─▶ fee ─▶ Treasury ; MarketResolved(w) sonrası: redeem()
 Pool bahsi:   bet{value}(i) lockTime'a kadar ─▶ admin resolve ─▶ claim() oransal
 Köprü:        relay girişte mint yapar; BURNER çıkışta yakar
-Vault:        deposit ─▶ mint NFT (lockAmount rezervi) ── redeem sahibine öder
 Airdrop:      backend Claim(account,deadline) imzalar ─▶ getReward() ─▶ yerel ödeme
 ```
 

@@ -12,7 +12,6 @@
 | `BridgeToken` | contracts/token/BridgeToken.sol | абстрактная база ERC20 |
 | `BridgeUSDT` / `BridgeBNB` / `BridgeETH` / `BridgeBTC` | token/*.sol | мостовые токены (18 знаков) |
 | `Airdrop` | airdrop/Airdrop.sol | раздача нативной монеты с подписью EIP-712 |
-| `CollateralizedNFT` | vault/CollateralizedNFT.sol | хранилище ERC721 под обеспечением ERC20 |
 | `PredictionFactory` | forecast/PredictionFactory.sol | фабрика клонов + реестр |
 | `PredictionMarket` | forecast/PredictionMarket.sol | рынок предсказаний CPMM (ERC-1155) |
 | `PredictionPool` | forecast/PredictionPool.sol | пари-мютуэль рынок |
@@ -24,16 +23,16 @@
 | Uniswap V3 (vendored) | contracts/univ3 | стороннее дерево, описано на уровне группы |
 
 Интерфейсы (`IPredictionFactory`, `IPredictionMarket`, `IPredictionPool`,
-`IPredictionTreasury`, `IBackingToken`) и общие типы задокументированы в английской версии внутри соответствующих контрактов.
+`IPredictionTreasury`) и общие типы задокументированы в английской версии внутри соответствующих контрактов.
 
 ## Основная архитектура
 
 ```text
-   BridgeUSDT/BridgeBNB          PredictionFactory ──createMarket──▶ CollateralizedNFT
+   BridgeUSDT/BridgeBNB          PredictionFactory
         ▲                             │        └─createMarket2▶ клон EIP-1167
-        │ mint/adminBurn              │ clones                       │
-   users ◀── Transfer ──── PredictionMarket   PredictionPool         │
-                                   ▼                  ▼                 ▼
+        │ mint/adminBurn              │ clones
+   users ◀── Transfer ──── PredictionMarket   PredictionPool
+                                   ▼                  ▼
                             торговля CPMM/ставки  ставки/claims ─▶ Treasury
 ```
 
@@ -55,7 +54,6 @@
 | --- | --- | --- |
 | Мостовые токены | DEFAULT_ADMIN/MINTER/BURNER/PAUSER | эмиссия без обеспечения, конфискационное сжигание, глобальная пауза, спасение |
 | Airdrop | DEFAULT_ADMIN/PAUSER/SIGNER | опустошение, переоценка, пауза; подписант определяет право на получение |
-| Vault | DEFAULT_ADMIN/MINTER + переключатель публичного минта | будущий размер блокировки, открыть гонку бесплатного минта, вывод **только свободной части** |
 | Фабрика Forecast | ADMIN_ROLE | создание рынков (комиссия ≤ 10%), разрешение/отмена всех, перенаправление казначейств |
 | Рынки | доверяют controller (фабрика) | жизненный цикл только через релей фабрики |
 | Казначейство | владелец Ownable2Step | вывод всех комиссий, смена получателя |
@@ -68,7 +66,6 @@
 Торговля CPMM: buy{value}(i,minOut,deadline) ─▶ fee ─▶ Treasury ; после MarketResolved(w): redeem()
 Ставка Pool:   bet{value}(i) до lockTime ─▶ resolve админом ─▶ claim() пропорционально
 Мост:          релей минтит на входе; BURNER сжигает на выходе
-Vault:         deposit ─▶ mint NFT (резерв lockAmount) ── redeem платит владельцу
 Airdrop:       бэкенд подписывает Claim(account,deadline) ─▶ getReward() ─▶ нативная выплата
 ```
 

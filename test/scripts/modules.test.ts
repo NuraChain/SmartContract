@@ -6,7 +6,6 @@ import arcadeModule from "../../ignition/modules/arcade.ts";
 import profileModule from "../../ignition/modules/profile.ts";
 import tokenModule from "../../ignition/modules/token.ts";
 import univ3Module from "../../ignition/modules/univ3.ts";
-import vaultModule from "../../ignition/modules/vault.ts";
 import wnuraModule from "../../ignition/modules/wnura.ts";
 
 const { ethers, ignition } = await network.getOrCreate();
@@ -162,91 +161,6 @@ describe("ignition modules", () => {
       ]) {
         expect(await factory.feeAmountTickSpacing(fee), `fee ${fee}`).to.equal(spacing);
       }
-    });
-  });
-
-  describe("vault", () => {
-    /** The vault module needs a token address; every case here supplies one. */
-    async function backingToken() {
-      const [deployer] = await ethers.getSigners();
-      const token = await ethers.deployContract("BridgeUSDT", [deployer.address], deployer);
-
-      return { token, address: await token.getAddress(), deployer };
-    }
-
-    it("deploys against the supplied token with the default 250e18 lock", async () => {
-      const { address, deployer } = await backingToken();
-
-      const { vault } = await ignition.deploy(vaultModule, {
-        parameters: { vault: { token: address } },
-      });
-
-      expect(await vault.backingToken()).to.equal(address);
-      expect(await vault.lockAmount()).to.equal(250n * 10n ** 18n);
-      expect(await vault.name()).to.equal("Backed Position");
-      expect(await vault.symbol()).to.equal("BPOS");
-
-      expect(await vault.hasRole(await vault.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(true);
-      expect(await vault.hasRole(await vault.MINTER_ROLE(), deployer.address)).to.equal(true);
-
-      // Public minting starts off, and the module does not fund: no capacity yet.
-      expect(await vault.publicMintEnabled()).to.equal(false);
-      expect(await vault.tokenBalance()).to.equal(0n);
-      expect(await vault.remainingMintCapacity()).to.equal(0n);
-      expect(await vault.totalReserved()).to.equal(0n);
-    });
-
-    it("refuses to deploy without a token address, rather than picking one", async () => {
-      // The address is immutable after construction and a wrong one can never pay anybody,
-      // which is why the module gives it no default.
-      await expectDeployToFail(ignition.deploy(vaultModule), /validation error/i);
-    });
-
-    it("carries every override through to the constructor", async () => {
-      const { address } = await backingToken();
-      const [, other] = await ethers.getSigners();
-      const lockAmount = 500n * 10n ** 18n;
-
-      const { vault } = await ignition.deploy(vaultModule, {
-        parameters: {
-          vault: {
-            token: address,
-            admin: other.address,
-            lockAmount,
-            name: "Custom Position",
-            symbol: "CPOS",
-            baseURI: "ipfs://bafy/",
-          },
-        },
-      });
-
-      expect(await vault.lockAmount()).to.equal(lockAmount);
-      expect(await vault.name()).to.equal("Custom Position");
-      expect(await vault.symbol()).to.equal("CPOS");
-      expect(await vault.hasRole(await vault.DEFAULT_ADMIN_ROLE(), other.address)).to.equal(true);
-    });
-
-    it("produces a vault that funds and mints, end to end from the module", async () => {
-      const { token, address, deployer } = await backingToken();
-      const { vault } = await ignition.deploy(vaultModule, {
-        parameters: { vault: { token: address } },
-      });
-
-      // The flow README documents: deploy the module, then run scripts/vault-setup.ts.
-      const reserve = 2_500_000n * 10n ** 18n;
-      const vaultAddress = await vault.getAddress();
-
-      await token.mint(deployer.address, reserve);
-      await token.approve(vaultAddress, reserve);
-      await vault.deposit(reserve);
-
-      expect(await vault.remainingMintCapacity()).to.equal(10_000n);
-
-      await vault.mint(deployer.address);
-      expect(await vault.lockedAmount(1n)).to.equal(250n * 10n ** 18n);
-
-      await vault.redeem(1n);
-      expect(await vault.totalReserved()).to.equal(0n);
     });
   });
 

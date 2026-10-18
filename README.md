@@ -65,17 +65,23 @@ from and the second is what picks it up. Use `npm run build` rather than
 ## Deploy
 
 Contracts are grouped by folder under `contracts/`, and each folder has one Ignition
-module of the same name in `ignition/modules/`. You deploy one group at a time with `--sc`:
+module of the same name in `ignition/modules/`. The one exception is `wnura`, which
+deploys `contracts/token/WNURA.sol` on its own. You deploy one group at a time with `--sc`:
 
 ```bash
-npx hardhat deploy --sc token   --network nurachain   # only contracts/token
-npx hardhat deploy --sc airdrop --network nurachain   # only contracts/airdrop
-npx hardhat deploy --sc univ3   --network nurachain   # only contracts/univ3
-npx hardhat deploy --sc vault   --network nurachain   # only contracts/vault
-npx hardhat deploy --sc forecast --network nurachain  # only contracts/forecast
-npx hardhat deploy --sc profile --network nurachain   # only contracts/profile
-npx hardhat deploy --sc arcade  --network nurachain   # only contracts/arcade
+npx hardhat deploy --sc token    --network nurachain   # only contracts/token (bridge tokens)
+npx hardhat deploy --sc wnura    --network nurachain   # only contracts/token/WNURA.sol
+npx hardhat deploy --sc airdrop  --network nurachain   # only contracts/airdrop
+npx hardhat deploy --sc univ3    --network nurachain   # only contracts/univ3
+npx hardhat deploy --sc vault    --network nurachain   # only contracts/vault
+npx hardhat deploy --sc forecast --network nurachain   # only contracts/forecast
+npx hardhat deploy --sc profile  --network nurachain   # only contracts/profile
+npx hardhat deploy --sc arcade   --network nurachain   # only contracts/arcade
 ```
+
+`--sc wnura` deploys a **new, separate** WNURA. Nurachain already has the canonical one at
+`0xf0a4eC07916feBa4432121Ed5969887D9b939cD0`, and `univ3` uses that one unless you pass
+`{ "v3": { "wnura": "0x..." } }` in `--parameters`.
 
 `--sc vault` needs a `--parameters` file for the ERC20 address it locks — see
 [The collateralized NFT vault](#the-collateralized-nft-vault).
@@ -84,7 +90,13 @@ Or through npm:
 
 ```bash
 npm run deploy:nurachain:token
+npm run deploy:nurachain:wnura
 npm run deploy:nurachain:airdrop
+npm run deploy:nurachain:univ3
+npm run deploy:nurachain:vault -- --parameters ./ignition/params.json
+npm run deploy:nurachain:forecast
+npm run deploy:nurachain:profile
+npm run deploy:nurachain:arcade
 
 # equivalent, passing the flag through npm — note the extra --
 npm run deploy:nurachain -- --sc token
@@ -94,15 +106,18 @@ npm run deploy:nurachain -- --sc token
 > parses `--sc` as an abbreviation of its own `--scope` config and drops it, so the
 > flag never reaches Hardhat. The `--` is what forwards it.
 
-Adding a new group is two steps: create `contracts/<name>/`, add
+Adding a new group is three steps: create `contracts/<name>/`, add
 `ignition/modules/<name>.ts`, then add `"<name>"` to the `DEPLOYABLE` list at the top
 of `hardhat.config.ts`. `--sc` validates against that list and errors with the valid
 choices if you mistype it.
 
-`--reset` wipes a module's previous deployment state before redeploying:
+`--reset` wipes the previous deployment state before redeploying. That state is kept
+per deployment id (`ignition/deployments/chain-<chainId>/` by default), **not** per group,
+so `--reset` also forgets the addresses of every other group deployed to that chain.
+To redeploy one group from scratch, give it its own folder instead:
 
 ```bash
-npx hardhat deploy --sc airdrop --network nurachain --reset
+npx hardhat deploy --sc airdrop --network nurachain --deployment-id airdrop-v2
 ```
 
 ### The airdrop asks before it deploys
@@ -187,10 +202,13 @@ npm run preflight:nurachain
 
 # 2. Deploy one group at a time
 npm run deploy:nurachain:token
+npm run deploy:nurachain:wnura
 npm run deploy:nurachain:airdrop
 npm run deploy:nurachain:univ3
 npm run deploy:nurachain:vault -- --parameters ./ignition/params.json
+npm run deploy:nurachain:forecast
 npm run deploy:nurachain:profile
+npm run deploy:nurachain:arcade
 
 # 3. Fund and verify the vault reserve
 npm run setup:nurachain:vault
@@ -345,6 +363,8 @@ and every local modification are in
 
 It **reuses** the WNURA and Multicall3 already live on Nurachain from the earlier AMM
 deployment — a second wrapped-native contract would split every native pool in half.
+(`--sc wnura` can deploy one, but `univ3` only uses it if you pass its address as the
+`wnura` parameter.)
 Pools are not deployed here either; `createAndInitializePoolIfNecessary` makes them on
 demand, the way pairs appear on the first `addLiquidity` anywhere else.
 
@@ -820,7 +840,7 @@ contracts/token/
   BridgeETH.sol              Bridge ETH / ETH, 18 decimals
   BridgeBTC.sol              Bridge BTC / BTC, 18 decimals
   WNURA.sol                  wrapped native coin (Dapphub WETH9, renamed); already live
-                             on Nurachain, deployed here only by tests
+                             on Nurachain, deployed separately by --sc wnura
 contracts/airdrop/
   Airdrop.sol                capped native-coin airdrop, EIP-712 signature gated
 contracts/univ3/
@@ -854,7 +874,8 @@ contracts/profile/
   test/ProfileInvariant.t.sol  item-list and ownership invariants under random sequences
   README.md                  design, data model, gas, security review, frontend integration
 ignition/modules/
-  token.ts                   deploys contracts/token   (--sc token)
+  token.ts                   deploys contracts/token   (--sc token): the bridge tokens
+  wnura.ts                   deploys contracts/token/WNURA.sol alone (--sc wnura)
   airdrop.ts                 deploys contracts/airdrop (--sc airdrop)
   univ3.ts                   deploys contracts/univ3   (--sc univ3)
   vault.ts                   deploys contracts/vault   (--sc vault)
@@ -889,4 +910,4 @@ hardhat.config.ts            three solc versions, networks, and the `deploy --sc
 ```
 
 Each `contracts/<folder>` maps to `ignition/modules/<folder>.ts` and is deployed
-independently with `--sc <folder>`.
+independently with `--sc <folder>`. `wnura` is the one group that is not a folder.

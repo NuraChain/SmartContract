@@ -45,7 +45,7 @@ export default buildModule("univ3", (m) => {
   // IWETH9-compatible: deposit(), withdraw(), and the ERC20 surface are all present.
   //
   // Override for a different chain with --parameters:
-  //   { "v3": { "wnura": "0x..." } }
+  //   { "univ3": { "wnura": "0x..." } }
   const wnura = m.getParameter("wnura", "0xf0a4eC07916feBa4432121Ed5969887D9b939cD0");
 
   // Shown on the position NFT in place of "ETH". Read back by nativeCurrencyLabel(),

@@ -80,7 +80,7 @@ npx hardhat deploy --sc arcade   --network nurachain   # only contracts/arcade
 
 `--sc wnura` deploys a **new, separate** WNURA. Nurachain already has the canonical one at
 `0xf0a4eC07916feBa4432121Ed5969887D9b939cD0`, and `univ3` uses that one unless you pass
-`{ "v3": { "wnura": "0x..." } }` in `--parameters`.
+`{ "univ3": { "wnura": "0x..." } }` in `--parameters`.
 
 Or through npm:
 

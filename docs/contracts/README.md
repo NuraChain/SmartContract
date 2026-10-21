@@ -37,6 +37,7 @@ vendored code are covered by dedicated files as noted below.
 | [MarketMath.md](MarketMath.md) | `MarketMath` | `contracts/forecast/libraries/MarketMath.sol` | library |
 | [NuraProfile.md](NuraProfile.md) | `NuraProfile` (+ `NuraProfileProxy`, `NuraProfileLens`, `SocialVerifier`) | `contracts/profile/NuraProfile.sol` | UUPS profile registry |
 | [WNURA.md](WNURA.md) | `WNURA` | `contracts/token/WNURA.sol` | wrapped-native token |
+| [ArcadeVault.md](ArcadeVault.md) | `ArcadeVault` | `contracts/arcade/ArcadeVault.sol` | native-coin stakes for Arcade's paid tables |
 | [MockToken.md](MockToken.md) | `MockToken` | `contracts/mocks/MockToken.sol` | dev/test token |
 | [TestAndVendoredContracts.md](TestAndVendoredContracts.md) | mocks + Uniswap V3 tree | various | test-only / vendored |
 

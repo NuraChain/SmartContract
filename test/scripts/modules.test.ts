@@ -295,5 +295,40 @@ describe("ignition modules", () => {
       expect(await achievements.hasRole(await achievements.DEFAULT_ADMIN_ROLE(), other.address)).to.equal(true);
       expect(await achievements.uri(0n)).to.equal(uri);
     });
+
+    it("deploys the vault with a 5% fee, a 1,000 NURA ceiling, three days to reclaim and the deployer as referee", async () => {
+      const [deployer] = await ethers.getSigners();
+      const { vault } = await ignition.deploy(arcadeModule);
+
+      expect(await vault.fee()).to.equal(500n);
+      expect(await vault.maxStake()).to.equal(1_000n * 10n ** 18n);
+      expect(await vault.reclaimAfter()).to.equal(3n * 24n * 3600n);
+      expect(await vault.hasRole(await vault.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(true);
+      expect(await vault.hasRole(await vault.PAUSER_ROLE(), deployer.address)).to.equal(true);
+      expect(await vault.hasRole(await vault.REFEREE_ROLE(), deployer.address)).to.equal(true);
+    });
+
+    it("carries the vault's admin, referee, fee, ceiling and reclaim delay through to the constructor", async () => {
+      const [deployer, admin, referee] = await ethers.getSigners();
+      const { vault } = await ignition.deploy(arcadeModule, {
+        parameters: {
+          arcade: {
+            admin: admin.address,
+            referee: referee.address,
+            fee: 250,
+            maxStake: 50n * 10n ** 18n,
+            reclaimAfter: 24 * 3600,
+          },
+        },
+      });
+
+      expect(await vault.fee()).to.equal(250n);
+      expect(await vault.maxStake()).to.equal(50n * 10n ** 18n);
+      expect(await vault.reclaimAfter()).to.equal(24n * 3600n);
+      expect(await vault.hasRole(await vault.DEFAULT_ADMIN_ROLE(), admin.address)).to.equal(true);
+      expect(await vault.hasRole(await vault.REFEREE_ROLE(), referee.address)).to.equal(true);
+      expect(await vault.hasRole(await vault.REFEREE_ROLE(), deployer.address)).to.equal(false);
+      expect(await vault.hasRole(await vault.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(false);
+    });
   });
 });

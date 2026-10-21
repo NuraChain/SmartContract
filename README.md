@@ -503,6 +503,54 @@ rationale, data model, gas table, security review and frontend integration guide
 [`contracts/profile/README.md`](contracts/profile/README.md); the per-function reference is
 [`docs/contracts/NuraProfile.md`](docs/contracts/NuraProfile.md).
 
+## The arcade vault
+
+`contracts/arcade/ArcadeVault.sol` holds the native NURA that Arcade's players stake on paid
+tables. A player deposits once and withdraws what is free whenever they like; playing costs
+them no transaction. For each paid game they sign an EIP-712 `Stake`, and the Arcade server,
+holding `REFEREE_ROLE`, opens the game with every player's signature and pays it when the game
+ends: the pot less the fee to the winners, evenly, with whatever the split leaves joining the
+fee.
+
+```solidity
+// a player
+vault.deposit{value: 100 ether}();
+vault.withdraw(40 ether);
+
+// the Arcade server, with every player's signed Stake
+vault.open(id, "ludo", 10 ether, 500, seats);       // locks 10 NURA of each, all or nothing
+vault.settle(id, 0b0101, secrets);                   // seats 0 and 2 split the pot, less 5%
+vault.refund(id);                                    // or every stake back, no fee
+
+// anybody, three days after a game opened and was never paid
+vault.reclaim(id);
+```
+
+| Function | Who | What |
+| --- | --- | --- |
+| `deposit()` / plain transfer | anybody | credits the sender's free balance |
+| `withdraw(amount)` | the balance's owner | pays them from what is free; never paused |
+| `cancel(nonce)` | a player | spends a stake they signed, before it is used |
+| `open(id, game, amount, feeBps, seats)` | `REFEREE_ROLE` | locks one game: every signature valid, unexpired and unused, every balance enough, the fee the vault's |
+| `settle(id, winners, secrets)` | `REFEREE_ROLE` | pays one game; every secret must open the commit its player signed |
+| `refund(id)` | `REFEREE_ROLE` | every stake back, no fee |
+| `reclaim(id)` | anybody | every stake back, from `reclaimAfter` after the game opened |
+| `setFee` / `setMaxStake` / `withdrawFees` | `DEFAULT_ADMIN_ROLE` | the fee (at most 10%) and the ceiling for games not yet opened; the fees taken |
+| `pause()` / `unpause()` | `PAUSER_ROLE` | stops deposits and new games, nothing else |
+
+The referee is trusted to say who won, because the games are played on Arcade's server, and
+the contract bounds the rest: it can lock only stakes their players signed, each once and
+before its deadline (never more than a day out), at the amount and fee they signed, and pay a
+pot only to that game's players, with the secrets that open their commits. It cannot touch a
+free balance or stop a withdrawal, and if it never pays a game anybody can reclaim it. The
+commits are what make a paid game's dice and cards checkable afterwards: the secrets `settle`
+reveals, with the players' signatures from `open`, give the seed the game was drawn from.
+
+It is not upgradeable. Deploy with `npm run deploy:nurachain:arcade` and the `arcade`
+parameters (`referee`, `fee`, `maxStake`, `reclaimAfter`; see `ignition/modules/arcade.ts`).
+The per-function reference, roles, flows and security analysis are in
+[`docs/contracts/ArcadeVault.md`](docs/contracts/ArcadeVault.md).
+
 ## Tests
 
 ```bash
@@ -517,7 +565,7 @@ Narrower slices, for when you are working on one thing:
 
 ```bash
 npm run test:fuzz      # property tests only (256 randomised runs each)
-npm run test:invariant # stateful invariant runs over the profile registry
+npm run test:invariant # stateful invariant runs over the profile registry and the arcade vault
 npm run test:profile   # the profile registry, its lens, its extension and its upgrade path
 npm run gas:profile    # gas table for every profile operation
 npm run test:security  # signature binding, reentrancy, access control, admin bounds
@@ -582,6 +630,7 @@ contracts/profile/NuraProfile.sol       100.00% lines   100.00% statements
 contracts/profile/NuraProfileLens.sol   100.00% lines   100.00% statements
 contracts/profile/libraries/ProfileStrings.sol   100.00% lines   100.00% statements
 contracts/profile/extensions/SocialVerifier.sol  100.00% lines   100.00% statements
+contracts/arcade/ArcadeVault.sol        100.00% lines   100.00% statements
 ```
 
 `npm run coverage` is scoped to the contracts in this repo on purpose. Coverage instruments
@@ -636,6 +685,14 @@ router computes moves with it.
   `NuraProfile` owner can replace the implementation. Ownership is two-step and the owner has
   no path to user content, but an upgrade can add one. Move it to a multisig before users
   depend on it, and treat `upgradeToAndCall` as the most sensitive call in this repo.
+- **The arcade vault's referee says who won.** Its key lives on the Arcade server. The
+  contract keeps it to stakes players signed and to the players of each game, but whoever
+  holds it can pay a locked pot to the wrong player among those seated. Revoking
+  `REFEREE_ROLE` stops it at once, and an unpaid game can be reclaimed after the delay. The
+  vault's admin can grant itself that role, so the admin belongs behind a multisig before the
+  vault holds real value.
+- **Playing for money is regulated or banned in many places.** The vault is the mechanism, not
+  a licence; check where the product is offered before the vault holds real value.
 - **Not audited.**
 
 ## Layout
@@ -663,6 +720,10 @@ contracts/airdrop/
   mocks/AirdropMocks.sol     re-entrant and payout-rejecting claimants, tests only
 contracts/arcade/
   ArcadeAchievements.sol     ERC-1155 achievements, backend-minted; per-id metadata URI, soulbound or tradeable per id
+  ArcadeVault.sol            native-coin stakes for Arcade's paid tables: signed stakes, referee-paid pots, reclaim
+  mocks/VaultMocks.sol       re-entrant and refusing receivers, an ERC-1271 wallet, tests only
+  test/VaultFuzz.t.sol       properties over stakes, fees, seat counts and winners
+  test/VaultInvariant.t.sol  the vault holds every wei it owes under random sequences
 contracts/profile/
   NuraProfile.sol            UUPS profile registry: usernames, localized fields, items, extensions
   NuraProfileProxy.sol       the ERC-1967 proxy — the address everyone uses
@@ -683,7 +744,7 @@ ignition/modules/
   univ3periphery.ts          redeploys the WNURA-holding V3 periphery (--sc univ3periphery)
   forecast.ts                deploys contracts/forecast (--sc forecast)
   profile.ts                 deploys contracts/profile (--sc profile): impl, proxy, lens, verifier
-  arcade.ts                  deploys contracts/arcade  (--sc arcade)
+  arcade.ts                  deploys contracts/arcade  (--sc arcade): achievements and vault
 scripts/
   preflight.ts               pre-deploy check: chain id, funding, gas, contract sizes
   write-init-code-hash.ts    regenerates the V3 pool init code hash
@@ -694,6 +755,7 @@ scripts/
 test/
   BridgeToken.test.ts        49 tests: roles, mint, burn, pause, permit security, rescue
   Airdrop.test.ts            44 tests: signature binding, replay, reentrancy, caps, admin
+  ArcadeVault.test.ts        39 tests: stakes, signatures, payouts, refunds, reclaims, roles, gas
   univ3/Build.test.ts        EIP-170 sizes and the pool init code hash
   univ3/Factory.test.ts      18 tests: fee tiers, createPool, ownership
   univ3/Pool.test.ts         26 tests: initialize, mint, burn, swap, flash, fees

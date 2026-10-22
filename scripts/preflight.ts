@@ -52,7 +52,12 @@ function probes(deployer: string) {
       { name: "NuraProfileLens", args: [deployer] },
       { name: "SocialVerifier", args: [deployer, deployer, deployer] },
     ],
-    arcade: [{ name: "ArcadeAchievements", args: [deployer, ""] }],
+    // The vault's referee, fee, ceiling and wait are deploy parameters, and its constructor
+    // only checks and stores them, so these estimate the gas the real ones will.
+    arcade: [
+      { name: "ArcadeAchievements", args: [deployer, ""] },
+      { name: "ArcadeVault", args: [deployer, deployer, 500, 1_000n * 10n ** 18n, 3n * 24n * 60n * 60n] },
+    ],
   };
 }
 
@@ -68,6 +73,19 @@ const MAX_CODE_SIZE = 24576;
  * same gas — the library is only ever `delegatecall`ed, never read at construction.
  */
 const LIBRARY_LINKED = new Set(["NonfungibleTokenPositionDescriptor"]);
+
+/**
+ * What the Arcade server's referee spends on one paid game of nine seats, the most a game holds:
+ * `open` and `settle` as the vault's own tests measure them.
+ */
+const OPEN_GAS_NINE = 943_000n;
+const SETTLE_GAS_NINE = 114_000n;
+
+/** Arcade's referee never pays less than this on Nurachain (its NURA_GAS_FLOOR). */
+const REFEREE_FLOOR = 47_000_000_000n;
+
+/** The sizes of table Arcade plays for NURA, from two seats to nine. */
+const TABLE_SIZES = [2, 3, 4, 6, 9];
 
 async function main() {
   const { ethers, networkName, networkConfig } = await network.getOrCreate();
@@ -136,6 +154,63 @@ async function main() {
         oversized.push(name);
       }
     }
+  }
+
+  // Arcade's paid tables ask three more things of the chain, and each has been wrong once
+  // somewhere: how often a block comes, what the referee pays for gas, and whether the node
+  // takes the requests the referee sends. Nurachain's rpc once dropped request bodies over
+  // about 1.2 KB, and a nine-seat `open` is several times that. Each request is sent as an
+  // eth_call to the deployer's own address, which holds no code, so all it can say is whether
+  // the node took a request that size.
+  console.log(`\nArcade's paid tables`);
+
+  const newest = await ethers.provider.getBlock("latest");
+  const span = Math.min(100, newest?.number ?? 0);
+  const older = await ethers.provider.getBlock((newest?.number ?? 0) - span);
+  const spacing = newest === null || older === null || span === 0 ? 0 : (newest.timestamp - older.timestamp) / span;
+  const age = newest === null ? 0 : Math.floor(Date.now() / 1000) - newest.timestamp;
+  console.log(`  Block time:     ${spacing.toFixed(1)} s over the last ${span} blocks, the newest ${age} s old`);
+
+  const refereePrice = gasPrice > REFEREE_FLOOR ? gasPrice : REFEREE_FLOOR;
+  console.log(`  Referee gas:    ${ethers.formatUnits(refereePrice, "gwei")} gwei (Arcade never pays under 47)`);
+  console.log(`  One game:       ${ethers.formatEther((OPEN_GAS_NINE + SETTLE_GAS_NINE) * refereePrice)} (native) to lock and pay nine seats`);
+
+  const vault = (await ethers.getContractFactory("ArcadeVault")).interface;
+  const id = ethers.zeroPadValue("0x01", 32);
+  const refused: string[] = [];
+
+  for (const seats of TABLE_SIZES) {
+    const standIns = Array.from({ length: seats }, (_, index) => ({
+      player: deployer.address,
+      commit: ethers.zeroPadValue(ethers.toBeHex(index + 1), 32),
+      nonce: ethers.zeroPadValue(ethers.toBeHex(index + 100), 32),
+      deadline: 2n ** 63n,
+      signature: `0x${"ab".repeat(65)}`,
+    }));
+    const requests = [
+      ["open", vault.encodeFunctionData("open", [id, "poker", 10n ** 18n, 500, standIns])],
+      ["settle", vault.encodeFunctionData("settle", [id, 1n, standIns.map((seat) => seat.commit)])],
+    ] as const;
+
+    for (const [name, data] of requests) {
+      const bytes = (data.length - 2) / 2;
+      const label = `  ${name} at ${seats}:`.padEnd(18);
+
+      try {
+        await ethers.provider.call({ to: deployer.address, data });
+        console.log(`${label}${String(bytes).padStart(6)} bytes, taken`);
+      } catch (error) {
+        refused.push(`${name} at ${seats} seats (${bytes} bytes)`);
+        console.log(`${label}${String(bytes).padStart(6)} bytes, REFUSED: ${error instanceof Error ? error.message.split("\n")[0] : error}`);
+      }
+    }
+  }
+
+  if (refused.length > 0) {
+    throw new Error(
+      `The node would not take ${refused.join(", ")}, so Arcade's referee could not lock or pay ` +
+        `games that large there. Raise the rpc's request size limit before paid tables open.`,
+    );
   }
 
   if (oversized.length > 0) {

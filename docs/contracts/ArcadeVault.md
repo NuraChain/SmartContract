@@ -230,7 +230,11 @@ npx hardhat deploy --sc arcade --network nurachain --parameters ./ignition/param
 with `referee` (the Arcade server's key), and optionally `admin`, `fee` (basis points, default
 500), `maxStake` (wei, default 1,000 NURA) and `reclaimAfter` (seconds, default three days).
 See `ignition/modules/arcade.ts`. Gas measured on the in-process chain: `open` 328k, 503k and
-943k at 2, 4 and 9 seats; `settle` 84k, 79k and 114k.
+943k at 2, 4 and 9 seats; `settle` 84k, 79k and 114k; the deploy 2.64M. Run
+`npm run preflight:nurachain` first: besides the deploy gas it reads the chain's block time,
+prices a nine-seat game at the referee's gas price, and sends the node an `open` and a
+`settle` of every table size, refusing to go on if it will not take one (a nine-seat `open`
+is about 3 KB of calldata).
 
 ## Integration Guide
 

@@ -217,6 +217,15 @@ executes the constructor — so if Nurachain does not support the Cancun opcodes
 build targets, it fails there instead of after you have spent gas on a reverted
 deploy. It also refuses to continue if the deployer cannot cover the cost.
 
+For Arcade's paid tables it measures what the vault will ask of the chain once it is
+live: the block time over the last hundred blocks and how old the newest one is, the gas
+price the Arcade referee will pay (never under 47 gwei), what one nine-seat game costs it
+to lock and pay, and whether the node takes an `open` and a `settle` at two, three, four,
+six and nine seats. Those are the largest requests the referee sends, a nine-seat `open`
+being about 3 KB of calldata, and Nurachain's rpc once dropped request bodies over about
+1.2 KB. A size the node refuses stops the preflight, because the referee could not lock or
+pay a game that large there.
+
 **If preflight fails on opcodes**, the fix is to drop to an older OpenZeppelin that
 does not use `mcopy` (5.1.x) and set `evmVersion: "paris"` in `hardhat.config.ts`.
 Ask and I'll do that downgrade.
@@ -746,7 +755,7 @@ ignition/modules/
   profile.ts                 deploys contracts/profile (--sc profile): impl, proxy, lens, verifier
   arcade.ts                  deploys contracts/arcade  (--sc arcade): achievements and vault
 scripts/
-  preflight.ts               pre-deploy check: chain id, funding, gas, contract sizes
+  preflight.ts               pre-deploy check: chain id, funding, gas, contract sizes, paid tables
   write-init-code-hash.ts    regenerates the V3 pool init code hash
   profile-setup.ts           registers the verifier extension on the profile registry, prints state
   profile-upgrade.ts         UUPS upgrade with owner, size and proxiableUUID checks

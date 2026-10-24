@@ -317,7 +317,7 @@ describe("ignition modules", () => {
             admin: admin.address,
             referee: referee.address,
             fee: 250,
-            referralShare: 5_000,
+            referralShare: 7_500,
             maxStake: 50n * 10n ** 18n,
             reclaimAfter: 24 * 3600,
           },
@@ -325,7 +325,7 @@ describe("ignition modules", () => {
       });
 
       expect(await vault.fee()).to.equal(250n);
-      expect(await vault.referralShare()).to.equal(5_000n);
+      expect(await vault.referralShare()).to.equal(7_500n);
       expect(await vault.maxStake()).to.equal(50n * 10n ** 18n);
       expect(await vault.reclaimAfter()).to.equal(24n * 3600n);
       expect(await vault.hasRole(await vault.DEFAULT_ADMIN_ROLE(), admin.address)).to.equal(true);

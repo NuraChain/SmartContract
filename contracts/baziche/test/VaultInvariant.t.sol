@@ -148,7 +148,7 @@ contract VaultHandler {
 
     function setReferralShare(uint256 seed) external {
         vm.prank(admin);
-        vault.setReferralShare(uint16(seed % 5001));
+        vault.setReferralShare(uint16(100 + (seed % 7401)));
     }
 
     function withdrawFees(uint256 amount) external {

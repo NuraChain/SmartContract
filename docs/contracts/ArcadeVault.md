@@ -76,7 +76,7 @@ ArcadeVault
 | Constant | Value | Meaning |
 | --- | --- | --- |
 | `MIN_FEE_BPS` / `MAX_FEE_BPS` | 100 / 1,500 | The lowest and highest fee the admin can ever set (1% and 15%). |
-| `MAX_REFERRAL_BPS` | 5,000 | The most of a seat's fee a referrer can be given (half). |
+| `MIN_REFERRAL_BPS` / `MAX_REFERRAL_BPS` | 100 / 7,500 | The least and the most of a seat's fee the owner can give its referrer (1% and 75%). |
 | `MIN_SEATS` / `MAX_SEATS` | 2 / 9 | Players in one game. |
 | `MIN_RECLAIM_AFTER` / `MAX_RECLAIM_AFTER` | 1 day / 30 days | Bounds on `reclaimAfter`. |
 | `MAX_STAKE_LIFE` | 1 day | The longest a stake may still have to run when it is used. |
@@ -123,7 +123,7 @@ Every per-player event indexes the player, so one address's whole history is one
 | --- | --- |
 | `ZeroAddress`, `ZeroAmount` | constructor, deposits, withdrawals, `open`, the admin's calls |
 | `FeeOutOfRange(feeBps)` | constructor, `setFee`, `setGameFee` |
-| `ReferralShareOutOfRange(shareBps)` | constructor, `setReferralShare` over `MAX_REFERRAL_BPS` |
+| `ReferralShareOutOfRange(shareBps)` | constructor, `setReferralShare`, outside 1% to 75% |
 | `BadReclaimDelay(reclaimAfter)` | constructor |
 | `InsufficientBalance(available, required)` | `withdraw` |
 | `InsufficientFees(available, required)` | `withdrawFees` |
@@ -177,7 +177,7 @@ to the last wei.
 Each seat whose player has a `referrerOf` then gives that referrer
 `amount × feeBps / 10000 × referralShare / 10000`, at the share pinned when the game opened.
 The cut comes out of what would have gone to `fees`, never out of the winners' share, and it
-can never exceed it: each seat's cut is at most half that seat's fee, and the seats' fees,
+can never exceed it: each seat's cut is at most three quarters of that seat's fee, and the seats' fees,
 rounded down one by one, add up to no more than the pot's. Winnings and cuts are credited to
 vault balances, so a referrer withdraws like anybody, paused or not; nothing is sent.
 
@@ -203,7 +203,7 @@ The only two calls that send coin, each after its state is written and behind
 
 | Role | Granted to at deploy | Can |
 | --- | --- | --- |
-| `DEFAULT_ADMIN_ROLE` | `admin` | the owner: set the fee (1% to 15%, shared or per game), the referral share (up to half the fee) and the ceiling, take the fees, replace the referee, grant and revoke every other role, hand the vault on |
+| `DEFAULT_ADMIN_ROLE` | `admin` | the owner: set the fee (1% to 15%, shared or per game), the referral share (1% to 75% of the fee) and the ceiling, take the fees, replace the referee, grant and revoke every other role, hand the vault on |
 | `PAUSER_ROLE` | `admin` | pause and unpause deposits and new games |
 | `REFEREE_ROLE` | `referee` | open, settle and refund games |
 

@@ -58,8 +58,10 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     uint16 public constant MIN_FEE_BPS = 100;
     uint16 public constant MAX_FEE_BPS = 1_500;
 
-    /// @notice The most of a game's fee a referrer can ever be given: half of it.
-    uint16 public constant MAX_REFERRAL_BPS = 5_000;
+    /// @notice The least and the most of a seat's fee the owner can give its referrer: 1% and
+    ///         75% of it.
+    uint16 public constant MIN_REFERRAL_BPS = 100;
+    uint16 public constant MAX_REFERRAL_BPS = 7_500;
 
     /// @notice The fewest and the most players a game can have.
     uint256 public constant MIN_SEATS = 2;
@@ -209,7 +211,7 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
      * @param referee_      The Arcade server's key. Receives REFEREE_ROLE.
      * @param fee_          The fee in basis points, from MIN_FEE_BPS to MAX_FEE_BPS. 500 is 5%.
      * @param referralShare_ The part of each seat's fee its referrer gets, in basis points of the
-     *                      fee, at most MAX_REFERRAL_BPS. 2000 is a fifth of the fee.
+     *                      fee, from MIN_REFERRAL_BPS to MAX_REFERRAL_BPS. 2000 is a fifth.
      * @param maxStake_     The most one player may stake on one game, in wei.
      * @param reclaimAfter_ Seconds after `open` from which anybody may `reclaim`, within the bounds.
      */
@@ -564,7 +566,9 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     }
 
     function _checkReferralShare(uint16 shareBps) private pure {
-        if (shareBps > MAX_REFERRAL_BPS) revert ReferralShareOutOfRange(shareBps);
+        if (shareBps < MIN_REFERRAL_BPS || shareBps > MAX_REFERRAL_BPS) {
+            revert ReferralShareOutOfRange(shareBps);
+        }
     }
 
     function _checkFee(uint16 feeBps) private pure {

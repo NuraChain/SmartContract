@@ -35,8 +35,8 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  * the next owner.
  *
  * `fee` is in basis points (500 is 5%, from 100 to 1,500), `referralShare` is the part of each
- * seat's fee its player's referrer gets, in basis points of the fee (2,000 is a fifth, at most
- * 5,000), `maxStake` is the most one player may
+ * seat's fee its player's referrer gets, in basis points of the fee (2,000 is a fifth, from 100
+ * to 7,500), `maxStake` is the most one player may
  * stake on one game in wei (1,000 NURA by default), and `reclaimAfter` is how many seconds
  * after a game opens anybody may return its stakes if it was never paid (three days by
  * default, between one and thirty). The last one is immutable.

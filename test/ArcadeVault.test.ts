@@ -145,7 +145,7 @@ describe("ArcadeVault", () => {
       expect(await vault.solvent()).to.equal(true);
     });
 
-    it("refuses a zero admin or referee, a fee under 1% or over 15%, a referral share over half the fee, a zero ceiling and a reclaim delay out of bounds", async () => {
+    it("refuses a zero admin or referee, a fee under 1% or over 15%, a referral share under 1% or over 75% of the fee, a zero ceiling and a reclaim delay out of bounds", async () => {
       const { admin, referee } = await loadFixture(deploy);
       const factory = await ethers.getContractFactory("ArcadeVault");
       const day = 24n * 3600n;
@@ -170,12 +170,15 @@ describe("ArcadeVault", () => {
         .to.be.revertedWithCustomError(factory, "BadReclaimDelay")
         .withArgs(30n * day + 1n);
 
-      await expect(factory.deploy(admin.address, referee.address, FEE, 5001, MAX_STAKE, RECLAIM_AFTER))
+      await expect(factory.deploy(admin.address, referee.address, FEE, 7501, MAX_STAKE, RECLAIM_AFTER))
         .to.be.revertedWithCustomError(factory, "ReferralShareOutOfRange")
-        .withArgs(5001);
+        .withArgs(7501);
+      await expect(factory.deploy(admin.address, referee.address, FEE, 99, MAX_STAKE, RECLAIM_AFTER))
+        .to.be.revertedWithCustomError(factory, "ReferralShareOutOfRange")
+        .withArgs(99);
 
-      await factory.deploy(admin.address, referee.address, 1500, 5000, 1n, day);
-      await factory.deploy(admin.address, referee.address, 100, REFERRAL, MAX_STAKE, 30n * day);
+      await factory.deploy(admin.address, referee.address, 1500, 7500, 1n, day);
+      await factory.deploy(admin.address, referee.address, 100, 100, MAX_STAKE, 30n * day);
     });
   });
 
@@ -997,23 +1000,30 @@ describe("ArcadeVault", () => {
       const { id, secrets } = await openGame(ctx, "pinned share", 2);
       expect((await vault.gameOf(id)).referralShare_).to.equal(BigInt(REFERRAL));
 
-      await expect(vault.connect(admin).setReferralShare(5_000)).to.emit(vault, "ReferralShareChanged").withArgs(REFERRAL, 5_000);
+      await expect(vault.connect(admin).setReferralShare(7_500)).to.emit(vault, "ReferralShareChanged").withArgs(REFERRAL, 7_500);
       await vault.connect(referee).settle(id, 1n, secrets);
-      const first = ((seatFee * BigInt(REFERRAL)) / 10_000n) * 2n;
-      expect(await vault.referralEarned(outsider.address)).to.equal(first);
+      const cutAt = (share: bigint) => ((seatFee * share) / 10_000n) * 2n;
+      expect(await vault.referralEarned(outsider.address)).to.equal(cutAt(BigInt(REFERRAL)));
 
       const next = await openGame(ctx, "new share", 2);
-      expect((await vault.gameOf(next.id)).referralShare_).to.equal(5_000n);
-      await vault.connect(admin).setReferralShare(0);
+      expect((await vault.gameOf(next.id)).referralShare_).to.equal(7_500n);
+      await expect(vault.connect(admin).setReferralShare(100)).to.emit(vault, "ReferralShareChanged").withArgs(7_500, 100);
       await vault.connect(referee).settle(next.id, 2n, next.secrets);
-      expect(await vault.referralEarned(outsider.address)).to.equal(first + (seatFee / 2n) * 2n);
+      expect(await vault.referralEarned(outsider.address)).to.equal(cutAt(BigInt(REFERRAL)) + cutAt(7_500n));
 
-      const none = await openGame(ctx, "no share", 2);
-      await expect(vault.connect(referee).settle(none.id, 1n, none.secrets)).to.not.emit(vault, "ReferralPaid");
+      const least = await openGame(ctx, "least share", 2);
+      await vault.connect(referee).settle(least.id, 1n, least.secrets);
+      expect(await vault.referralEarned(outsider.address)).to.equal(cutAt(BigInt(REFERRAL)) + cutAt(7_500n) + cutAt(100n));
 
-      await expect(vault.connect(admin).setReferralShare(5_001))
+      await expect(vault.connect(admin).setReferralShare(7_501))
         .to.be.revertedWithCustomError(vault, "ReferralShareOutOfRange")
-        .withArgs(5_001);
+        .withArgs(7_501);
+      await expect(vault.connect(admin).setReferralShare(99))
+        .to.be.revertedWithCustomError(vault, "ReferralShareOutOfRange")
+        .withArgs(99);
+      await expect(vault.connect(admin).setReferralShare(0))
+        .to.be.revertedWithCustomError(vault, "ReferralShareOutOfRange")
+        .withArgs(0);
       await expect(vault.connect(players[0]).setReferralShare(1)).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
       await expect(vault.connect(referee).setReferralShare(1)).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
     });
@@ -1036,7 +1046,7 @@ describe("ArcadeVault", () => {
     it("stays solvent to the wei with referrers across splits, odd stakes and the largest share", async () => {
       const ctx = await loadFixture(deployReferred);
       const { vault, admin, referee } = ctx;
-      await vault.connect(admin).setReferralShare(5_000);
+      await vault.connect(admin).setReferralShare(7_500);
       await vault.connect(admin).setFee(1_500);
 
       const amounts = [1n, 7n, 9_999n, STAKE + 3n];

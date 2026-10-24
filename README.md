@@ -545,7 +545,7 @@ vault.reclaim(id);
 | `settle(id, winners, secrets)` | `REFEREE_ROLE` | pays one game; every secret must open the commit its player signed; each referred seat's referrer gets a cut of the fee |
 | `refund(id)` | `REFEREE_ROLE` | every stake back, no fee |
 | `reclaim(id)` | anybody | every stake back, from `reclaimAfter` after the game opened |
-| `setReferralShare` | `DEFAULT_ADMIN_ROLE` | the part of each seat's fee its player's referrer gets (up to half), for games not yet opened |
+| `setReferralShare` | `DEFAULT_ADMIN_ROLE` | the part of each seat's fee its player's referrer gets (1% to 75% of it), for games not yet opened |
 | `setFee` / `setGameFee` / `setMaxStake` / `withdrawFees` | `DEFAULT_ADMIN_ROLE` | the fee (1% to 15%, shared or per game) and the ceiling for games not yet opened; the fees taken |
 | `setReferee(next)` | `DEFAULT_ADMIN_ROLE` | moves `REFEREE_ROLE` from the current referee to `next` in one call |
 | `beginDefaultAdminTransfer(next)` / `acceptDefaultAdminTransfer()` | the owner, then `next` | hands the vault and its pauser role to a new owner; `cancelDefaultAdminTransfer()` takes the naming back |

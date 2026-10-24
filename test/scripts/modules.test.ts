@@ -92,7 +92,7 @@ describe("ignition modules", () => {
       expect(await wnura.symbol()).to.equal("WNURA");
       expect(await wnura.decimals()).to.equal(18n);
 
-      await wnura.deposit({ value: 1n });
+      await wnura["deposit()"]({ value: 1n });
       expect(await wnura.balanceOf(deployer.address)).to.equal(1n);
     });
   });
@@ -296,11 +296,12 @@ describe("ignition modules", () => {
       expect(await achievements.uri(0n)).to.equal(uri);
     });
 
-    it("deploys the vault with a 5% fee, a 1,000 NURA ceiling, three days to reclaim and the deployer as referee", async () => {
+    it("deploys the vault with a 5% fee, a fifth of it to referrers, a 1,000 NURA ceiling, three days to reclaim and the deployer as referee", async () => {
       const [deployer] = await ethers.getSigners();
       const { vault } = await ignition.deploy(bazicheModule);
 
       expect(await vault.fee()).to.equal(500n);
+      expect(await vault.referralShare()).to.equal(2_000n);
       expect(await vault.maxStake()).to.equal(1_000n * 10n ** 18n);
       expect(await vault.reclaimAfter()).to.equal(3n * 24n * 3600n);
       expect(await vault.hasRole(await vault.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(true);
@@ -308,7 +309,7 @@ describe("ignition modules", () => {
       expect(await vault.hasRole(await vault.REFEREE_ROLE(), deployer.address)).to.equal(true);
     });
 
-    it("carries the vault's admin, referee, fee, ceiling and reclaim delay through to the constructor", async () => {
+    it("carries the vault's admin, referee, fee, referral share, ceiling and reclaim delay through to the constructor", async () => {
       const [deployer, admin, referee] = await ethers.getSigners();
       const { vault } = await ignition.deploy(bazicheModule, {
         parameters: {
@@ -316,6 +317,7 @@ describe("ignition modules", () => {
             admin: admin.address,
             referee: referee.address,
             fee: 250,
+            referralShare: 5_000,
             maxStake: 50n * 10n ** 18n,
             reclaimAfter: 24 * 3600,
           },
@@ -323,6 +325,7 @@ describe("ignition modules", () => {
       });
 
       expect(await vault.fee()).to.equal(250n);
+      expect(await vault.referralShare()).to.equal(5_000n);
       expect(await vault.maxStake()).to.equal(50n * 10n ** 18n);
       expect(await vault.reclaimAfter()).to.equal(24n * 3600n);
       expect(await vault.hasRole(await vault.DEFAULT_ADMIN_ROLE(), admin.address)).to.equal(true);

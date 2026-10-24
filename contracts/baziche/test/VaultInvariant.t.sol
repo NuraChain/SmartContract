@@ -14,8 +14,8 @@ interface Vm {
 /**
  * Drives the vault through random sequences on behalf of the invariant runner: deposits,
  * withdrawals, games opened with real signatures, games paid to random winners, refunded and
- * reclaimed, and the fee moved between games, so the bookkeeping is exercised under every
- * path that touches it.
+ * reclaimed, with referrers taking their cut, and the fee and the referral share moved
+ * between games, so the bookkeeping is exercised under every path that touches it.
  *
  * Every action guards its own preconditions and returns early instead of reverting, so the
  * fuzzer spends its budget on sequences that reach the vault. It mirrors the stakes of every
@@ -66,8 +66,10 @@ contract VaultHandler {
         amount = 1 + (amount % 100 ether);
 
         vm.deal(actor, actor.balance + amount);
+        // The referrer is another actor, or the actor itself, which the vault ignores, so every
+        // referral cut stays inside the balances the invariants add up.
         vm.prank(actor);
-        vault.deposit{value: amount}();
+        vault.deposit{value: amount}(actors[(who / ACTORS) % ACTORS]);
     }
 
     function withdraw(uint256 who, uint256 amount) external {
@@ -130,7 +132,7 @@ contract VaultHandler {
         if (openIds.length == 0) return;
         uint256 at = pick % openIds.length;
         bytes32 id = openIds[at];
-        (, , uint64 openedAt, , ) = vault.gameOf(id);
+        (, , uint64 openedAt, , , ) = vault.gameOf(id);
         uint256 due = uint256(openedAt) + vault.reclaimAfter();
         if (block.timestamp < due) vm.warp(due);
 
@@ -142,6 +144,11 @@ contract VaultHandler {
     function setFee(uint256 seed) external {
         vm.prank(admin);
         vault.setFee(uint16(100 + (seed % 1401)));
+    }
+
+    function setReferralShare(uint256 seed) external {
+        vm.prank(admin);
+        vault.setReferralShare(uint16(seed % 5001));
     }
 
     function withdrawFees(uint256 amount) external {
@@ -194,7 +201,7 @@ contract VaultInvariantTest {
     VaultHandler private handler;
 
     function setUp() public {
-        vault = new ArcadeVault(ADMIN, REFEREE, 500, 1_000 ether, 3 days);
+        vault = new ArcadeVault(ADMIN, REFEREE, 500, 2_000, 1_000 ether, 3 days);
         handler = new VaultHandler(vault, REFEREE, ADMIN);
     }
 

@@ -58,6 +58,9 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     uint16 public constant MIN_FEE_BPS = 100;
     uint16 public constant MAX_FEE_BPS = 1_500;
 
+    /// @notice The most of a game's fee a referrer can ever be given: half of it.
+    uint16 public constant MAX_REFERRAL_BPS = 5_000;
+
     /// @notice The fewest and the most players a game can have.
     uint256 public constant MIN_SEATS = 2;
     uint256 public constant MAX_SEATS = 9;
@@ -107,6 +110,7 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     struct Game {
         Status status;
         uint16 feeBps;
+        uint16 referralShare;
         uint64 openedAt;
         uint256 amount;
         bytes32 commits;
@@ -122,6 +126,10 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
 
     /// @notice The Arcade server's key, as last set by the constructor or `setReferee`.
     address public referee;
+
+    /// @notice The part of each seat's fee its player's referrer is given, in basis points OF
+    ///         THE FEE, for games opened from now on.
+    uint16 public referralShare;
 
     /// @notice The most one player may stake on one game.
     uint256 public maxStake;
@@ -147,6 +155,12 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     /// @notice One game's own fee, keyed by `keccak256(bytes(game))`; 0 means it pays `fee`.
     mapping(bytes32 gameHash => uint16 feeBps) public gameFee;
 
+    /// @notice Who brought each player in. Set once, by the player's own `deposit(referrer)`.
+    mapping(address player => address referrer) public referrerOf;
+
+    /// @notice Everything each referrer has been credited from its players' fees.
+    mapping(address referrer => uint256 amount) public referralEarned;
+
     mapping(bytes32 id => Game) private _games;
 
     event Deposited(address indexed player, uint256 amount);
@@ -162,12 +176,16 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     event FeeChanged(uint16 previousFee, uint16 newFee);
     event GameFeeChanged(bytes32 indexed gameHash, string game, uint16 previousFee, uint16 newFee);
     event RefereeChanged(address indexed previousReferee, address indexed newReferee);
+    event ReferrerSet(address indexed player, address indexed referrer);
+    event ReferralShareChanged(uint16 previousShare, uint16 newShare);
+    event ReferralPaid(bytes32 indexed id, address indexed player, address indexed referrer, uint256 amount);
     event MaxStakeChanged(uint256 previousMaxStake, uint256 newMaxStake);
     event FeesWithdrawn(address indexed to, uint256 amount);
 
     error ZeroAddress();
     error ZeroAmount();
     error FeeOutOfRange(uint16 feeBps);
+    error ReferralShareOutOfRange(uint16 shareBps);
     error BadReclaimDelay(uint256 reclaimAfter);
     error InsufficientBalance(uint256 available, uint256 required);
     error InsufficientFees(uint256 available, uint256 required);
@@ -190,6 +208,8 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
      * @param admin         The owner: receives DEFAULT_ADMIN_ROLE and PAUSER_ROLE. The owner's wallet, or a multisig.
      * @param referee_      The Arcade server's key. Receives REFEREE_ROLE.
      * @param fee_          The fee in basis points, from MIN_FEE_BPS to MAX_FEE_BPS. 500 is 5%.
+     * @param referralShare_ The part of each seat's fee its referrer gets, in basis points of the
+     *                      fee, at most MAX_REFERRAL_BPS. 2000 is a fifth of the fee.
      * @param maxStake_     The most one player may stake on one game, in wei.
      * @param reclaimAfter_ Seconds after `open` from which anybody may `reclaim`, within the bounds.
      */
@@ -197,11 +217,13 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
         address admin,
         address referee_,
         uint16 fee_,
+        uint16 referralShare_,
         uint256 maxStake_,
         uint256 reclaimAfter_
     ) AccessControlDefaultAdminRules(0, admin) EIP712("ArcadeVault", "1") {
         if (referee_ == address(0)) revert ZeroAddress();
         _checkFee(fee_);
+        _checkReferralShare(referralShare_);
         if (maxStake_ == 0) revert ZeroAmount();
         if (reclaimAfter_ < MIN_RECLAIM_AFTER || reclaimAfter_ > MAX_RECLAIM_AFTER) {
             revert BadReclaimDelay(reclaimAfter_);
@@ -209,6 +231,7 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
 
         reclaimAfter = reclaimAfter_;
         fee = fee_;
+        referralShare = referralShare_;
         maxStake = maxStake_;
         referee = referee_;
 
@@ -217,6 +240,7 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
 
         emit RefereeChanged(address(0), referee_);
         emit FeeChanged(0, fee_);
+        emit ReferralShareChanged(0, referralShare_);
         emit MaxStakeChanged(0, maxStake_);
     }
 
@@ -227,6 +251,21 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     /// @notice Adds the coin sent to the caller's free balance.
     function deposit() external payable whenNotPaused {
         _credit(_msgSender(), msg.value);
+    }
+
+    /**
+     * @notice A deposit that also names who brought the caller in, if nobody is named yet.
+     * @dev The referrer is the caller's to name, once, and nobody's to change afterwards - not
+     *      the owner's, not the referee's. A zero referrer, the caller themselves, or a caller
+     *      who already has one make it a plain deposit; it never reverts for that.
+     */
+    function deposit(address referrer) external payable whenNotPaused {
+        address player = _msgSender();
+        if (referrerOf[player] == address(0) && referrer != address(0) && referrer != player) {
+            referrerOf[player] = referrer;
+            emit ReferrerSet(player, referrer);
+        }
+        _credit(player, msg.value);
     }
 
     /// @notice A plain transfer is a deposit for the sender.
@@ -320,6 +359,7 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
 
         held.status = Status.Open;
         held.feeBps = feeBps;
+        held.referralShare = referralShare;
         held.openedAt = uint64(block.timestamp);
         held.amount = amount;
         held.commits = keccak256(abi.encodePacked(commits));
@@ -336,7 +376,10 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
      *                commit that seat's player signed, which is what makes the game's seed -
      *                and so its dice and cards - checkable by anybody once it is paid.
      * @dev The fee is the one the players signed. What the split leaves over goes to the fee,
-     *      so the pot is always paid out to the last wei. Credits balances and sends nothing.
+     *      so the pot is always paid out to the last wei. Each seat whose player has a referrer
+     *      gives that referrer `amount * feeBps / 10000 * referralShare / 10000`, the share
+     *      pinned when the game opened, out of the fee and never out of the winners' share.
+     *      Credits balances and sends nothing.
      */
     function settle(bytes32 id, uint256 winners, bytes32[] calldata secrets) external onlyRole(REFEREE_ROLE) {
         Game storage held = _games[id];
@@ -351,10 +394,10 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
 
         held.status = Status.Settled;
 
-        uint256 paid = _pay(id, held, winners, share);
-        uint256 kept = pot - paid;
+        (uint256 paid, uint256 referred) = _pay(id, held, winners, share);
+        uint256 kept = pot - paid - referred;
         totalLocked -= pot;
-        totalBalances += paid;
+        totalBalances += paid + referred;
         fees += kept;
 
         emit Settled(id, winners, share, kept, secrets);
@@ -423,6 +466,14 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
         emit RefereeChanged(previous, newReferee);
     }
 
+    /// @notice Sets the part of each seat's fee a referrer gets, for games opened from now on.
+    function setReferralShare(uint16 newShare) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _checkReferralShare(newShare);
+
+        emit ReferralShareChanged(referralShare, newShare);
+        referralShare = newShare;
+    }
+
     /// @notice Sets the most one player may stake on one game opened from now on.
     function setMaxStake(uint256 newMaxStake) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newMaxStake == 0) revert ZeroAmount();
@@ -457,14 +508,22 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     // Views
     // -------------------------------------------------------------------------------
 
-    /// @notice Where a game is, what each player staked, at what fee, and who played it.
+    /// @notice Where a game is, what each player staked, at what fee, who played it, and the
+    ///         referral share pinned when it opened.
     function gameOf(bytes32 id)
         external
         view
-        returns (Status status, uint16 feeBps, uint64 openedAt, uint256 amount, address[] memory players)
+        returns (
+            Status status,
+            uint16 feeBps,
+            uint64 openedAt,
+            uint256 amount,
+            address[] memory players,
+            uint16 referralShare_
+        )
     {
         Game storage held = _games[id];
-        return (held.status, held.feeBps, held.openedAt, held.amount, held.players);
+        return (held.status, held.feeBps, held.openedAt, held.amount, held.players, held.referralShare);
     }
 
     /// @notice The fee a game of `game` opened now must carry: its own, or else the shared `fee`.
@@ -502,6 +561,10 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     function _checkSignedFee(bytes32 gameHash, uint16 feeBps) private view {
         uint16 current = _feeOf(gameHash);
         if (feeBps != current) revert FeeMismatch(feeBps, current);
+    }
+
+    function _checkReferralShare(uint16 shareBps) private pure {
+        if (shareBps > MAX_REFERRAL_BPS) revert ReferralShareOutOfRange(shareBps);
     }
 
     function _checkFee(uint16 feeBps) private pure {
@@ -554,10 +617,15 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
         if (keccak256(abi.encodePacked(commits)) != expected) revert BadSecrets();
     }
 
-    function _pay(bytes32 id, Game storage held, uint256 winners, uint256 share) private returns (uint256 paid) {
+    function _pay(bytes32 id, Game storage held, uint256 winners, uint256 share)
+        private
+        returns (uint256 paid, uint256 referred)
+    {
         address[] storage players = held.players;
         uint256 count = players.length;
         uint256 amount = held.amount;
+        // Every seat staked the same, so every seat pays the same fee and the same cut of it.
+        uint256 cut = ((amount * held.feeBps) / BPS) * held.referralShare / BPS;
 
         for (uint256 i = 0; i < count; ++i) {
             address player = players[i];
@@ -567,6 +635,14 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
                 balanceOf[player] += share;
                 paid += share;
                 emit Paid(id, player, share);
+            }
+
+            address referrer = referrerOf[player];
+            if (cut != 0 && referrer != address(0)) {
+                balanceOf[referrer] += cut;
+                referralEarned[referrer] += cut;
+                referred += cut;
+                emit ReferralPaid(id, player, referrer, cut);
             }
         }
     }

@@ -34,7 +34,7 @@ contract VaultFuzzTest {
     address[9] private players;
 
     function setUp() public {
-        vault = new ArcadeVault(ADMIN, REFEREE, 500, type(uint128).max, 3 days);
+        vault = new ArcadeVault(ADMIN, REFEREE, 500, 2_000, type(uint128).max, 3 days);
         for (uint256 i = 0; i < 9; ++i) {
             keys[i] = 0xA11CE + i;
             players[i] = vm.addr(keys[i]);

@@ -56,7 +56,7 @@ function probes(deployer: string) {
     // only checks and stores them, so these estimate the gas the real ones will.
     baziche: [
       { name: "ArcadeAchievements", args: [deployer, ""] },
-      { name: "ArcadeVault", args: [deployer, deployer, 500, 1_000n * 10n ** 18n, 3n * 24n * 60n * 60n] },
+      { name: "ArcadeVault", args: [deployer, deployer, 500, 2_000, 1_000n * 10n ** 18n, 3n * 24n * 60n * 60n] },
     ],
   };
 }

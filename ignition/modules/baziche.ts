@@ -12,12 +12,13 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  *
  *   {
  *     "baziche": {
- *       "admin":        "0xYourAdminWallet",
- *       "uri":          "https://your.arcade/api/nft/achievements/{id}.json",
- *       "referee":      "0xTheArcadeServersKey",
- *       "fee":          500,
- *       "maxStake":     "1000000000000000000000n",
- *       "reclaimAfter": 259200
+ *       "admin":         "0xYourAdminWallet",
+ *       "uri":           "https://your.arcade/api/nft/achievements/{id}.json",
+ *       "referee":       "0xTheArcadeServersKey",
+ *       "fee":           500,
+ *       "referralShare": 2000,
+ *       "maxStake":      "1000000000000000000000n",
+ *       "reclaimAfter":  259200
  *     }
  *   }
  *
@@ -33,7 +34,9 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  * on in two steps: `beginDefaultAdminTransfer(next)`, then `acceptDefaultAdminTransfer()` from
  * the next owner.
  *
- * `fee` is in basis points (500 is 5%, from 100 to 1,500), `maxStake` is the most one player may
+ * `fee` is in basis points (500 is 5%, from 100 to 1,500), `referralShare` is the part of each
+ * seat's fee its player's referrer gets, in basis points of the fee (2,000 is a fifth, at most
+ * 5,000), `maxStake` is the most one player may
  * stake on one game in wei (1,000 NURA by default), and `reclaimAfter` is how many seconds
  * after a game opens anybody may return its stakes if it was never paid (three days by
  * default, between one and thirty). The last one is immutable.
@@ -43,11 +46,12 @@ export default buildModule("baziche", (m) => {
   const uri = m.getParameter("uri", "");
   const referee = m.getParameter("referee", m.getAccount(0));
   const fee = m.getParameter("fee", 500);
+  const referralShare = m.getParameter("referralShare", 2_000);
   const maxStake = m.getParameter("maxStake", 1_000n * 10n ** 18n);
   const reclaimAfter = m.getParameter("reclaimAfter", 3 * 24 * 60 * 60);
 
   const achievements = m.contract("ArcadeAchievements", [admin, uri]);
-  const vault = m.contract("ArcadeVault", [admin, referee, fee, maxStake, reclaimAfter]);
+  const vault = m.contract("ArcadeVault", [admin, referee, fee, referralShare, maxStake, reclaimAfter]);
 
   return { achievements, vault };
 });

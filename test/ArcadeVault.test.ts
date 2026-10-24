@@ -5,6 +5,7 @@ const { ethers, networkHelpers } = await network.getOrCreate();
 const { loadFixture } = networkHelpers;
 
 const FEE = 500;
+const REFERRAL = 2_000;
 const MAX_STAKE = ethers.parseEther("1000");
 const RECLAIM_AFTER = 3n * 24n * 3600n;
 const DEPOSIT = ethers.parseEther("100");
@@ -50,7 +51,7 @@ async function deploy() {
   const players = rest.slice(0, 9);
   const vault = await ethers.deployContract(
     "ArcadeVault",
-    [admin.address, referee.address, FEE, MAX_STAKE, RECLAIM_AFTER],
+    [admin.address, referee.address, FEE, REFERRAL, MAX_STAKE, RECLAIM_AFTER],
     admin,
   );
 
@@ -61,7 +62,17 @@ async function deploy() {
 async function deployFunded() {
   const ctx = await deploy();
   for (const player of ctx.players) {
-    await ctx.vault.connect(player).deposit({ value: DEPOSIT });
+    await ctx.vault.connect(player)["deposit()"]({ value: DEPOSIT });
+  }
+  return ctx;
+}
+
+/** Every player holds DEPOSIT, and every one but the last was brought in by `outsider`. */
+async function deployReferred() {
+  const ctx = await deploy();
+  for (const [i, player] of ctx.players.entries()) {
+    const referrer = i < ctx.players.length - 1 ? ctx.outsider.address : ethers.ZeroAddress;
+    await ctx.vault.connect(player)["deposit(address)"](referrer, { value: DEPOSIT });
   }
   return ctx;
 }
@@ -134,33 +145,37 @@ describe("ArcadeVault", () => {
       expect(await vault.solvent()).to.equal(true);
     });
 
-    it("refuses a zero admin or referee, a fee under 1% or over 15%, a zero ceiling and a reclaim delay out of bounds", async () => {
+    it("refuses a zero admin or referee, a fee under 1% or over 15%, a referral share over half the fee, a zero ceiling and a reclaim delay out of bounds", async () => {
       const { admin, referee } = await loadFixture(deploy);
       const factory = await ethers.getContractFactory("ArcadeVault");
       const day = 24n * 3600n;
 
-      await expect(factory.deploy(ethers.ZeroAddress, referee.address, FEE, MAX_STAKE, RECLAIM_AFTER))
+      await expect(factory.deploy(ethers.ZeroAddress, referee.address, FEE, REFERRAL, MAX_STAKE, RECLAIM_AFTER))
         .to.be.revertedWithCustomError(factory, "AccessControlInvalidDefaultAdmin")
         .withArgs(ethers.ZeroAddress);
-      await expect(factory.deploy(admin.address, ethers.ZeroAddress, FEE, MAX_STAKE, RECLAIM_AFTER))
+      await expect(factory.deploy(admin.address, ethers.ZeroAddress, FEE, REFERRAL, MAX_STAKE, RECLAIM_AFTER))
         .to.be.revertedWithCustomError(factory, "ZeroAddress");
-      await expect(factory.deploy(admin.address, referee.address, 1501, MAX_STAKE, RECLAIM_AFTER))
+      await expect(factory.deploy(admin.address, referee.address, 1501, REFERRAL, MAX_STAKE, RECLAIM_AFTER))
         .to.be.revertedWithCustomError(factory, "FeeOutOfRange")
         .withArgs(1501);
-      await expect(factory.deploy(admin.address, referee.address, 99, MAX_STAKE, RECLAIM_AFTER))
+      await expect(factory.deploy(admin.address, referee.address, 99, REFERRAL, MAX_STAKE, RECLAIM_AFTER))
         .to.be.revertedWithCustomError(factory, "FeeOutOfRange")
         .withArgs(99);
-      await expect(factory.deploy(admin.address, referee.address, FEE, 0n, RECLAIM_AFTER))
+      await expect(factory.deploy(admin.address, referee.address, FEE, REFERRAL, 0n, RECLAIM_AFTER))
         .to.be.revertedWithCustomError(factory, "ZeroAmount");
-      await expect(factory.deploy(admin.address, referee.address, FEE, MAX_STAKE, day - 1n))
+      await expect(factory.deploy(admin.address, referee.address, FEE, REFERRAL, MAX_STAKE, day - 1n))
         .to.be.revertedWithCustomError(factory, "BadReclaimDelay")
         .withArgs(day - 1n);
-      await expect(factory.deploy(admin.address, referee.address, FEE, MAX_STAKE, 30n * day + 1n))
+      await expect(factory.deploy(admin.address, referee.address, FEE, REFERRAL, MAX_STAKE, 30n * day + 1n))
         .to.be.revertedWithCustomError(factory, "BadReclaimDelay")
         .withArgs(30n * day + 1n);
 
-      await factory.deploy(admin.address, referee.address, 1500, 1n, day);
-      await factory.deploy(admin.address, referee.address, 100, MAX_STAKE, 30n * day);
+      await expect(factory.deploy(admin.address, referee.address, FEE, 5001, MAX_STAKE, RECLAIM_AFTER))
+        .to.be.revertedWithCustomError(factory, "ReferralShareOutOfRange")
+        .withArgs(5001);
+
+      await factory.deploy(admin.address, referee.address, 1500, 5000, 1n, day);
+      await factory.deploy(admin.address, referee.address, 100, REFERRAL, MAX_STAKE, 30n * day);
     });
   });
 
@@ -169,7 +184,7 @@ describe("ArcadeVault", () => {
       const { vault, players } = await loadFixture(deploy);
       const [alice, bob] = players;
 
-      await expect(vault.connect(alice).deposit({ value: DEPOSIT }))
+      await expect(vault.connect(alice)["deposit()"]({ value: DEPOSIT }))
         .to.emit(vault, "Deposited")
         .withArgs(alice.address, DEPOSIT);
       await expect(bob.sendTransaction({ to: await vault.getAddress(), value: STAKE }))
@@ -185,7 +200,7 @@ describe("ArcadeVault", () => {
     it("refuses an empty deposit", async () => {
       const { vault, players } = await loadFixture(deploy);
 
-      await expect(vault.connect(players[0]).deposit({ value: 0n })).to.be.revertedWithCustomError(vault, "ZeroAmount");
+      await expect(vault.connect(players[0])["deposit()"]({ value: 0n })).to.be.revertedWithCustomError(vault, "ZeroAmount");
       await expect(players[0].sendTransaction({ to: await vault.getAddress(), value: 0n }))
         .to.be.revertedWithCustomError(vault, "ZeroAmount");
     });
@@ -452,7 +467,7 @@ describe("ArcadeVault", () => {
         const ctx = await loadFixture(deployFunded);
         const { vault, admin, referee, players } = ctx;
         const [alice, bob] = players;
-        const other = await ethers.deployContract("ArcadeVault", [admin.address, referee.address, FEE, MAX_STAKE, RECLAIM_AFTER], admin);
+        const other = await ethers.deployContract("ArcadeVault", [admin.address, referee.address, FEE, REFERRAL, MAX_STAKE, RECLAIM_AFTER], admin);
         const value = {
           player: alice.address,
           game: "ludo",
@@ -499,7 +514,7 @@ describe("ArcadeVault", () => {
         const [alice, bob, carol] = players;
         const wallet = await ethers.deployContract("StakeWallet", [await vault.getAddress(), alice.address], admin);
         const walletAddress = await wallet.getAddress();
-        await wallet.deposit({ value: DEPOSIT });
+        await wallet["deposit()"]({ value: DEPOSIT });
 
         const value = {
           player: walletAddress,
@@ -850,13 +865,13 @@ describe("ArcadeVault", () => {
       const { vault, admin, players } = await loadFixture(deployFunded);
 
       await vault.connect(admin).pause();
-      await expect(vault.connect(players[0]).deposit({ value: STAKE })).to.be.revertedWithCustomError(vault, "EnforcedPause");
+      await expect(vault.connect(players[0])["deposit()"]({ value: STAKE })).to.be.revertedWithCustomError(vault, "EnforcedPause");
       await expect(players[0].sendTransaction({ to: await vault.getAddress(), value: STAKE }))
         .to.be.revertedWithCustomError(vault, "EnforcedPause");
       await vault.connect(players[0]).withdraw(DEPOSIT);
 
       await vault.connect(admin).unpause();
-      await vault.connect(players[0]).deposit({ value: STAKE });
+      await vault.connect(players[0])["deposit()"]({ value: STAKE });
     });
 
     it("stops a referee whose role was revoked, and lets a new one pay the game", async () => {
@@ -878,7 +893,7 @@ describe("ArcadeVault", () => {
       const { vault, admin } = await loadFixture(deploy);
       const withdrawer = await ethers.deployContract("ReentrantWithdrawer", [await vault.getAddress()], admin);
       const address = await withdrawer.getAddress();
-      await withdrawer.deposit({ value: STAKE * 2n });
+      await withdrawer["deposit()"]({ value: STAKE * 2n });
 
       await withdrawer.withdraw(STAKE);
 
@@ -892,7 +907,7 @@ describe("ArcadeVault", () => {
     it("keeps the balance when the receiver refuses the payment", async () => {
       const { vault, admin } = await loadFixture(deploy);
       const receiver = await ethers.deployContract("RejectingReceiver", [await vault.getAddress()], admin);
-      await receiver.deposit({ value: STAKE });
+      await receiver["deposit()"]({ value: STAKE });
 
       await expect(receiver.withdraw(STAKE)).to.be.revertedWith("no thanks");
       expect(await vault.balanceOf(await receiver.getAddress())).to.equal(STAKE);
@@ -908,6 +923,131 @@ describe("ArcadeVault", () => {
 
       await expect(vault.connect(admin).withdrawFees(await receiver.getAddress(), fees)).to.be.revertedWith("no thanks");
       expect(await vault.fees()).to.equal(fees);
+    });
+  });
+
+  describe("referrals", () => {
+    it("lets a player name their referrer once, with their own deposit, and never themselves", async () => {
+      const { vault, admin, outsider, players } = await loadFixture(deploy);
+      const [alice, bob, carol] = players;
+
+      await expect(vault.connect(alice)["deposit(address)"](alice.address, { value: STAKE })).to.not.emit(vault, "ReferrerSet");
+      await expect(vault.connect(alice)["deposit(address)"](ethers.ZeroAddress, { value: STAKE })).to.not.emit(vault, "ReferrerSet");
+      await vault.connect(alice)["deposit()"]({ value: STAKE });
+      expect(await vault.referrerOf(alice.address)).to.equal(ethers.ZeroAddress);
+
+      await expect(vault.connect(alice)["deposit(address)"](outsider.address, { value: STAKE }))
+        .to.emit(vault, "ReferrerSet")
+        .withArgs(alice.address, outsider.address);
+      await expect(vault.connect(alice)["deposit(address)"](bob.address, { value: STAKE })).to.not.emit(vault, "ReferrerSet");
+      await expect(vault.connect(bob)["deposit(address)"](alice.address, { value: STAKE }))
+        .to.emit(vault, "ReferrerSet")
+        .withArgs(bob.address, alice.address);
+
+      expect(await vault.referrerOf(alice.address)).to.equal(outsider.address);
+      expect(await vault.referrerOf(bob.address)).to.equal(alice.address);
+      expect(await vault.balanceOf(alice.address)).to.equal(STAKE * 5n);
+
+      // Nothing but a player's own deposit writes referrerOf: the vault has no setter for it.
+      const writers = vault.interface.fragments
+        .filter((f) => f.type === "function" && (f as { stateMutability: string }).stateMutability !== "view")
+        .map((f) => (f as { name: string }).name)
+        .filter((name) => /referr/i.test(name));
+      expect(writers).to.deep.equal(["setReferralShare"]);
+
+      await vault.connect(admin).pause();
+      await expect(vault.connect(carol)["deposit(address)"](outsider.address, { value: STAKE }))
+        .to.be.revertedWithCustomError(vault, "EnforcedPause");
+    });
+
+    it("gives each referred seat its cut of the fee, out of the fee alone, as a free balance", async () => {
+      const ctx = await loadFixture(deployReferred);
+      const { vault, admin, referee, outsider, players } = ctx;
+      const count = 9;
+      const { id, secrets } = await openGame(ctx, "referred", count);
+
+      const pot = STAKE * BigInt(count);
+      const share = pot - (pot * BigInt(FEE)) / 10_000n;
+      const cut = (((STAKE * BigInt(FEE)) / 10_000n) * BigInt(REFERRAL)) / 10_000n;
+      const referred = cut * BigInt(count - 1);
+
+      const tx = await vault.connect(referee).settle(id, 1n, secrets);
+      await expect(tx).to.emit(vault, "ReferralPaid").withArgs(id, players[0].address, outsider.address, cut);
+      await expect(tx).to.emit(vault, "ReferralPaid").withArgs(id, players[7].address, outsider.address, cut);
+      await expect(tx).to.emit(vault, "Settled").withArgs(id, 1n, share, pot - share - referred, secrets);
+      const logs = (await tx.wait())!.logs.filter((l) => vault.interface.parseLog(l)?.name === "ReferralPaid");
+      expect(logs.length).to.equal(count - 1);
+
+      expect(await vault.balanceOf(players[0].address)).to.equal(DEPOSIT - STAKE + share);
+      expect(await vault.balanceOf(outsider.address)).to.equal(referred);
+      expect(await vault.referralEarned(outsider.address)).to.equal(referred);
+      expect(await vault.fees()).to.equal(pot - share - referred);
+      expect(await vault.solvent()).to.equal(true);
+
+      await vault.connect(admin).pause();
+      const before = await ethers.provider.getBalance(outsider.address);
+      const gasCost = await gasCostOf(await vault.connect(outsider).withdraw(referred));
+      expect(await ethers.provider.getBalance(outsider.address)).to.equal(before + referred - gasCost);
+    });
+
+    it("pays a game at the share it was opened at, whatever the share is now", async () => {
+      const ctx = await loadFixture(deployReferred);
+      const { vault, admin, referee, outsider, players } = ctx;
+      const seatFee = (STAKE * BigInt(FEE)) / 10_000n;
+      const { id, secrets } = await openGame(ctx, "pinned share", 2);
+      expect((await vault.gameOf(id)).referralShare_).to.equal(BigInt(REFERRAL));
+
+      await expect(vault.connect(admin).setReferralShare(5_000)).to.emit(vault, "ReferralShareChanged").withArgs(REFERRAL, 5_000);
+      await vault.connect(referee).settle(id, 1n, secrets);
+      const first = ((seatFee * BigInt(REFERRAL)) / 10_000n) * 2n;
+      expect(await vault.referralEarned(outsider.address)).to.equal(first);
+
+      const next = await openGame(ctx, "new share", 2);
+      expect((await vault.gameOf(next.id)).referralShare_).to.equal(5_000n);
+      await vault.connect(admin).setReferralShare(0);
+      await vault.connect(referee).settle(next.id, 2n, next.secrets);
+      expect(await vault.referralEarned(outsider.address)).to.equal(first + (seatFee / 2n) * 2n);
+
+      const none = await openGame(ctx, "no share", 2);
+      await expect(vault.connect(referee).settle(none.id, 1n, none.secrets)).to.not.emit(vault, "ReferralPaid");
+
+      await expect(vault.connect(admin).setReferralShare(5_001))
+        .to.be.revertedWithCustomError(vault, "ReferralShareOutOfRange")
+        .withArgs(5_001);
+      await expect(vault.connect(players[0]).setReferralShare(1)).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
+      await expect(vault.connect(referee).setReferralShare(1)).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
+    });
+
+    it("pays no referrer on a refund or a reclaim, which take no fee", async () => {
+      const ctx = await loadFixture(deployReferred);
+      const { vault, referee, outsider } = ctx;
+      const refunded = await openGame(ctx, "refunded", 3);
+      const reclaimed = await openGame(ctx, "reclaimed", 3);
+
+      await expect(vault.connect(referee).refund(refunded.id)).to.not.emit(vault, "ReferralPaid");
+      await networkHelpers.time.increase(RECLAIM_AFTER);
+      await expect(vault.connect(outsider).reclaim(reclaimed.id)).to.not.emit(vault, "ReferralPaid");
+
+      expect(await vault.balanceOf(outsider.address)).to.equal(0n);
+      expect(await vault.referralEarned(outsider.address)).to.equal(0n);
+      expect(await vault.fees()).to.equal(0n);
+    });
+
+    it("stays solvent to the wei with referrers across splits, odd stakes and the largest share", async () => {
+      const ctx = await loadFixture(deployReferred);
+      const { vault, admin, referee } = ctx;
+      await vault.connect(admin).setReferralShare(5_000);
+      await vault.connect(admin).setFee(1_500);
+
+      const amounts = [1n, 7n, 9_999n, STAKE + 3n];
+      for (const [k, amount] of amounts.entries()) {
+        const count = 3 + k * 2;
+        const { id, secrets } = await openGame(ctx, `solvent${k}`, count, { amount, feeBps: 1_500 });
+        await vault.connect(referee).settle(id, (1n << BigInt(count)) - 2n, secrets);
+        const held = await ethers.provider.getBalance(await vault.getAddress());
+        expect(held).to.equal((await vault.totalBalances()) + (await vault.totalLocked()) + (await vault.fees()));
+      }
+      expect(await vault.solvent()).to.equal(true);
     });
   });
 
@@ -933,6 +1073,16 @@ describe("ArcadeVault", () => {
       }
 
       console.log(`      ${used.join("; ")}`);
+    });
+
+    it("settles nine referred players within bounds", async () => {
+      const ctx = await loadFixture(deployReferred);
+      const { vault, referee } = ctx;
+      const { id, secrets } = await openGame(ctx, "gas referred", 9);
+      const settled = await (await vault.connect(referee).settle(id, 1n, secrets)).wait();
+
+      console.log(`      9 seats, 8 referred: settle ${settled!.gasUsed}`);
+      expect(settled!.gasUsed).to.be.lessThan(BigInt(60_000 + 9 * 20_000 + 8 * 35_000));
     });
   });
 });

@@ -11,7 +11,7 @@ interface IArcadeVault {
 
 /**
  * Counterparties for test/ArcadeVault.test.ts, and nothing else. None is deployed by
- * ignition/modules/arcade.ts or probed by scripts/preflight.ts.
+ * ignition/modules/baziche.ts or probed by scripts/preflight.ts.
  *
  * `withdraw` and `withdrawFees` pay with `Address.sendValue`, which forwards all remaining gas,
  * so a contract on the receiving end runs arbitrary code inside the payment. Those are the only

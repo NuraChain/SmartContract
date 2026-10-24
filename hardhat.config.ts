@@ -45,7 +45,7 @@ try {
 // deploys it. Adding a contracts/<name> folder means adding ignition/modules/<name>.ts
 // and one line here. Two exceptions: "wnura" deploys contracts/token/WNURA.sol alone, and
 // "univ3periphery" redeploys the WNURA-holding V3 periphery against an existing factory.
-const DEPLOYABLE = ["token", "wnura", "airdrop", "univ3", "univ3periphery", "forecast", "profile", "arcade"] as const;
+const DEPLOYABLE = ["token", "wnura", "airdrop", "univ3", "univ3periphery", "forecast", "profile", "baziche"] as const;
 
 // contracts/univ3 is vendored Uniswap, pinned to the compiler it was audited and deployed
 // with, so the build needs three compilers. Hardhat picks one per file from the pragma;

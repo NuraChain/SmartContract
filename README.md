@@ -77,7 +77,7 @@ npx hardhat deploy --sc univ3    --network nurachain   # only contracts/univ3
 npx hardhat deploy --sc univ3periphery --network nurachain --parameters <file>  # see The V3 swap
 npx hardhat deploy --sc forecast --network nurachain   # only contracts/forecast
 npx hardhat deploy --sc profile  --network nurachain   # only contracts/profile
-npx hardhat deploy --sc arcade   --network nurachain   # only contracts/arcade
+npx hardhat deploy --sc baziche  --network nurachain   # only contracts/baziche
 ```
 
 `--sc wnura` deploys a **new, separate** WNURA. Nurachain already has the canonical one at
@@ -94,7 +94,7 @@ npm run deploy:nurachain:univ3
 npm run deploy:nurachain:univ3periphery
 npm run deploy:nurachain:forecast
 npm run deploy:nurachain:profile
-npm run deploy:nurachain:arcade
+npm run deploy:nurachain:baziche
 
 # equivalent, passing the flag through npm — note the extra --
 npm run deploy:nurachain -- --sc token
@@ -206,7 +206,7 @@ npm run deploy:nurachain:univ3
 npm run deploy:nurachain:univ3periphery
 npm run deploy:nurachain:forecast
 npm run deploy:nurachain:profile
-npm run deploy:nurachain:arcade
+npm run deploy:nurachain:baziche
 
 # 3. Register the profile registry's verifier extension and print its state
 npm run setup:nurachain:profile
@@ -514,7 +514,7 @@ rationale, data model, gas table, security review and frontend integration guide
 
 ## The arcade vault
 
-`contracts/arcade/ArcadeVault.sol` holds the native NURA that Arcade's players stake on paid
+`contracts/baziche/ArcadeVault.sol` holds the native NURA that Arcade's players stake on paid
 tables. A player deposits once and withdraws what is free whenever they like; playing costs
 them no transaction. For each paid game they sign an EIP-712 `Stake`, and the Arcade server,
 holding `REFEREE_ROLE`, opens the game with every player's signature and pays it when the game
@@ -555,8 +555,8 @@ free balance or stop a withdrawal, and if it never pays a game anybody can recla
 commits are what make a paid game's dice and cards checkable afterwards: the secrets `settle`
 reveals, with the players' signatures from `open`, give the seed the game was drawn from.
 
-It is not upgradeable. Deploy with `npm run deploy:nurachain:arcade` and the `arcade`
-parameters (`referee`, `fee`, `maxStake`, `reclaimAfter`; see `ignition/modules/arcade.ts`).
+It is not upgradeable. Deploy with `npm run deploy:nurachain:baziche` and the `baziche`
+parameters (`referee`, `fee`, `maxStake`, `reclaimAfter`; see `ignition/modules/baziche.ts`).
 The per-function reference, roles, flows and security analysis are in
 [`docs/contracts/ArcadeVault.md`](docs/contracts/ArcadeVault.md).
 
@@ -639,7 +639,7 @@ contracts/profile/NuraProfile.sol       100.00% lines   100.00% statements
 contracts/profile/NuraProfileLens.sol   100.00% lines   100.00% statements
 contracts/profile/libraries/ProfileStrings.sol   100.00% lines   100.00% statements
 contracts/profile/extensions/SocialVerifier.sol  100.00% lines   100.00% statements
-contracts/arcade/ArcadeVault.sol        100.00% lines   100.00% statements
+contracts/baziche/ArcadeVault.sol       100.00% lines   100.00% statements
 ```
 
 `npm run coverage` is scoped to the contracts in this repo on purpose. Coverage instruments
@@ -727,7 +727,7 @@ contracts/mocks/
   MockToken.sol              dev-chain stand-in asset with optional faucet, tests only
 contracts/airdrop/
   mocks/AirdropMocks.sol     re-entrant and payout-rejecting claimants, tests only
-contracts/arcade/
+contracts/baziche/
   ArcadeAchievements.sol     ERC-1155 achievements, backend-minted; per-id metadata URI, soulbound or tradeable per id
   ArcadeVault.sol            native-coin stakes for Arcade's paid tables: signed stakes, referee-paid pots, reclaim
   mocks/VaultMocks.sol       re-entrant and refusing receivers, an ERC-1271 wallet, tests only
@@ -753,7 +753,7 @@ ignition/modules/
   univ3periphery.ts          redeploys the WNURA-holding V3 periphery (--sc univ3periphery)
   forecast.ts                deploys contracts/forecast (--sc forecast)
   profile.ts                 deploys contracts/profile (--sc profile): impl, proxy, lens, verifier
-  arcade.ts                  deploys contracts/arcade  (--sc arcade): achievements and vault
+  baziche.ts                 deploys contracts/baziche (--sc baziche): achievements and vault
 scripts/
   preflight.ts               pre-deploy check: chain id, funding, gas, contract sizes, paid tables
   write-init-code-hash.ts    regenerates the V3 pool init code hash

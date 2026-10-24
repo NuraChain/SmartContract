@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Contract name | `ArcadeVault` |
-| Solidity file | `contracts/arcade/ArcadeVault.sol` |
+| Solidity file | `contracts/baziche/ArcadeVault.sol` |
 | Solidity version | `^0.8.28` (solc 0.8.28, cancun) |
 | Contract type | Concrete, standalone (constructor-deployed) |
 | Purpose | Holds the **native NURA** players stake on Arcade's paid tables: free balances only their owners can move, and stakes locked into one game that leave it only to its winners or back to its players |
@@ -221,15 +221,15 @@ Known and accepted:
 
 ## Deployment Information
 
-Deployed by the `arcade` Ignition group beside `ArcadeAchievements`:
+Deployed by the `baziche` Ignition group beside `ArcadeAchievements`:
 
 ```bash
-npx hardhat deploy --sc arcade --network nurachain --parameters ./ignition/params.json
+npx hardhat deploy --sc baziche --network nurachain --parameters ./ignition/params.json
 ```
 
 with `referee` (the Arcade server's key), and optionally `admin`, `fee` (basis points, default
 500), `maxStake` (wei, default 1,000 NURA) and `reclaimAfter` (seconds, default three days).
-See `ignition/modules/arcade.ts`. Gas measured on the in-process chain: `open` 328k, 503k and
+See `ignition/modules/baziche.ts`. Gas measured on the in-process chain: `open` 328k, 503k and
 943k at 2, 4 and 9 seats; `settle` 84k, 79k and 114k; the deploy 2.64M. Run
 `npm run preflight:nurachain` first: besides the deploy gas it reads the chain's block time,
 prices a nine-seat game at the referee's gas price, and sends the node an `open` and a

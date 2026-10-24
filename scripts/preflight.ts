@@ -54,7 +54,7 @@ function probes(deployer: string) {
     ],
     // The vault's referee, fee, ceiling and wait are deploy parameters, and its constructor
     // only checks and stores them, so these estimate the gas the real ones will.
-    arcade: [
+    baziche: [
       { name: "ArcadeAchievements", args: [deployer, ""] },
       { name: "ArcadeVault", args: [deployer, deployer, 500, 1_000n * 10n ** 18n, 3n * 24n * 60n * 60n] },
     ],

@@ -1,8 +1,8 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
 /**
- * Everything in contracts/arcade — deployed by `npm run deploy:nurachain:arcade`,
- * or `npx hardhat deploy --sc arcade --network <network>`.
+ * Everything in contracts/baziche — deployed by `npm run deploy:nurachain:baziche`,
+ * or `npx hardhat deploy --sc baziche --network <network>`.
  *
  * Two contracts:
  *
@@ -11,7 +11,7 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  * - ArcadeVault, which holds the NURA players stake on Arcade's paid tables.
  *
  *   {
- *     "arcade": {
+ *     "baziche": {
  *       "admin":        "0xYourAdminWallet",
  *       "uri":          "https://your.arcade/api/nft/achievements/{id}.json",
  *       "referee":      "0xTheArcadeServersKey",
@@ -36,7 +36,7 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  * after a game opens anybody may return its stakes if it was never paid (three days by
  * default, between one and thirty). The last one is immutable.
  */
-export default buildModule("arcade", (m) => {
+export default buildModule("baziche", (m) => {
   const admin = m.getParameter("admin", m.getAccount(0));
   const uri = m.getParameter("uri", "");
   const referee = m.getParameter("referee", m.getAccount(0));

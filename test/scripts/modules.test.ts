@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 
 import airdropModule from "../../ignition/modules/airdrop.ts";
-import arcadeModule from "../../ignition/modules/arcade.ts";
+import bazicheModule from "../../ignition/modules/baziche.ts";
 import profileModule from "../../ignition/modules/profile.ts";
 import tokenModule from "../../ignition/modules/token.ts";
 import univ3Module from "../../ignition/modules/univ3.ts";
@@ -275,10 +275,10 @@ describe("ignition modules", () => {
     });
   });
 
-  describe("arcade", () => {
+  describe("baziche", () => {
     it("deploys with the deployer as admin and minter and an empty uri", async () => {
       const [deployer] = await ethers.getSigners();
-      const { achievements } = await ignition.deploy(arcadeModule);
+      const { achievements } = await ignition.deploy(bazicheModule);
 
       expect(await achievements.hasRole(await achievements.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(true);
       expect(await achievements.hasRole(await achievements.MINTER_ROLE(), deployer.address)).to.equal(true);
@@ -288,8 +288,8 @@ describe("ignition modules", () => {
     it("carries the admin and uri overrides through to the constructor", async () => {
       const [, other] = await ethers.getSigners();
       const uri = "https://arcade.example/nft/{id}.json";
-      const { achievements } = await ignition.deploy(arcadeModule, {
-        parameters: { arcade: { admin: other.address, uri } },
+      const { achievements } = await ignition.deploy(bazicheModule, {
+        parameters: { baziche: { admin: other.address, uri } },
       });
 
       expect(await achievements.hasRole(await achievements.DEFAULT_ADMIN_ROLE(), other.address)).to.equal(true);
@@ -298,7 +298,7 @@ describe("ignition modules", () => {
 
     it("deploys the vault with a 5% fee, a 1,000 NURA ceiling, three days to reclaim and the deployer as referee", async () => {
       const [deployer] = await ethers.getSigners();
-      const { vault } = await ignition.deploy(arcadeModule);
+      const { vault } = await ignition.deploy(bazicheModule);
 
       expect(await vault.fee()).to.equal(500n);
       expect(await vault.maxStake()).to.equal(1_000n * 10n ** 18n);
@@ -310,9 +310,9 @@ describe("ignition modules", () => {
 
     it("carries the vault's admin, referee, fee, ceiling and reclaim delay through to the constructor", async () => {
       const [deployer, admin, referee] = await ethers.getSigners();
-      const { vault } = await ignition.deploy(arcadeModule, {
+      const { vault } = await ignition.deploy(bazicheModule, {
         parameters: {
-          arcade: {
+          baziche: {
             admin: admin.address,
             referee: referee.address,
             fee: 250,

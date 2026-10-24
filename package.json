@@ -25,7 +25,7 @@
     "deploy:nurachain:univ3periphery": "hardhat deploy --sc univ3periphery --network nurachain --parameters ./ignition/parameters/univ3periphery.nurachain.json",
     "deploy:nurachain:forecast": "hardhat deploy --sc forecast --network nurachain",
     "deploy:nurachain:profile": "hardhat deploy --sc profile --network nurachain",
-    "deploy:nurachain:arcade": "hardhat deploy --sc arcade --network nurachain",
+    "deploy:nurachain:baziche": "hardhat deploy --sc baziche --network nurachain",
     "setup:nurachain:profile": "hardhat run scripts/profile-setup.ts --network nurachain",
     "upgrade:nurachain:profile": "hardhat run scripts/profile-upgrade.ts --network nurachain"
   },

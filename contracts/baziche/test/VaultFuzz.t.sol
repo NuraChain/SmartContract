@@ -106,7 +106,7 @@ contract VaultFuzzTest {
     {
         uint256 count = 2 + (uint256(countSeed) % 8);
         uint256 amount = 1 + (uint256(amountSeed) % 1e24);
-        uint16 feeBps = uint16(uint256(feeSeed) % 1001);
+        uint16 feeBps = uint16(100 + (uint256(feeSeed) % 1401));
         uint256 winners = 1 + (uint256(maskSeed) % ((1 << count) - 1));
         bytes32 id = keccak256("fuzz");
 

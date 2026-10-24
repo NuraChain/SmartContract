@@ -29,9 +29,11 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
  * `referee` is the address of the Arcade server's key (its `NURA_REFEREE_KEY`), the only key
  * that can open, pay and refund games. It defaults to the deployer, which is fine for a local
  * chain and a bad idea anywhere real: the deployer would then be the key that says who won.
- * The admin can move the role later with `grantRole` and `revokeRole`.
+ * The admin can move the role later with `grantRole` and `revokeRole`. `admin` itself is handed
+ * on in two steps: `beginDefaultAdminTransfer(next)`, then `acceptDefaultAdminTransfer()` from
+ * the next owner.
  *
- * `fee` is in basis points (500 is 5%, at most 1,000), `maxStake` is the most one player may
+ * `fee` is in basis points (500 is 5%, from 100 to 1,500), `maxStake` is the most one player may
  * stake on one game in wei (1,000 NURA by default), and `reclaimAfter` is how many seconds
  * after a game opens anybody may return its stakes if it was never paid (three days by
  * default, between one and thirty). The last one is immutable.

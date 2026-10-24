@@ -141,7 +141,7 @@ contract VaultHandler {
 
     function setFee(uint256 seed) external {
         vm.prank(admin);
-        vault.setFee(uint16(seed % 1001));
+        vault.setFee(uint16(100 + (seed % 1401)));
     }
 
     function withdrawFees(uint256 amount) external {

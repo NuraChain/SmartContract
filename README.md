@@ -544,7 +544,8 @@ vault.reclaim(id);
 | `settle(id, winners, secrets)` | `REFEREE_ROLE` | pays one game; every secret must open the commit its player signed |
 | `refund(id)` | `REFEREE_ROLE` | every stake back, no fee |
 | `reclaim(id)` | anybody | every stake back, from `reclaimAfter` after the game opened |
-| `setFee` / `setMaxStake` / `withdrawFees` | `DEFAULT_ADMIN_ROLE` | the fee (at most 10%) and the ceiling for games not yet opened; the fees taken |
+| `setFee` / `setMaxStake` / `withdrawFees` | `DEFAULT_ADMIN_ROLE` | the fee (1% to 15%) and the ceiling for games not yet opened; the fees taken |
+| `beginDefaultAdminTransfer(next)` / `acceptDefaultAdminTransfer()` | the owner, then `next` | hands the vault and its pauser role to a new owner; `cancelDefaultAdminTransfer()` takes the naming back |
 | `pause()` / `unpause()` | `PAUSER_ROLE` | stops deposits and new games, nothing else |
 
 The referee is trusted to say who won, because the games are played on Arcade's server, and

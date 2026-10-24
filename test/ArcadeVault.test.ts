@@ -125,24 +125,29 @@ describe("ArcadeVault", () => {
       expect(await vault.maxStake()).to.equal(MAX_STAKE);
       expect(await vault.reclaimAfter()).to.equal(RECLAIM_AFTER);
       expect(await vault.hasRole(await vault.DEFAULT_ADMIN_ROLE(), admin.address)).to.equal(true);
+      expect(await vault.owner()).to.equal(admin.address);
       expect(await vault.hasRole(await vault.PAUSER_ROLE(), admin.address)).to.equal(true);
       expect(await vault.hasRole(await vault.REFEREE_ROLE(), referee.address)).to.equal(true);
       expect(await vault.hasRole(await vault.REFEREE_ROLE(), admin.address)).to.equal(false);
       expect(await vault.solvent()).to.equal(true);
     });
 
-    it("refuses a zero admin or referee, a fee over 10%, a zero ceiling and a reclaim delay out of bounds", async () => {
+    it("refuses a zero admin or referee, a fee under 1% or over 15%, a zero ceiling and a reclaim delay out of bounds", async () => {
       const { admin, referee } = await loadFixture(deploy);
       const factory = await ethers.getContractFactory("ArcadeVault");
       const day = 24n * 3600n;
 
       await expect(factory.deploy(ethers.ZeroAddress, referee.address, FEE, MAX_STAKE, RECLAIM_AFTER))
-        .to.be.revertedWithCustomError(factory, "ZeroAddress");
+        .to.be.revertedWithCustomError(factory, "AccessControlInvalidDefaultAdmin")
+        .withArgs(ethers.ZeroAddress);
       await expect(factory.deploy(admin.address, ethers.ZeroAddress, FEE, MAX_STAKE, RECLAIM_AFTER))
         .to.be.revertedWithCustomError(factory, "ZeroAddress");
-      await expect(factory.deploy(admin.address, referee.address, 1001, MAX_STAKE, RECLAIM_AFTER))
-        .to.be.revertedWithCustomError(factory, "FeeTooHigh")
-        .withArgs(1001);
+      await expect(factory.deploy(admin.address, referee.address, 1501, MAX_STAKE, RECLAIM_AFTER))
+        .to.be.revertedWithCustomError(factory, "FeeOutOfRange")
+        .withArgs(1501);
+      await expect(factory.deploy(admin.address, referee.address, 99, MAX_STAKE, RECLAIM_AFTER))
+        .to.be.revertedWithCustomError(factory, "FeeOutOfRange")
+        .withArgs(99);
       await expect(factory.deploy(admin.address, referee.address, FEE, 0n, RECLAIM_AFTER))
         .to.be.revertedWithCustomError(factory, "ZeroAmount");
       await expect(factory.deploy(admin.address, referee.address, FEE, MAX_STAKE, day - 1n))
@@ -152,8 +157,8 @@ describe("ArcadeVault", () => {
         .to.be.revertedWithCustomError(factory, "BadReclaimDelay")
         .withArgs(30n * day + 1n);
 
-      await factory.deploy(admin.address, referee.address, 1000, 1n, day);
-      await factory.deploy(admin.address, referee.address, 0, MAX_STAKE, 30n * day);
+      await factory.deploy(admin.address, referee.address, 1500, 1n, day);
+      await factory.deploy(admin.address, referee.address, 100, MAX_STAKE, 30n * day);
     });
   });
 
@@ -702,17 +707,53 @@ describe("ArcadeVault", () => {
   });
 
   describe("role administration", () => {
-    it("lets the admin set the fee up to 10% and the ceiling above nothing", async () => {
+    it("lets the admin set the fee from 1% to 15% and the ceiling above nothing", async () => {
       const { vault, admin, players } = await loadFixture(deploy);
 
-      await expect(vault.connect(admin).setFee(1000)).to.emit(vault, "FeeChanged").withArgs(FEE, 1000);
-      await expect(vault.connect(admin).setFee(1001)).to.be.revertedWithCustomError(vault, "FeeTooHigh").withArgs(1001);
+      await expect(vault.connect(admin).setFee(1500)).to.emit(vault, "FeeChanged").withArgs(FEE, 1500);
+      await expect(vault.connect(admin).setFee(100)).to.emit(vault, "FeeChanged").withArgs(1500, 100);
+      await expect(vault.connect(admin).setFee(1501)).to.be.revertedWithCustomError(vault, "FeeOutOfRange").withArgs(1501);
+      await expect(vault.connect(admin).setFee(99)).to.be.revertedWithCustomError(vault, "FeeOutOfRange").withArgs(99);
+      await expect(vault.connect(admin).setFee(0)).to.be.revertedWithCustomError(vault, "FeeOutOfRange").withArgs(0);
       await expect(vault.connect(admin).setMaxStake(1n)).to.emit(vault, "MaxStakeChanged").withArgs(MAX_STAKE, 1n);
       await expect(vault.connect(admin).setMaxStake(0n)).to.be.revertedWithCustomError(vault, "ZeroAmount");
 
       await expect(vault.connect(players[0]).setFee(0)).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
       await expect(vault.connect(players[0]).setMaxStake(5n)).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
       await expect(vault.connect(players[0]).pause()).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
+    });
+
+    it("hands the vault to a new owner only once they accept, with the pauser role", async () => {
+      const { vault, admin, players, outsider } = await loadFixture(deploy);
+      const ownerRole = await vault.DEFAULT_ADMIN_ROLE();
+      const pauser = await vault.PAUSER_ROLE();
+
+      await expect(vault.connect(players[0]).beginDefaultAdminTransfer(players[0].address))
+        .to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
+      await expect(vault.connect(admin).grantRole(ownerRole, outsider.address))
+        .to.be.revertedWithCustomError(vault, "AccessControlEnforcedDefaultAdminRules");
+
+      await vault.connect(admin).beginDefaultAdminTransfer(players[0].address);
+      expect(await vault.owner()).to.equal(admin.address);
+      await expect(vault.connect(outsider).acceptDefaultAdminTransfer())
+        .to.be.revertedWithCustomError(vault, "AccessControlInvalidDefaultAdmin")
+        .withArgs(outsider.address);
+
+      await vault.connect(admin).cancelDefaultAdminTransfer();
+      await expect(vault.connect(players[0]).acceptDefaultAdminTransfer())
+        .to.be.revertedWithCustomError(vault, "AccessControlInvalidDefaultAdmin");
+
+      await vault.connect(admin).beginDefaultAdminTransfer(outsider.address);
+      await vault.connect(outsider).acceptDefaultAdminTransfer();
+
+      expect(await vault.owner()).to.equal(outsider.address);
+      expect(await vault.hasRole(ownerRole, admin.address)).to.equal(false);
+      expect(await vault.hasRole(pauser, admin.address)).to.equal(false);
+      expect(await vault.hasRole(pauser, outsider.address)).to.equal(true);
+      await expect(vault.connect(admin).setFee(600)).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
+      await expect(vault.connect(admin).pause()).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
+      await expect(vault.connect(outsider).setFee(600)).to.emit(vault, "FeeChanged").withArgs(FEE, 600);
+      await expect(vault.connect(outsider).pause()).to.emit(vault, "Paused");
     });
 
     it("pays the fees taken to the admin's choice, and no more than were taken", async () => {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {AccessControlDefaultAdminRules} from "@openzeppelin/contracts/access/extensions/AccessControlDefaultAdminRules.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
@@ -36,21 +36,27 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
  *      - No upgradeability. The rules players trust with their coin cannot be rewritten under
  *        them; a new version is a new address, and players withdraw from the old one.
  *      - No admin path to a player's balance or to a game in play. The admin sets the fee for
- *        games not yet opened (never above MAX_FEE_BPS), the ceiling on a stake, pauses, takes
- *        the fees, and can revoke the referee - which is the kill switch if its key leaks.
+ *        games not yet opened (between MIN_FEE_BPS and MAX_FEE_BPS), the ceiling on a stake,
+ *        pauses, takes the fees, and can revoke the referee - which is the kill switch if its
+ *        key leaks.
+ *      - One owner, handed over in two steps. The owner names the next one with
+ *        `beginDefaultAdminTransfer` and nothing changes until that address calls
+ *        `acceptDefaultAdminTransfer`, so a mistyped address cannot take the vault; PAUSER_ROLE
+ *        goes with the handover. `cancelDefaultAdminTransfer` takes a naming back.
  *      - No outward transfer while settling. Winnings are credited to vault balances, so
  *        `settle`, `refund` and `reclaim` never hand control to anybody; only `withdraw` and
  *        `withdrawFees` send coin, after their state is written and behind nonReentrant.
  */
-contract ArcadeVault is AccessControl, Pausable, ReentrancyGuard, EIP712 {
+contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuard, EIP712 {
     /// @notice May open, settle and refund games. Meant for the Arcade server's key alone.
     bytes32 public constant REFEREE_ROLE = keccak256("REFEREE_ROLE");
 
     /// @notice May pause and unpause new deposits and new games.
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
-    /// @notice The highest fee the admin can ever set: 10% of a pot.
-    uint16 public constant MAX_FEE_BPS = 1_000;
+    /// @notice The lowest and the highest fee the admin can ever set: 1% and 15% of a pot.
+    uint16 public constant MIN_FEE_BPS = 100;
+    uint16 public constant MAX_FEE_BPS = 1_500;
 
     /// @notice The fewest and the most players a game can have.
     uint256 public constant MIN_SEATS = 2;
@@ -152,7 +158,7 @@ contract ArcadeVault is AccessControl, Pausable, ReentrancyGuard, EIP712 {
 
     error ZeroAddress();
     error ZeroAmount();
-    error FeeTooHigh(uint16 feeBps);
+    error FeeOutOfRange(uint16 feeBps);
     error BadReclaimDelay(uint256 reclaimAfter);
     error InsufficientBalance(uint256 available, uint256 required);
     error InsufficientFees(uint256 available, uint256 required);
@@ -172,9 +178,9 @@ contract ArcadeVault is AccessControl, Pausable, ReentrancyGuard, EIP712 {
     error TooEarly(bytes32 id, uint256 due);
 
     /**
-     * @param admin         Receives DEFAULT_ADMIN_ROLE and PAUSER_ROLE: the owner's wallet, or a multisig.
+     * @param admin         The owner: receives DEFAULT_ADMIN_ROLE and PAUSER_ROLE. The owner's wallet, or a multisig.
      * @param referee       The Arcade server's key. Receives REFEREE_ROLE.
-     * @param fee_          The fee in basis points, at most MAX_FEE_BPS. 500 is 5%.
+     * @param fee_          The fee in basis points, from MIN_FEE_BPS to MAX_FEE_BPS. 500 is 5%.
      * @param maxStake_     The most one player may stake on one game, in wei.
      * @param reclaimAfter_ Seconds after `open` from which anybody may `reclaim`, within the bounds.
      */
@@ -184,9 +190,9 @@ contract ArcadeVault is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         uint16 fee_,
         uint256 maxStake_,
         uint256 reclaimAfter_
-    ) EIP712("ArcadeVault", "1") {
-        if (admin == address(0) || referee == address(0)) revert ZeroAddress();
-        if (fee_ > MAX_FEE_BPS) revert FeeTooHigh(fee_);
+    ) AccessControlDefaultAdminRules(0, admin) EIP712("ArcadeVault", "1") {
+        if (referee == address(0)) revert ZeroAddress();
+        _checkFee(fee_);
         if (maxStake_ == 0) revert ZeroAmount();
         if (reclaimAfter_ < MIN_RECLAIM_AFTER || reclaimAfter_ > MAX_RECLAIM_AFTER) {
             revert BadReclaimDelay(reclaimAfter_);
@@ -196,7 +202,6 @@ contract ArcadeVault is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         fee = fee_;
         maxStake = maxStake_;
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(PAUSER_ROLE, admin);
         _grantRole(REFEREE_ROLE, referee);
 
@@ -281,6 +286,7 @@ contract ArcadeVault is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         if (feeBps != fee) revert FeeMismatch(feeBps, fee);
 
         bytes32 gameHash = keccak256(bytes(game));
+
         address[] memory players = new address[](count);
         bytes32[] memory commits = new bytes32[](count);
 
@@ -371,7 +377,7 @@ contract ArcadeVault is AccessControl, Pausable, ReentrancyGuard, EIP712 {
 
     /// @notice Sets the fee for games opened from now on. Games already open keep theirs.
     function setFee(uint16 newFee) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (newFee > MAX_FEE_BPS) revert FeeTooHigh(newFee);
+        _checkFee(newFee);
 
         emit FeeChanged(fee, newFee);
         fee = newFee;
@@ -442,6 +448,17 @@ contract ArcadeVault is AccessControl, Pausable, ReentrancyGuard, EIP712 {
     // -------------------------------------------------------------------------------
     // Internals
     // -------------------------------------------------------------------------------
+
+    function _checkFee(uint16 feeBps) private pure {
+        if (feeBps < MIN_FEE_BPS || feeBps > MAX_FEE_BPS) revert FeeOutOfRange(feeBps);
+    }
+
+    function _acceptDefaultAdminTransfer() internal override {
+        address previous = defaultAdmin();
+        super._acceptDefaultAdminTransfer();
+        _revokeRole(PAUSER_ROLE, previous);
+        _grantRole(PAUSER_ROLE, defaultAdmin());
+    }
 
     function _credit(address player, uint256 amount) private {
         if (amount == 0) revert ZeroAmount();

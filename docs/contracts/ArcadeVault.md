@@ -22,7 +22,7 @@ contract bounds everything else it can do (see **Security Analysis**).
 
 ```text
 ArcadeVault
-├── AccessControl    -- DEFAULT_ADMIN_ROLE, PAUSER_ROLE, REFEREE_ROLE
+├── AccessControlDefaultAdminRules -- one owner (DEFAULT_ADMIN_ROLE), handed on in two steps; PAUSER_ROLE, REFEREE_ROLE
 ├── Pausable         -- stops deposits and new games, nothing else
 ├── ReentrancyGuard  -- guards the two outward transfers (withdraw, withdrawFees)
 └── EIP712           -- domain separator for signed stakes ("ArcadeVault", "1")
@@ -30,7 +30,7 @@ ArcadeVault
 
 | Base | Why inherited |
 | --- | --- |
-| `AccessControl` | Role gating for the admin, the pauser and the referee. |
+| `AccessControlDefaultAdminRules` | Role gating for the owner, the pauser and the referee, with one owner handed on in two steps. |
 | `Pausable` | `whenNotPaused` on `deposit`, `receive` and `open` only. |
 | `ReentrancyGuard` | `nonReentrant` around `withdraw` and `withdrawFees`, the only calls that send coin. |
 | `EIP712` | Binds every stake to this contract and this chain, so it cannot be replayed against another deployment or a fork. |
@@ -69,7 +69,7 @@ ArcadeVault
 
 | Constant | Value | Meaning |
 | --- | --- | --- |
-| `MAX_FEE_BPS` | 1,000 | The highest fee the admin can ever set (10%). |
+| `MIN_FEE_BPS` / `MAX_FEE_BPS` | 100 / 1,500 | The lowest and highest fee the admin can ever set (1% and 15%). |
 | `MIN_SEATS` / `MAX_SEATS` | 2 / 9 | Players in one game. |
 | `MIN_RECLAIM_AFTER` / `MAX_RECLAIM_AFTER` | 1 day / 30 days | Bounds on `reclaimAfter`. |
 | `MAX_STAKE_LIFE` | 1 day | The longest a stake may still have to run when it is used. |
@@ -110,7 +110,7 @@ Every per-player event indexes the player, so one address's whole history is one
 | Error | Raised by |
 | --- | --- |
 | `ZeroAddress`, `ZeroAmount` | constructor, deposits, withdrawals, `open`, the admin's calls |
-| `FeeTooHigh(feeBps)` | constructor, `setFee` |
+| `FeeOutOfRange(feeBps)` | constructor, `setFee` |
 | `BadReclaimDelay(reclaimAfter)` | constructor |
 | `InsufficientBalance(available, required)` | `withdraw` |
 | `InsufficientFees(available, required)` | `withdrawFees` |
@@ -175,9 +175,16 @@ The only two calls that send coin, each after its state is written and behind
 
 | Role | Granted to at deploy | Can |
 | --- | --- | --- |
-| `DEFAULT_ADMIN_ROLE` | `admin` | set the fee (≤ 10%) and the ceiling, take the fees, grant and revoke every role |
+| `DEFAULT_ADMIN_ROLE` | `admin` | the owner: set the fee (1% to 15%) and the ceiling, take the fees, grant and revoke every other role, hand the vault on |
 | `PAUSER_ROLE` | `admin` | pause and unpause deposits and new games |
 | `REFEREE_ROLE` | `referee` | open, settle and refund games |
+
+**Handing the vault to a new owner** takes two transactions, so a mistyped address cannot take
+it: the owner calls `beginDefaultAdminTransfer(next)`, and nothing changes until `next` calls
+`acceptDefaultAdminTransfer()`. Until then the owner can take it back with
+`cancelDefaultAdminTransfer()` or name somebody else. On acceptance the old owner loses
+`DEFAULT_ADMIN_ROLE` and `PAUSER_ROLE` and the new one holds both. `owner()` reads who holds it.
+There is only ever one owner: `grantRole(DEFAULT_ADMIN_ROLE, …)` is refused.
 
 Revoking `REFEREE_ROLE` is the kill switch if the server's key leaks: no game can be opened or
 paid until a new referee is granted, and every open game can be reclaimed after the delay.

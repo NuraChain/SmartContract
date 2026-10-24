@@ -48,7 +48,9 @@ ArcadeVault
 | `REFEREE_ROLE` | `bytes32` | public | constant | May open, settle and refund games. The Arcade server's key. |
 | `PAUSER_ROLE` | `bytes32` | public | constant | May pause and unpause. |
 | `reclaimAfter` | `uint256` | public | immutable | Seconds after `open` from which anybody may `reclaim` an unpaid game. |
-| `fee` | `uint16` | public | mutable | Basis points a game opened now pays. |
+| `fee` | `uint16` | public | mutable | Basis points a game opened now pays, unless its game has its own `gameFee`. |
+| `gameFee` | `mapping(bytes32 => uint16)` | public | mutable | One game's own fee, keyed by `keccak256(bytes(game))`; 0 means it pays `fee`. |
+| `referee` | `address` | public | mutable | The Arcade server's key, as last set by the constructor or `setReferee`. |
 | `maxStake` | `uint256` | public | mutable | The most one player may stake on one game. |
 | `fees` | `uint256` | public | mutable | Fees taken and not yet withdrawn. |
 | `totalBalances` | `uint256` | public | mutable | Sum of every free balance. |
@@ -101,6 +103,8 @@ values, for servers and tests.
 | `Refunded(id)` / `Reclaimed(id, by)` | `refund` / `reclaim` |
 | `Returned(id, player, amount)` | `refund` and `reclaim`, once per seat |
 | `FeeChanged`, `MaxStakeChanged`, `FeesWithdrawn` | the admin's calls (and the constructor for the first two) |
+| `GameFeeChanged(gameHash, game, previousFee, newFee)` | `setGameFee` |
+| `RefereeChanged(previousReferee, newReferee)` | `setReferee`, and the constructor |
 
 Every per-player event indexes the player, so one address's whole history is one
 `eth_getLogs` per event.
@@ -110,7 +114,7 @@ Every per-player event indexes the player, so one address's whole history is one
 | Error | Raised by |
 | --- | --- |
 | `ZeroAddress`, `ZeroAmount` | constructor, deposits, withdrawals, `open`, the admin's calls |
-| `FeeOutOfRange(feeBps)` | constructor, `setFee` |
+| `FeeOutOfRange(feeBps)` | constructor, `setFee`, `setGameFee` |
 | `BadReclaimDelay(reclaimAfter)` | constructor |
 | `InsufficientBalance(available, required)` | `withdraw` |
 | `InsufficientFees(available, required)` | `withdrawFees` |
@@ -140,7 +144,7 @@ stopped the game and can ask that player again.
 | `settle(id, winners, secrets)` | referee | never |
 | `refund(id)` | referee | never |
 | `reclaim(id)` | anybody, after `reclaimAfter` | never |
-| `setFee`, `setMaxStake`, `withdrawFees` | admin | never |
+| `setFee`, `setGameFee`, `setMaxStake`, `withdrawFees`, `setReferee` | admin | never |
 | `pause`, `unpause` | pauser | |
 
 ### open
@@ -148,7 +152,8 @@ stopped the game and can ask that player again.
 Locks one game: for each seat, in order, the player must be distinct, the stake unexpired and
 not good for more than `MAX_STAKE_LIFE`, its nonce unused, its signature valid for
 `(player, game, amount, feeBps, commit, nonce, deadline)`, and the player's free balance at
-least `amount`. `feeBps` must equal `fee`, and `amount` must be at most `maxStake`. Every stake
+least `amount`. `feeBps` must equal `feeOf(game)` - the game's own `gameFee`, or `fee` when it
+has none - and `amount` must be at most `maxStake`. Every stake
 moves from free to locked, every nonce is spent, and the game records its players, its amount,
 its fee and the hash of its seats' commits. All or nothing.
 
@@ -175,7 +180,7 @@ The only two calls that send coin, each after its state is written and behind
 
 | Role | Granted to at deploy | Can |
 | --- | --- | --- |
-| `DEFAULT_ADMIN_ROLE` | `admin` | the owner: set the fee (1% to 15%) and the ceiling, take the fees, grant and revoke every other role, hand the vault on |
+| `DEFAULT_ADMIN_ROLE` | `admin` | the owner: set the fee (1% to 15%, shared or per game) and the ceiling, take the fees, replace the referee, grant and revoke every other role, hand the vault on |
 | `PAUSER_ROLE` | `admin` | pause and unpause deposits and new games |
 | `REFEREE_ROLE` | `referee` | open, settle and refund games |
 
@@ -185,6 +190,16 @@ it: the owner calls `beginDefaultAdminTransfer(next)`, and nothing changes until
 `cancelDefaultAdminTransfer()` or name somebody else. On acceptance the old owner loses
 `DEFAULT_ADMIN_ROLE` and `PAUSER_ROLE` and the new one holds both. `owner()` reads who holds it.
 There is only ever one owner: `grantRole(DEFAULT_ADMIN_ROLE, …)` is refused.
+
+**Fees per game.** `setFee` sets the fee every game pays by default; `setGameFee(game, feeBps)`
+gives one game - by the name players sign, e.g. `"hokm"` - its own, and `setGameFee(game, 0)`
+sends it back to the default. Both take 1% to 15% and apply to games opened from then on: a game
+already open keeps the fee its players signed. `feeOf(game)` reads the fee a new game of it
+must carry, which is what the referee asks players to sign.
+
+**Replacing the referee** is one call: `setReferee(next)` revokes `REFEREE_ROLE` from `referee`
+and grants it to `next`. Games already open stay payable by the new referee. A referee granted
+besides with `grantRole` keeps its role until `revokeRole`.
 
 Revoking `REFEREE_ROLE` is the kill switch if the server's key leaks: no game can be opened or
 paid until a new referee is granted, and every open game can be reclaimed after the delay.

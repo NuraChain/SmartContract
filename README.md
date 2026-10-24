@@ -540,11 +540,12 @@ vault.reclaim(id);
 | `deposit()` / plain transfer | anybody | credits the sender's free balance |
 | `withdraw(amount)` | the balance's owner | pays them from what is free; never paused |
 | `cancel(nonce)` | a player | spends a stake they signed, before it is used |
-| `open(id, game, amount, feeBps, seats)` | `REFEREE_ROLE` | locks one game: every signature valid, unexpired and unused, every balance enough, the fee the vault's |
+| `open(id, game, amount, feeBps, seats)` | `REFEREE_ROLE` | locks one game: every signature valid, unexpired and unused, every balance enough, the fee the game's `feeOf` |
 | `settle(id, winners, secrets)` | `REFEREE_ROLE` | pays one game; every secret must open the commit its player signed |
 | `refund(id)` | `REFEREE_ROLE` | every stake back, no fee |
 | `reclaim(id)` | anybody | every stake back, from `reclaimAfter` after the game opened |
-| `setFee` / `setMaxStake` / `withdrawFees` | `DEFAULT_ADMIN_ROLE` | the fee (1% to 15%) and the ceiling for games not yet opened; the fees taken |
+| `setFee` / `setGameFee` / `setMaxStake` / `withdrawFees` | `DEFAULT_ADMIN_ROLE` | the fee (1% to 15%, shared or per game) and the ceiling for games not yet opened; the fees taken |
+| `setReferee(next)` | `DEFAULT_ADMIN_ROLE` | moves `REFEREE_ROLE` from the current referee to `next` in one call |
 | `beginDefaultAdminTransfer(next)` / `acceptDefaultAdminTransfer()` | the owner, then `next` | hands the vault and its pauser role to a new owner; `cancelDefaultAdminTransfer()` takes the naming back |
 | `pause()` / `unpause()` | `PAUSER_ROLE` | stops deposits and new games, nothing else |
 

@@ -36,9 +36,9 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
  *      - No upgradeability. The rules players trust with their coin cannot be rewritten under
  *        them; a new version is a new address, and players withdraw from the old one.
  *      - No admin path to a player's balance or to a game in play. The admin sets the fee for
- *        games not yet opened (between MIN_FEE_BPS and MAX_FEE_BPS), the ceiling on a stake,
- *        pauses, takes the fees, and can revoke the referee - which is the kill switch if its
- *        key leaks.
+ *        games not yet opened (between MIN_FEE_BPS and MAX_FEE_BPS, shared or per game), the
+ *        ceiling on a stake, pauses, takes the fees, and can replace or revoke the referee -
+ *        which is the kill switch if its key leaks.
  *      - One owner, handed over in two steps. The owner names the next one with
  *        `beginDefaultAdminTransfer` and nothing changes until that address calls
  *        `acceptDefaultAdminTransfer`, so a mistyped address cannot take the vault; PAUSER_ROLE
@@ -116,8 +116,12 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     /// @notice How long after `open` anybody may return a game's stakes with `reclaim`.
     uint256 public immutable reclaimAfter;
 
-    /// @notice The fee a game opened now pays, in basis points of its pot.
+    /// @notice The fee a game opened now pays, in basis points of its pot, unless its game has
+    ///         its own in `gameFee`. `feeOf` gives the one that applies.
     uint16 public fee;
+
+    /// @notice The Arcade server's key, as last set by the constructor or `setReferee`.
+    address public referee;
 
     /// @notice The most one player may stake on one game.
     uint256 public maxStake;
@@ -140,6 +144,9 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     /// @notice Whether a player's signed stake has been used or cancelled.
     mapping(address player => mapping(bytes32 nonce => bool used)) public nonceUsed;
 
+    /// @notice One game's own fee, keyed by `keccak256(bytes(game))`; 0 means it pays `fee`.
+    mapping(bytes32 gameHash => uint16 feeBps) public gameFee;
+
     mapping(bytes32 id => Game) private _games;
 
     event Deposited(address indexed player, uint256 amount);
@@ -153,6 +160,8 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     event Reclaimed(bytes32 indexed id, address indexed by);
     event Returned(bytes32 indexed id, address indexed player, uint256 amount);
     event FeeChanged(uint16 previousFee, uint16 newFee);
+    event GameFeeChanged(bytes32 indexed gameHash, string game, uint16 previousFee, uint16 newFee);
+    event RefereeChanged(address indexed previousReferee, address indexed newReferee);
     event MaxStakeChanged(uint256 previousMaxStake, uint256 newMaxStake);
     event FeesWithdrawn(address indexed to, uint256 amount);
 
@@ -179,19 +188,19 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
 
     /**
      * @param admin         The owner: receives DEFAULT_ADMIN_ROLE and PAUSER_ROLE. The owner's wallet, or a multisig.
-     * @param referee       The Arcade server's key. Receives REFEREE_ROLE.
+     * @param referee_      The Arcade server's key. Receives REFEREE_ROLE.
      * @param fee_          The fee in basis points, from MIN_FEE_BPS to MAX_FEE_BPS. 500 is 5%.
      * @param maxStake_     The most one player may stake on one game, in wei.
      * @param reclaimAfter_ Seconds after `open` from which anybody may `reclaim`, within the bounds.
      */
     constructor(
         address admin,
-        address referee,
+        address referee_,
         uint16 fee_,
         uint256 maxStake_,
         uint256 reclaimAfter_
     ) AccessControlDefaultAdminRules(0, admin) EIP712("ArcadeVault", "1") {
-        if (referee == address(0)) revert ZeroAddress();
+        if (referee_ == address(0)) revert ZeroAddress();
         _checkFee(fee_);
         if (maxStake_ == 0) revert ZeroAmount();
         if (reclaimAfter_ < MIN_RECLAIM_AFTER || reclaimAfter_ > MAX_RECLAIM_AFTER) {
@@ -201,10 +210,12 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
         reclaimAfter = reclaimAfter_;
         fee = fee_;
         maxStake = maxStake_;
+        referee = referee_;
 
         _grantRole(PAUSER_ROLE, admin);
-        _grantRole(REFEREE_ROLE, referee);
+        _grantRole(REFEREE_ROLE, referee_);
 
+        emit RefereeChanged(address(0), referee_);
         emit FeeChanged(0, fee_);
         emit MaxStakeChanged(0, maxStake_);
     }
@@ -262,7 +273,7 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
      * @param id     The game's id, used once ever.
      * @param game   The game's name as every player signed it, e.g. "ludo".
      * @param amount Each player's stake, in wei.
-     * @param feeBps The fee every player signed; must be the vault's current `fee`.
+     * @param feeBps The fee every player signed; must be the game's current `feeOf`.
      * @param seats  Every player with their signed stake, in seat order. The order is the one
      *               `settle`'s winners bitmask and secrets follow.
      * @dev Each player is refused by name - StakeExpired, StakeTooLong, NonceUsed,
@@ -283,9 +294,9 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
         if (count < MIN_SEATS || count > MAX_SEATS) revert BadSeatCount(count);
         if (amount == 0) revert ZeroAmount();
         if (amount > maxStake) revert StakeTooHigh(amount, maxStake);
-        if (feeBps != fee) revert FeeMismatch(feeBps, fee);
 
         bytes32 gameHash = keccak256(bytes(game));
+        _checkSignedFee(gameHash, feeBps);
 
         address[] memory players = new address[](count);
         bytes32[] memory commits = new bytes32[](count);
@@ -383,6 +394,35 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
         fee = newFee;
     }
 
+    /**
+     * @notice Gives one game its own fee for games of it opened from now on, or with 0 sends
+     *         it back to the shared `fee`. Games already open keep theirs.
+     * @param game The game's name exactly as players sign it, e.g. "ludo".
+     */
+    function setGameFee(string calldata game, uint16 newFee) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newFee != 0) _checkFee(newFee);
+
+        bytes32 gameHash = keccak256(bytes(game));
+        emit GameFeeChanged(gameHash, game, gameFee[gameHash], newFee);
+        gameFee[gameHash] = newFee;
+    }
+
+    /**
+     * @notice Moves REFEREE_ROLE from the current `referee` to `newReferee` in one call.
+     * @dev Games already open stay payable by the new referee. Any other referee granted with
+     *      `grantRole` keeps its role; `revokeRole` takes it.
+     */
+    function setReferee(address newReferee) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newReferee == address(0)) revert ZeroAddress();
+
+        address previous = referee;
+        referee = newReferee;
+        _revokeRole(REFEREE_ROLE, previous);
+        _grantRole(REFEREE_ROLE, newReferee);
+
+        emit RefereeChanged(previous, newReferee);
+    }
+
     /// @notice Sets the most one player may stake on one game opened from now on.
     function setMaxStake(uint256 newMaxStake) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newMaxStake == 0) revert ZeroAmount();
@@ -427,6 +467,11 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
         return (held.status, held.feeBps, held.openedAt, held.amount, held.players);
     }
 
+    /// @notice The fee a game of `game` opened now must carry: its own, or else the shared `fee`.
+    function feeOf(string calldata game) external view returns (uint16) {
+        return _feeOf(keccak256(bytes(game)));
+    }
+
     /// @notice The EIP-712 digest a player signs for one stake. For servers and tests.
     function stakeDigest(
         address player,
@@ -448,6 +493,16 @@ contract ArcadeVault is AccessControlDefaultAdminRules, Pausable, ReentrancyGuar
     // -------------------------------------------------------------------------------
     // Internals
     // -------------------------------------------------------------------------------
+
+    function _feeOf(bytes32 gameHash) private view returns (uint16) {
+        uint16 own = gameFee[gameHash];
+        return own == 0 ? fee : own;
+    }
+
+    function _checkSignedFee(bytes32 gameHash, uint16 feeBps) private view {
+        uint16 current = _feeOf(gameHash);
+        if (feeBps != current) revert FeeMismatch(feeBps, current);
+    }
 
     function _checkFee(uint16 feeBps) private pure {
         if (feeBps < MIN_FEE_BPS || feeBps > MAX_FEE_BPS) revert FeeOutOfRange(feeBps);

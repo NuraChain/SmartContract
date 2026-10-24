@@ -129,6 +129,8 @@ describe("ArcadeVault", () => {
       expect(await vault.hasRole(await vault.PAUSER_ROLE(), admin.address)).to.equal(true);
       expect(await vault.hasRole(await vault.REFEREE_ROLE(), referee.address)).to.equal(true);
       expect(await vault.hasRole(await vault.REFEREE_ROLE(), admin.address)).to.equal(false);
+      expect(await vault.referee()).to.equal(referee.address);
+      expect(await vault.feeOf("ludo")).to.equal(BigInt(FEE));
       expect(await vault.solvent()).to.equal(true);
     });
 
@@ -754,6 +756,70 @@ describe("ArcadeVault", () => {
       await expect(vault.connect(admin).pause()).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
       await expect(vault.connect(outsider).setFee(600)).to.emit(vault, "FeeChanged").withArgs(FEE, 600);
       await expect(vault.connect(outsider).pause()).to.emit(vault, "Paused");
+    });
+
+    it("lets the admin give one game its own fee from 1% to 15%, and send it back to the shared one", async () => {
+      const { vault, admin, players } = await loadFixture(deploy);
+      const hokm = ethers.id("hokm");
+
+      await expect(vault.connect(admin).setGameFee("hokm", 1200))
+        .to.emit(vault, "GameFeeChanged")
+        .withArgs(hokm, "hokm", 0, 1200);
+      expect(await vault.gameFee(hokm)).to.equal(1200n);
+      expect(await vault.feeOf("hokm")).to.equal(1200n);
+      expect(await vault.feeOf("ludo")).to.equal(BigInt(FEE));
+
+      await vault.connect(admin).setFee(700);
+      expect(await vault.feeOf("hokm")).to.equal(1200n);
+      expect(await vault.feeOf("ludo")).to.equal(700n);
+
+      await expect(vault.connect(admin).setGameFee("hokm", 1501)).to.be.revertedWithCustomError(vault, "FeeOutOfRange").withArgs(1501);
+      await expect(vault.connect(admin).setGameFee("hokm", 99)).to.be.revertedWithCustomError(vault, "FeeOutOfRange").withArgs(99);
+      await expect(vault.connect(players[0]).setGameFee("hokm", 100)).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
+
+      await expect(vault.connect(admin).setGameFee("hokm", 0))
+        .to.emit(vault, "GameFeeChanged")
+        .withArgs(hokm, "hokm", 1200, 0);
+      expect(await vault.feeOf("hokm")).to.equal(700n);
+    });
+
+    it("opens a game only at its own fee, and pays it at that fee", async () => {
+      const ctx = await loadFixture(deployFunded);
+      const { vault, admin, referee, players } = ctx;
+      await vault.connect(admin).setGameFee("hokm", 1500);
+
+      const seats = [await seatOf(vault, players[0], "hokm:0", { game: "hokm" }), await seatOf(vault, players[1], "hokm:1", { game: "hokm" })];
+      await expect(vault.connect(referee).open(idOf("hokm"), "hokm", STAKE, FEE, seats))
+        .to.be.revertedWithCustomError(vault, "FeeMismatch")
+        .withArgs(FEE, 1500);
+
+      const { id, secrets } = await openGame(ctx, "hokm at 15%", 2, { game: "hokm", feeBps: 1500 });
+      await openGame(ctx, "ludo at the shared fee", 2);
+      await vault.connect(referee).settle(id, 1n, secrets);
+
+      const pot = STAKE * 2n;
+      expect(await vault.fees()).to.equal((pot * 1500n) / 10_000n);
+    });
+
+    it("lets the admin move the referee role in one call, and nobody else", async () => {
+      const ctx = await loadFixture(deployFunded);
+      const { vault, admin, referee, outsider, players } = ctx;
+      const role = await vault.REFEREE_ROLE();
+      const { id, secrets } = await openGame(ctx, "handover", 2);
+
+      await expect(vault.connect(referee).setReferee(referee.address)).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
+      await expect(vault.connect(admin).setReferee(ethers.ZeroAddress)).to.be.revertedWithCustomError(vault, "ZeroAddress");
+
+      await expect(vault.connect(admin).setReferee(outsider.address))
+        .to.emit(vault, "RefereeChanged")
+        .withArgs(referee.address, outsider.address);
+      expect(await vault.referee()).to.equal(outsider.address);
+      expect(await vault.hasRole(role, referee.address)).to.equal(false);
+      expect(await vault.hasRole(role, outsider.address)).to.equal(true);
+
+      await expect(vault.connect(referee).settle(id, 1n, secrets)).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
+      await vault.connect(outsider).settle(id, 1n, secrets);
+      expect(await vault.balanceOf(players[0].address)).to.be.greaterThan(DEPOSIT);
     });
 
     it("pays the fees taken to the admin's choice, and no more than were taken", async () => {

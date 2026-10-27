@@ -58,6 +58,10 @@ function probes(deployer: string) {
       { name: "ArcadeAchievements", args: [deployer, ""] },
       { name: "ArcadeVault", args: [deployer, deployer, 500, 2_000, 1_000n * 10n ** 18n, 3n * 24n * 60n * 60n] },
     ],
+    // The shop's seller and inviters' share are deploy parameters, only checked and stored.
+    bazicheshop: [
+      { name: "ArcadeShop", args: [deployer, deployer, 1_000] },
+    ],
   };
 }
 
@@ -80,6 +84,9 @@ const LIBRARY_LINKED = new Set(["NonfungibleTokenPositionDescriptor"]);
  */
 const OPEN_GAS_NINE = 943_000n;
 const SETTLE_GAS_NINE = 114_000n;
+
+/** The most one `buy` costs, with an inviter to credit, as the shop's own tests measure it. */
+const BUY_GAS_INVITED = 180_000n;
 
 /** Arcade's referee never pays less than this on Nurachain (its NURA_GAS_FLOOR). */
 const REFEREE_FLOOR = 47_000_000_000n;
@@ -212,6 +219,31 @@ async function main() {
         `games that large there. Raise the rpc's request size limit before paid tables open.`,
     );
   }
+
+  // A sale in Arcade's shop is one `buy` from the buyer's own wallet: a quote and the seller's
+  // signature, sent the same way, and the gas the buyer pays for it at the floor.
+  console.log(`\nArcade's shop`);
+  const shop = (await ethers.getContractFactory("ArcadeShop")).interface;
+  const quote = {
+    order: id,
+    buyer: deployer.address,
+    item: id,
+    price: 10n ** 18n,
+    referrer: deployer.address,
+    deadline: 2n ** 63n,
+  };
+  const sale = shop.encodeFunctionData("buy", [quote, `0x${"ab".repeat(65)}`]);
+  const saleBytes = (sale.length - 2) / 2;
+  try {
+    await ethers.provider.call({ to: deployer.address, data: sale });
+    console.log(`  buy:            ${String(saleBytes).padStart(6)} bytes, taken`);
+  } catch (error) {
+    throw new Error(
+      `The node would not take a ${saleBytes}-byte buy (${error instanceof Error ? error.message.split("\n")[0] : error}), ` +
+        `so nobody could pay Arcade's shop there.`,
+    );
+  }
+  console.log(`  One sale:       ${ethers.formatEther(BUY_GAS_INVITED * refereePrice)} (native) of gas at most, paid by the buyer`);
 
   if (oversized.length > 0) {
     throw new Error(

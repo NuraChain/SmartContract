@@ -3,6 +3,7 @@ import { network } from "hardhat";
 
 import airdropModule from "../../ignition/modules/airdrop.ts";
 import bazicheModule from "../../ignition/modules/baziche.ts";
+import bazicheShopModule from "../../ignition/modules/bazicheshop.ts";
 import profileModule from "../../ignition/modules/profile.ts";
 import tokenModule from "../../ignition/modules/token.ts";
 import univ3Module from "../../ignition/modules/univ3.ts";
@@ -332,6 +333,35 @@ describe("ignition modules", () => {
       expect(await vault.hasRole(await vault.REFEREE_ROLE(), referee.address)).to.equal(true);
       expect(await vault.hasRole(await vault.REFEREE_ROLE(), deployer.address)).to.equal(false);
       expect(await vault.hasRole(await vault.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(false);
+    });
+  });
+
+  describe("bazicheshop", () => {
+    it("deploys the shop alone, with a tenth of a sale to inviters and the deployer as admin and seller", async () => {
+      const [deployer] = await ethers.getSigners();
+      const deployed = await ignition.deploy(bazicheShopModule);
+      const { shop } = deployed;
+
+      expect(Object.keys(deployed)).to.deep.equal(["shop"]);
+      expect(await shop.referralBps()).to.equal(1_000n);
+      expect(await shop.seller()).to.equal(deployer.address);
+      expect(await shop.hasRole(await shop.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(true);
+      expect(await shop.hasRole(await shop.PAUSER_ROLE(), deployer.address)).to.equal(true);
+      expect(await shop.hasRole(await shop.SELLER_ROLE(), deployer.address)).to.equal(true);
+    });
+
+    it("carries the admin, the seller and the inviters' share through to the constructor", async () => {
+      const [deployer, admin, seller] = await ethers.getSigners();
+      const { shop } = await ignition.deploy(bazicheShopModule, {
+        parameters: { bazicheshop: { admin: admin.address, seller: seller.address, referralBps: 3_000 } },
+      });
+
+      expect(await shop.referralBps()).to.equal(3_000n);
+      expect(await shop.seller()).to.equal(seller.address);
+      expect(await shop.hasRole(await shop.DEFAULT_ADMIN_ROLE(), admin.address)).to.equal(true);
+      expect(await shop.hasRole(await shop.SELLER_ROLE(), seller.address)).to.equal(true);
+      expect(await shop.hasRole(await shop.SELLER_ROLE(), deployer.address)).to.equal(false);
+      expect(await shop.hasRole(await shop.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(false);
     });
   });
 });

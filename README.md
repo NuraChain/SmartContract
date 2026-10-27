@@ -78,6 +78,7 @@ npx hardhat deploy --sc univ3periphery --network nurachain --parameters <file>  
 npx hardhat deploy --sc forecast --network nurachain   # only contracts/forecast
 npx hardhat deploy --sc profile  --network nurachain   # only contracts/profile
 npx hardhat deploy --sc baziche  --network nurachain   # only contracts/baziche
+npx hardhat deploy --sc bazicheshop --network nurachain   # only contracts/baziche/ArcadeShop.sol
 ```
 
 `--sc wnura` deploys a **new, separate** WNURA. Nurachain already has the canonical one at
@@ -95,6 +96,7 @@ npm run deploy:nurachain:univ3periphery
 npm run deploy:nurachain:forecast
 npm run deploy:nurachain:profile
 npm run deploy:nurachain:baziche
+npm run deploy:nurachain:bazicheshop
 
 # equivalent, passing the flag through npm — note the extra --
 npm run deploy:nurachain -- --sc token
@@ -207,6 +209,7 @@ npm run deploy:nurachain:univ3periphery
 npm run deploy:nurachain:forecast
 npm run deploy:nurachain:profile
 npm run deploy:nurachain:baziche
+npm run deploy:nurachain:bazicheshop
 
 # 3. Register the profile registry's verifier extension and print its state
 npm run setup:nurachain:profile
@@ -564,6 +567,48 @@ parameters (`referee`, `fee`, `maxStake`, `reclaimAfter`; see `ignition/modules/
 The per-function reference, roles, flows and security analysis are in
 [`docs/contracts/ArcadeVault.md`](docs/contracts/ArcadeVault.md).
 
+## The arcade shop
+
+`contracts/baziche/ArcadeShop.sol` sells Arcade's looks (dice, pawns, card backs, avatar
+decorations and the rest) for native NURA. The Arcade server prices every sale: it signs an
+EIP-712 `Quote` for one order, one buyer and one price, good for a short while, with the key
+that holds `SELLER_ROLE`. The buyer pays that quote from their own wallet, and the server reads
+the sale back with `saleOf(order)` before it hands the look over, so it never holds NURA and a
+closed tab loses nothing.
+
+```solidity
+// the buyer, with the quote and signature the server answered
+shop.buy{value: 12 ether}(quote, signature);   // exactly the quote's price, before its deadline
+
+// whoever brought the buyer in
+shop.claim();                                    // their share of every sale they were named on
+
+// the owner
+shop.withdraw(treasury, amount);                 // revenue only, never an inviter's credit
+shop.refund(order);                              // the whole price back to the buyer
+```
+
+| Function | Who | What |
+| --- | --- | --- |
+| `buy(quote, signature)` | the quote's buyer | pays one order at exactly its price, once, before its deadline (never more than a day out), signed by a holder of `SELLER_ROLE`; credits the inviter `referralBps` of it and the owner the rest |
+| `claim()` | an inviter | sends them their credit; never paused |
+| `refund(order)` | `DEFAULT_ADMIN_ROLE` | the whole price back to the buyer, the inviter's cut taken back while unclaimed |
+| `withdraw(to, amount)` / `fund()` | `DEFAULT_ADMIN_ROLE` | revenue out to the owner's choice; revenue topped up for a refund |
+| `setSeller(next)` | `DEFAULT_ADMIN_ROLE` | moves `SELLER_ROLE` to `next` in one call; the old key's quotes stop at once |
+| `setReferralBps(bps)` | `DEFAULT_ADMIN_ROLE` | the inviters' share of a sale, 0 to 30%, for sales from then on |
+| `beginDefaultAdminTransfer(next)` / `acceptDefaultAdminTransfer()` | the owner, then `next` | hands the shop and its pauser role to a new owner |
+| `pause()` / `unpause()` | `PAUSER_ROLE` | stops new sales, nothing else |
+
+A wrong payment never leaves the buyer's wallet: another buyer, another price, an expired quote,
+an order already sold and a quote the seller did not sign are each refused by name. The seller's
+key can sign quotes and nothing else, so a leaked key gives looks away and never moves coin.
+
+It is not upgradeable. Deploy with `npm run deploy:nurachain:bazicheshop` and the
+`bazicheshop` parameters (`seller`, `admin`, `referralBps`; see
+`ignition/modules/bazicheshop.ts`): a group of its own, so the vault and the achievements a
+chain already holds are not deployed again. The per-function reference, roles, flows and
+security analysis are in [`docs/contracts/ArcadeShop.md`](docs/contracts/ArcadeShop.md).
+
 ## Tests
 
 ```bash
@@ -644,6 +689,7 @@ contracts/profile/NuraProfileLens.sol   100.00% lines   100.00% statements
 contracts/profile/libraries/ProfileStrings.sol   100.00% lines   100.00% statements
 contracts/profile/extensions/SocialVerifier.sol  100.00% lines   100.00% statements
 contracts/baziche/ArcadeVault.sol       100.00% lines   100.00% statements
+contracts/baziche/ArcadeShop.sol        100.00% lines   100.00% statements
 ```
 
 `npm run coverage` is scoped to the contracts in this repo on purpose. Coverage instruments
@@ -734,9 +780,13 @@ contracts/airdrop/
 contracts/baziche/
   ArcadeAchievements.sol     ERC-1155 achievements, backend-minted; per-id metadata URI, soulbound or tradeable per id
   ArcadeVault.sol            native-coin stakes for Arcade's paid tables: signed stakes, referee-paid pots, reclaim
+  ArcadeShop.sol             native-coin sales of Arcade's looks: server-signed quotes, inviters' shares, refunds
   mocks/VaultMocks.sol       re-entrant and refusing receivers, an ERC-1271 wallet, tests only
+  mocks/ShopMocks.sol        a contract wallet that buys, invites, and refuses or re-enters a payment, tests only
   test/VaultFuzz.t.sol       properties over stakes, fees, seat counts and winners
   test/VaultInvariant.t.sol  the vault holds every wei it owes under random sequences
+  test/ShopFuzz.t.sol        properties over prices, shares, refunds and forged quotes
+  test/ShopInvariant.t.sol   the shop holds every wei it owes under random sequences
 contracts/profile/
   NuraProfile.sol            UUPS profile registry: usernames, localized fields, items, extensions
   NuraProfileProxy.sol       the ERC-1967 proxy — the address everyone uses
@@ -758,6 +808,7 @@ ignition/modules/
   forecast.ts                deploys contracts/forecast (--sc forecast)
   profile.ts                 deploys contracts/profile (--sc profile): impl, proxy, lens, verifier
   baziche.ts                 deploys contracts/baziche (--sc baziche): achievements and vault
+  bazicheshop.ts            deploys contracts/baziche/ArcadeShop.sol alone (--sc bazicheshop)
 scripts/
   preflight.ts               pre-deploy check: chain id, funding, gas, contract sizes, paid tables
   write-init-code-hash.ts    regenerates the V3 pool init code hash
@@ -769,6 +820,7 @@ test/
   BridgeToken.test.ts        49 tests: roles, mint, burn, pause, permit security, rescue
   Airdrop.test.ts            44 tests: signature binding, replay, reentrancy, caps, admin
   ArcadeVault.test.ts        39 tests: stakes, signatures, payouts, refunds, reclaims, roles, gas
+  ArcadeShop.test.ts         38 tests: quotes, signatures, inviters, claims, refunds, roles, reentrancy, gas
   univ3/Build.test.ts        EIP-170 sizes and the pool init code hash
   univ3/Factory.test.ts      18 tests: fee tiers, createPool, ownership
   univ3/Pool.test.ts         26 tests: initialize, mint, burn, swap, flash, fees
@@ -785,4 +837,4 @@ hardhat.config.ts            three solc versions, networks, and the `deploy --sc
 ```
 
 Each `contracts/<folder>` maps to `ignition/modules/<folder>.ts` and is deployed
-independently with `--sc <folder>`. `wnura` and `univ3periphery` are the two groups that are not folders.
+independently with `--sc <folder>`. `wnura`, `univ3periphery` and `bazicheshop` are the three groups that are not folders.

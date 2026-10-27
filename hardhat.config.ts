@@ -43,9 +43,11 @@ try {
 
 // Each entry is a folder under contracts/ paired with the Ignition module that
 // deploys it. Adding a contracts/<name> folder means adding ignition/modules/<name>.ts
-// and one line here. Two exceptions: "wnura" deploys contracts/token/WNURA.sol alone, and
-// "univ3periphery" redeploys the WNURA-holding V3 periphery against an existing factory.
-const DEPLOYABLE = ["token", "wnura", "airdrop", "univ3", "univ3periphery", "forecast", "profile", "baziche"] as const;
+// and one line here. Three exceptions: "wnura" deploys contracts/token/WNURA.sol alone,
+// "univ3periphery" redeploys the WNURA-holding V3 periphery against an existing factory, and
+// "bazicheshop" deploys contracts/baziche/ArcadeShop.sol alone, so the vault and the
+// achievements a chain already holds are not deployed a second time.
+const DEPLOYABLE = ["token", "wnura", "airdrop", "univ3", "univ3periphery", "forecast", "profile", "baziche", "bazicheshop"] as const;
 
 // contracts/univ3 is vendored Uniswap, pinned to the compiler it was audited and deployed
 // with, so the build needs three compilers. Hardhat picks one per file from the pragma;

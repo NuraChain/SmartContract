@@ -1,8 +1,11 @@
 import { expect } from "chai";
-import { network } from "hardhat";
+import hre, { network } from "hardhat";
 
 const { ethers, networkHelpers } = await network.getOrCreate();
 const { loadFixture } = networkHelpers;
+
+/** Coverage instruments the bytecode, so gas measured under it says nothing about the deployed contract. */
+const measuring = hre.globalOptions.coverage !== true;
 
 const REFERRAL = 1_000;
 const PRICE = ethers.parseEther("12");
@@ -729,7 +732,7 @@ describe("ArcadeShop", () => {
     });
   });
 
-  describe("gas", () => {
+  (measuring ? describe : describe.skip)("gas", () => {
     it("sells within bounds, with an inviter and without", async () => {
       const ctx = await loadFixture(deploy);
       const plain = await (await sell(ctx, "gas plain")).tx.wait();

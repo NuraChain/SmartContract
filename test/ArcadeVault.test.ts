@@ -1,8 +1,12 @@
 import { expect } from "chai";
-import { network } from "hardhat";
+import type { FunctionFragment } from "ethers";
+import hre, { network } from "hardhat";
 
 const { ethers, networkHelpers } = await network.getOrCreate();
 const { loadFixture } = networkHelpers;
+
+/** Coverage instruments the bytecode, so gas measured under it says nothing about the deployed contract. */
+const measuring = hre.globalOptions.coverage !== true;
 
 const FEE = 500;
 const REFERRAL = 2_000;
@@ -517,7 +521,7 @@ describe("ArcadeVault", () => {
         const [alice, bob, carol] = players;
         const wallet = await ethers.deployContract("StakeWallet", [await vault.getAddress(), alice.address], admin);
         const walletAddress = await wallet.getAddress();
-        await wallet["deposit()"]({ value: DEPOSIT });
+        await wallet.deposit({ value: DEPOSIT });
 
         const value = {
           player: walletAddress,
@@ -896,7 +900,7 @@ describe("ArcadeVault", () => {
       const { vault, admin } = await loadFixture(deploy);
       const withdrawer = await ethers.deployContract("ReentrantWithdrawer", [await vault.getAddress()], admin);
       const address = await withdrawer.getAddress();
-      await withdrawer["deposit()"]({ value: STAKE * 2n });
+      await withdrawer.deposit({ value: STAKE * 2n });
 
       await withdrawer.withdraw(STAKE);
 
@@ -910,7 +914,7 @@ describe("ArcadeVault", () => {
     it("keeps the balance when the receiver refuses the payment", async () => {
       const { vault, admin } = await loadFixture(deploy);
       const receiver = await ethers.deployContract("RejectingReceiver", [await vault.getAddress()], admin);
-      await receiver["deposit()"]({ value: STAKE });
+      await receiver.deposit({ value: STAKE });
 
       await expect(receiver.withdraw(STAKE)).to.be.revertedWith("no thanks");
       expect(await vault.balanceOf(await receiver.getAddress())).to.equal(STAKE);
@@ -953,8 +957,9 @@ describe("ArcadeVault", () => {
 
       // Nothing but a player's own deposit writes referrerOf: the vault has no setter for it.
       const writers = vault.interface.fragments
-        .filter((f) => f.type === "function" && (f as { stateMutability: string }).stateMutability !== "view")
-        .map((f) => (f as { name: string }).name)
+        .filter((f): f is FunctionFragment => f.type === "function")
+        .filter((f) => f.stateMutability !== "view")
+        .map((f) => f.name)
         .filter((name) => /referr/i.test(name));
       expect(writers).to.deep.equal(["setReferralShare"]);
 
@@ -1061,7 +1066,7 @@ describe("ArcadeVault", () => {
     });
   });
 
-  describe("gas", () => {
+  (measuring ? describe : describe.skip)("gas", () => {
     it("opens and settles two, four and nine players within bounds", async () => {
       const ctx = await loadFixture(deployFunded);
       const { vault, referee } = ctx;

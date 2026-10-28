@@ -22,7 +22,6 @@
     "deploy:nurachain:wnura": "hardhat deploy --sc wnura --network nurachain",
     "deploy:nurachain:airdrop": "hardhat deploy --sc airdrop --network nurachain",
     "deploy:nurachain:univ3": "hardhat deploy --sc univ3 --network nurachain",
-    "deploy:nurachain:univ3periphery": "hardhat deploy --sc univ3periphery --network nurachain --parameters ./ignition/parameters/univ3periphery.nurachain.json",
     "deploy:nurachain:forecast": "hardhat deploy --sc forecast --network nurachain",
     "deploy:nurachain:profile": "hardhat deploy --sc profile --network nurachain",
     "deploy:nurachain:baziche": "hardhat deploy --sc baziche --network nurachain",

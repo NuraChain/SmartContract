@@ -65,16 +65,14 @@ from and the second is what picks it up. Use `npm run build` rather than
 ## Deploy
 
 Contracts are grouped by folder under `contracts/`, and each folder has one Ignition
-module of the same name in `ignition/modules/`. The exceptions are `wnura`, which
-deploys `contracts/token/WNURA.sol` on its own, and `univ3periphery`, which redeploys
-part of `contracts/univ3`. You deploy one group at a time with `--sc`:
+module of the same name in `ignition/modules/`. The exception is `wnura`, which
+deploys `contracts/token/WNURA.sol` on its own. You deploy one group at a time with `--sc`:
 
 ```bash
 npx hardhat deploy --sc token    --network nurachain   # only contracts/token (bridge tokens)
 npx hardhat deploy --sc wnura    --network nurachain   # only contracts/token/WNURA.sol
 npx hardhat deploy --sc airdrop  --network nurachain   # only contracts/airdrop
 npx hardhat deploy --sc univ3    --network nurachain   # only contracts/univ3
-npx hardhat deploy --sc univ3periphery --network nurachain --parameters <file>  # see The V3 swap
 npx hardhat deploy --sc forecast --network nurachain   # only contracts/forecast
 npx hardhat deploy --sc profile  --network nurachain   # only contracts/profile
 npx hardhat deploy --sc baziche  --network nurachain   # only contracts/baziche
@@ -93,7 +91,6 @@ npm run deploy:nurachain:token
 npm run deploy:nurachain:wnura
 npm run deploy:nurachain:airdrop
 npm run deploy:nurachain:univ3
-npm run deploy:nurachain:univ3periphery
 npm run deploy:nurachain:forecast
 npm run deploy:nurachain:profile
 npm run deploy:nurachain:baziche
@@ -207,7 +204,6 @@ npm run deploy:nurachain:token
 npm run deploy:nurachain:wnura
 npm run deploy:nurachain:airdrop
 npm run deploy:nurachain:univ3
-npm run deploy:nurachain:univ3periphery
 npm run deploy:nurachain:forecast
 npm run deploy:nurachain:profile
 npm run deploy:nurachain:baziche
@@ -454,30 +450,6 @@ npm run deploy:nurachain:univ3
 and switch on the protocol's cut of swap fees (up to 1/4). Moving it to a multisig is a
 deliberate manual step — `factory.setOwner(multisig)`: handing away control should not be
 a side effect of a deploy script.
-
-### Switching the periphery to a new WNURA
-
-WNURA is immutable in `NonfungibleTokenPositionDescriptor`, `NonfungiblePositionManager`,
-`SwapRouter` and `QuoterV2`, so pointing V3 at a different wrapped coin means redeploying
-those four. `--sc univ3periphery` does exactly that, against the **existing** factory and
-`NFTDescriptor` library; the factory, its pools and `TickLens` are reused untouched.
-
-```bash
-npm run deploy:nurachain:univ3periphery
-```
-
-The npm script passes `ignition/parameters/univ3periphery.nurachain.json`, which holds the
-live factory, library and new WNURA addresses. The module has no defaults for them, so it
-refuses to deploy without that file. The factory must be built from the same
-`UniswapV3Pool` bytecode as this checkout, since the router and position manager derive
-pool addresses from `POOL_INIT_CODE_HASH`.
-
-After switching:
-
-- existing positions stay NFTs in the old position manager and are managed there;
-- pools paired with the old WNURA are different pools from new-WNURA pools, so native
-  liquidity does not carry over;
-- frontends and SDK configs must move to the four new addresses.
 
 ## The profile registry
 
@@ -831,7 +803,6 @@ ignition/modules/
   wnura.ts                   deploys contracts/token/WNURA.sol alone (--sc wnura)
   airdrop.ts                 deploys contracts/airdrop (--sc airdrop)
   univ3.ts                   deploys contracts/univ3   (--sc univ3)
-  univ3periphery.ts          redeploys the WNURA-holding V3 periphery (--sc univ3periphery)
   forecast.ts                deploys contracts/forecast (--sc forecast)
   profile.ts                 deploys contracts/profile (--sc profile): impl, proxy, lens, verifier
   baziche.ts                 deploys contracts/baziche (--sc baziche): achievements and vault
@@ -865,4 +836,4 @@ hardhat.config.ts            three solc versions, networks, and the `deploy --sc
 ```
 
 Each `contracts/<folder>` maps to `ignition/modules/<folder>.ts` and is deployed
-independently with `--sc <folder>`. `wnura`, `univ3periphery`, `bazicheshop` and `bazichetips` are the four groups that are not folders.
+independently with `--sc <folder>`. `wnura`, `bazicheshop` and `bazichetips` are the three groups that are not folders.

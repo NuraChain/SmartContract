@@ -8,7 +8,6 @@ import bazicheTipsModule from "../../ignition/modules/bazichetips.ts";
 import profileModule from "../../ignition/modules/profile.ts";
 import tokenModule from "../../ignition/modules/token.ts";
 import univ3Module from "../../ignition/modules/univ3.ts";
-import univ3PeripheryModule from "../../ignition/modules/univ3periphery.ts";
 import wnuraModule from "../../ignition/modules/wnura.ts";
 
 const { ethers, ignition } = await network.getOrCreate();
@@ -164,39 +163,6 @@ describe("ignition modules", () => {
       ]) {
         expect(await factory.feeAmountTickSpacing(fee), `fee ${fee}`).to.equal(spacing);
       }
-    });
-  });
-
-  describe("univ3periphery", () => {
-    it("redeploys the WNURA-holding periphery against an existing factory and library", async () => {
-      const { factory, nftDescriptor } = await ignition.deploy(univ3Module);
-      const factoryAddress = await factory.getAddress();
-      const wnura = await ethers.deployContract("WNURA");
-      const wnuraAddress = await wnura.getAddress();
-
-      const { descriptor, positionManager, swapRouter, quoter } = await ignition.deploy(
-        univ3PeripheryModule,
-        {
-          parameters: {
-            univ3periphery: {
-              factory: factoryAddress,
-              nftDescriptor: await nftDescriptor.getAddress(),
-              wnura: wnuraAddress,
-            },
-          },
-        },
-      );
-
-      for (const contract of [positionManager, swapRouter, quoter]) {
-        expect(await contract.factory()).to.equal(factoryAddress);
-        expect(await contract.WETH9()).to.equal(wnuraAddress);
-      }
-      expect(await descriptor.WETH9()).to.equal(wnuraAddress);
-      expect(await descriptor.nativeCurrencyLabel()).to.equal("NURA");
-    });
-
-    it("refuses to deploy without the factory, library and WNURA addresses", async () => {
-      await expectDeployToFail(ignition.deploy(univ3PeripheryModule), /validation error/i);
     });
   });
 

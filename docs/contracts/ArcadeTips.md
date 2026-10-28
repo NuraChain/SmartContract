@@ -14,7 +14,7 @@
 
 A watcher gives NURA to a player of the game they watch. The Arcade server decides whether that
 gift may be made (who gives, to whom, how much), writes the donation with an id of its own and
-hands the browser an unsent call, `tip(id, player)` with the amount as its value, which the
+hands the browser an unsent call, `tip(id, player, deadline)` with the amount as its value, which the
 giver's wallet sends. The contract forwards the whole value to the player at once and records
 `{ to, amount, givenAt }` under `(giver, id)`. The server confirms the gift by asking `tipOf(giver,
 id)`, never by a hash the page reports, so a transaction the wallet sped up or re-priced is found
@@ -61,6 +61,7 @@ ArcadeTips
 | `SelfTip()` | a gift to oneself |
 | `ZeroAmount()` | a gift of nothing |
 | `TipUsed(from, id)` | the giver has used that id before |
+| `TipExpired(from, id, deadline)` | a call after the deadline it carries |
 | `EnforcedPause()` | a gift while paused |
 | `AccessControlUnauthorizedAccount(account, role)` | a pause or unpause by anybody but a pauser |
 
@@ -68,8 +69,8 @@ ArcadeTips
 
 ### tip
 
-`tip(bytes32 id, address to) payable`: refuses the zero address, oneself, nothing sent and an id
-the caller already used, then records the gift and sends `msg.value` to `to` with
+`tip(bytes32 id, address to, uint64 deadline) payable`: refuses the zero address, oneself, nothing
+sent, a call past its deadline and an id the caller already used, then records the gift and sends `msg.value` to `to` with
 `Address.sendValue`. A receiver that refuses the coin reverts the whole gift, so nothing is
 recorded and nothing moved. A receiver that calls back in finds the gift already recorded; it can
 give onward with its own coin, under its own address, and nothing else.
@@ -111,6 +112,9 @@ refund: a gift that cannot be delivered reverts and stays in the giver's wallet.
   runs code inside it. The record is written first; what the receiver can do is refuse (the gift
   reverts) or give onward with the coin it was just given. The contract holds no coin a receiver
   could reach.
+- **A call made late.** The server gives every gift a deadline and lets go of one that has run out;
+  without the deadline in the call, a wallet that sent it an hour later would make a gift the
+  server had already called expired. The contract refuses it instead, so the server's word stands.
 - **No server signature.** Whether a gift may be made is the server's to decide before it hands
   out the call; the contract checks only what it can (somebody, not oneself, something, an id
   once). A gift made without the server, by somebody calling the contract directly, is a gift
@@ -130,13 +134,13 @@ npx hardhat deploy --sc bazichetips --network nurachain --parameters ./ignition/
 ```
 
 with `admin` (the owner's wallet, default the deployer). See `ignition/modules/bazichetips.ts`.
-Gas measured on the in-process chain: `tip` 80,854 for a giver's gift to a player who already holds coin (two new storage slots and the payment), paid by the giver. Run
+Gas measured on the in-process chain: `tip` 81,080 for a giver's gift to a player who already holds coin (two new storage slots and the payment), paid by the giver. Run
 `npm run preflight:nurachain` first: it estimates the deployment with the rest.
 
 ## Integration Guide
 
-1. The server writes the donation with an id (32 bytes) and hands the browser the call:
-   `tip(id, player)` with the amount in wei as its value.
+1. The server writes the donation with an id (32 bytes) and a deadline, and hands the browser the
+   call: `tip(id, player, deadline)` with the amount in wei as its value.
 2. The giver's wallet sends it.
 3. The server reads `tipOf(giver, id)`: a receiver that is not the zero address is a gift. It
    checks the receiver and the amount against what it wrote before it believes it.
@@ -146,7 +150,7 @@ Gas measured on the in-process chain: `tip` 80,854 for a giver's gift to a playe
 
 | Function | Signature |
 | --- | --- |
-| `tip` | `tip(bytes32 id, address to) payable` |
+| `tip` | `tip(bytes32 id, address to, uint64 deadline) payable` |
 | `tipOf` | `tipOf(address from, bytes32 id) view returns (address to, uint256 amount, uint64 givenAt)` |
 | `pause` | `pause()` |
 | `unpause` | `unpause()` |

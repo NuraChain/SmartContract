@@ -14,6 +14,8 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
  * A gift is recorded under its giver and its id, `tipOf(from, id)`. The server makes the id when
  * it prepares the gift and confirms the gift by asking about it, never by a hash the page reports,
  * so a transaction the wallet sped up or re-priced is found all the same, and an id is paid once.
+ * A call carries the deadline the server gave it and is refused after it, so a gift the server let
+ * lapse cannot be made late, behind its back.
  * It is keyed by the giver as well as the id, so nobody can spend a giver's id first: the same
  * call sent from another wallet is recorded under that wallet, and the real gift still goes
  * through.
@@ -51,6 +53,7 @@ contract ArcadeTips is AccessControlDefaultAdminRules, Pausable {
     error ZeroAmount();
     error SelfTip();
     error TipUsed(address from, bytes32 id);
+    error TipExpired(address from, bytes32 id, uint64 deadline);
 
     /// @param admin The owner: receives DEFAULT_ADMIN_ROLE and PAUSER_ROLE. The owner's wallet, or a multisig.
     constructor(address admin) AccessControlDefaultAdminRules(0, admin) {
@@ -59,17 +62,20 @@ contract ArcadeTips is AccessControlDefaultAdminRules, Pausable {
 
     /**
      * @notice Sends everything this call carries to `to`, recorded under the caller and `id`.
-     * @param id The gift's id, as the Arcade server made it. Each giver uses an id once.
-     * @param to The player who receives it.
-     * @dev Refuses by name - ZeroAddress, SelfTip, ZeroAmount, TipUsed - so a wallet that simulates
-     *      the call first says why. The record is written before the coin leaves, so a receiver
-     *      that calls back in finds it; a receiver that refuses the coin reverts the whole gift.
+     * @param id       The gift's id, as the Arcade server made it. Each giver uses an id once.
+     * @param to       The player who receives it.
+     * @param deadline Unix time after which the call is refused.
+     * @dev Refuses by name - ZeroAddress, SelfTip, ZeroAmount, TipExpired, TipUsed - so a wallet
+     *      that simulates the call first says why. The record is written before the coin leaves,
+     *      so a receiver that calls back in finds it; a receiver that refuses the coin reverts the
+     *      whole gift.
      */
-    function tip(bytes32 id, address to) external payable whenNotPaused {
+    function tip(bytes32 id, address to, uint64 deadline) external payable whenNotPaused {
         address from = _msgSender();
         if (to == address(0)) revert ZeroAddress();
         if (to == from) revert SelfTip();
         if (msg.value == 0) revert ZeroAmount();
+        if (deadline < block.timestamp) revert TipExpired(from, id, deadline);
 
         Tip storage record = _tips[from][id];
         if (record.to != address(0)) revert TipUsed(from, id);

@@ -26,6 +26,7 @@ contract TipsFuzzTest {
     address private constant ADMIN = address(0xAD);
     address private constant GIVER = address(0x61FE7);
     address private constant OTHER = address(0x07E7);
+    uint64 private constant LATER = type(uint64).max;
 
     ArcadeTips private tips;
 
@@ -45,7 +46,7 @@ contract TipsFuzzTest {
 
         vm.deal(GIVER, amount);
         vm.prank(GIVER);
-        tips.tip{value: amount}(id, player);
+        tips.tip{value: amount}(id, player, LATER);
 
         (address to, uint256 recorded, uint64 givenAt) = tips.tipOf(GIVER, id);
         assert(player.balance == before + amount);
@@ -66,15 +67,15 @@ contract TipsFuzzTest {
 
         vm.deal(GIVER, first + second);
         vm.prank(GIVER);
-        tips.tip{value: first}(id, player);
+        tips.tip{value: first}(id, player, LATER);
 
         vm.expectRevert(abi.encodeWithSelector(ArcadeTips.TipUsed.selector, GIVER, id));
         vm.prank(GIVER);
-        tips.tip{value: second}(id, player);
+        tips.tip{value: second}(id, player, LATER);
 
         vm.deal(OTHER, second);
         vm.prank(OTHER);
-        tips.tip{value: second}(id, player);
+        tips.tip{value: second}(id, player, LATER);
 
         (, uint256 mine,) = tips.tipOf(GIVER, id);
         (, uint256 theirs,) = tips.tipOf(OTHER, id);
@@ -83,17 +84,31 @@ contract TipsFuzzTest {
         assert(address(tips).balance == 0);
     }
 
+    function testFuzz_aCallPastItsDeadlineIsRefused(bytes32 id, uint128 amountSeed, uint32 pastSeed) public {
+        uint256 amount = uint256(amountSeed) + 1;
+        uint64 deadline = uint64(block.timestamp) - (uint64(pastSeed) % uint64(block.timestamp)) - 1;
+        vm.deal(GIVER, amount);
+
+        vm.expectRevert(abi.encodeWithSelector(ArcadeTips.TipExpired.selector, GIVER, id, deadline));
+        vm.prank(GIVER);
+        tips.tip{value: amount}(id, _player(id), deadline);
+
+        (address to,,) = tips.tipOf(GIVER, id);
+        assert(to == address(0));
+        assert(GIVER.balance == amount);
+    }
+
     function testFuzz_nothingIsGivenToNobodyOrToOneself(bytes32 id, uint128 amountSeed) public {
         uint256 amount = uint256(amountSeed) + 1;
         vm.deal(GIVER, amount);
 
         vm.expectRevert(abi.encodeWithSelector(ArcadeTips.ZeroAddress.selector));
         vm.prank(GIVER);
-        tips.tip{value: amount}(id, address(0));
+        tips.tip{value: amount}(id, address(0), LATER);
 
         vm.expectRevert(abi.encodeWithSelector(ArcadeTips.SelfTip.selector));
         vm.prank(GIVER);
-        tips.tip{value: amount}(id, GIVER);
+        tips.tip{value: amount}(id, GIVER, LATER);
 
         (address to,,) = tips.tipOf(GIVER, id);
         assert(to == address(0));

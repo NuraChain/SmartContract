@@ -55,7 +55,7 @@ contract TipsHandler {
         uint256 amount = 1 + (amountSeed % 1_000 ether);
         vm.deal(giver, giver.balance + amount);
         vm.prank(giver);
-        tips.tip{value: amount}(id, player);
+        tips.tip{value: amount}(id, player, type(uint64).max);
 
         given[player] += amount;
         ghostGiven += amount;

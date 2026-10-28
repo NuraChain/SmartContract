@@ -11,6 +11,9 @@ const AMOUNT = ethers.parseEther("5");
 
 const idOf = (label: string) => ethers.id(`donation:${label}`);
 
+/** A deadline nobody here reaches. */
+const FAR = 2n ** 63n;
+
 // Fixtures must be named module-scope functions: loadFixture keys its snapshot on the
 // function reference, so an inline arrow would re-run the setup every time instead of
 // reverting to a snapshot.
@@ -69,7 +72,7 @@ describe("ArcadeTips", () => {
       const { tips, giver, player } = await loadFixture(deploy);
       const before = { giver: await balanceOf(giver.address), player: await balanceOf(player.address) };
 
-      const tx = await tips.connect(giver).tip(idOf("first"), player.address, { value: AMOUNT });
+      const tx = await tips.connect(giver).tip(idOf("first"), player.address, FAR, { value: AMOUNT });
       const cost = await gasCostOf(tx);
 
       await expect(tx).to.emit(tips, "Tipped").withArgs(giver.address, idOf("first"), player.address, AMOUNT);
@@ -96,8 +99,8 @@ describe("ArcadeTips", () => {
       const { tips, giver, player } = await loadFixture(deploy);
       const before = await balanceOf(player.address);
 
-      await tips.connect(giver).tip(idOf("one wei"), player.address, { value: 1n });
-      await tips.connect(giver).tip(idOf("another"), player.address, { value: AMOUNT });
+      await tips.connect(giver).tip(idOf("one wei"), player.address, FAR, { value: 1n });
+      await tips.connect(giver).tip(idOf("another"), player.address, FAR, { value: AMOUNT });
 
       expect(await balanceOf(player.address)).to.equal(before + AMOUNT + 1n);
       expect((await tips.tipOf(giver.address, idOf("one wei"))).amount).to.equal(1n);
@@ -109,11 +112,11 @@ describe("ArcadeTips", () => {
         const { tips, giver, player } = await loadFixture(deploy);
         const before = await balanceOf(player.address);
 
-        await expect(tips.connect(giver).tip(idOf("nobody"), ethers.ZeroAddress, { value: AMOUNT }))
+        await expect(tips.connect(giver).tip(idOf("nobody"), ethers.ZeroAddress, FAR, { value: AMOUNT }))
           .to.be.revertedWithCustomError(tips, "ZeroAddress");
-        await expect(tips.connect(giver).tip(idOf("self"), giver.address, { value: AMOUNT }))
+        await expect(tips.connect(giver).tip(idOf("self"), giver.address, FAR, { value: AMOUNT }))
           .to.be.revertedWithCustomError(tips, "SelfTip");
-        await expect(tips.connect(giver).tip(idOf("empty"), player.address))
+        await expect(tips.connect(giver).tip(idOf("empty"), player.address, FAR))
           .to.be.revertedWithCustomError(tips, "ZeroAmount");
 
         expect(await balanceOf(player.address)).to.equal(before);
@@ -122,12 +125,12 @@ describe("ArcadeTips", () => {
 
       it("pays an id once a giver, whoever it would go to the second time", async () => {
         const { tips, giver, player, outsider } = await loadFixture(deploy);
-        await tips.connect(giver).tip(idOf("once"), player.address, { value: AMOUNT });
+        await tips.connect(giver).tip(idOf("once"), player.address, FAR, { value: AMOUNT });
 
-        await expect(tips.connect(giver).tip(idOf("once"), player.address, { value: AMOUNT }))
+        await expect(tips.connect(giver).tip(idOf("once"), player.address, FAR, { value: AMOUNT }))
           .to.be.revertedWithCustomError(tips, "TipUsed")
           .withArgs(giver.address, idOf("once"));
-        await expect(tips.connect(giver).tip(idOf("once"), outsider.address, { value: 1n }))
+        await expect(tips.connect(giver).tip(idOf("once"), outsider.address, FAR, { value: 1n }))
           .to.be.revertedWithCustomError(tips, "TipUsed");
 
         expect((await tips.tipOf(giver.address, idOf("once"))).amount).to.equal(AMOUNT);
@@ -136,13 +139,28 @@ describe("ArcadeTips", () => {
       it("lets nobody spend a giver's id first: the same id from another wallet is that wallet's", async () => {
         const { tips, giver, player, outsider } = await loadFixture(deploy);
 
-        await tips.connect(outsider).tip(idOf("watched for"), player.address, { value: 1n });
-        await expect(tips.connect(giver).tip(idOf("watched for"), player.address, { value: AMOUNT }))
+        await tips.connect(outsider).tip(idOf("watched for"), player.address, FAR, { value: 1n });
+        await expect(tips.connect(giver).tip(idOf("watched for"), player.address, FAR, { value: AMOUNT }))
           .to.emit(tips, "Tipped")
           .withArgs(giver.address, idOf("watched for"), player.address, AMOUNT);
 
         expect((await tips.tipOf(giver.address, idOf("watched for"))).amount).to.equal(AMOUNT);
         expect((await tips.tipOf(outsider.address, idOf("watched for"))).amount).to.equal(1n);
+      });
+
+      it("takes a call in the second its deadline names, and refuses it one second after", async () => {
+        const { tips, giver, player } = await loadFixture(deploy);
+        const now = await latest();
+
+        await networkHelpers.time.setNextBlockTimestamp(now + 10n);
+        await expect(tips.connect(giver).tip(idOf("in time"), player.address, now + 10n, { value: AMOUNT })).to.emit(tips, "Tipped");
+
+        await networkHelpers.time.setNextBlockTimestamp(now + 20n);
+        await expect(tips.connect(giver).tip(idOf("too late"), player.address, now + 19n, { value: AMOUNT }))
+          .to.be.revertedWithCustomError(tips, "TipExpired")
+          .withArgs(giver.address, idOf("too late"), now + 19n);
+
+        expect((await tips.tipOf(giver.address, idOf("too late"))).to).to.equal(ethers.ZeroAddress);
       });
 
       it("refuses a plain transfer rather than keep it", async () => {
@@ -163,14 +181,14 @@ describe("ArcadeTips", () => {
         .withArgs(outsider.address, await tips.PAUSER_ROLE());
 
       await tips.connect(admin).pause();
-      await expect(tips.connect(giver).tip(idOf("paused"), player.address, { value: AMOUNT }))
+      await expect(tips.connect(giver).tip(idOf("paused"), player.address, FAR, { value: AMOUNT }))
         .to.be.revertedWithCustomError(tips, "EnforcedPause");
       expect((await tips.tipOf(giver.address, idOf("paused"))).to).to.equal(ethers.ZeroAddress);
 
       await expect(tips.connect(outsider).unpause())
         .to.be.revertedWithCustomError(tips, "AccessControlUnauthorizedAccount");
       await tips.connect(admin).unpause();
-      await expect(tips.connect(giver).tip(idOf("paused"), player.address, { value: AMOUNT })).to.emit(tips, "Tipped");
+      await expect(tips.connect(giver).tip(idOf("paused"), player.address, FAR, { value: AMOUNT })).to.emit(tips, "Tipped");
     });
 
     it("hands the pause on with the contract, in two steps", async () => {
@@ -195,7 +213,7 @@ describe("ArcadeTips", () => {
       const address = await actor.getAddress();
 
       await actor.setMode(1);
-      await expect(tips.connect(giver).tip(idOf("refused"), address, { value: AMOUNT })).to.be.revertedWith("TipsActor: refused");
+      await expect(tips.connect(giver).tip(idOf("refused"), address, FAR, { value: AMOUNT })).to.be.revertedWith("TipsActor: refused");
 
       expect((await tips.tipOf(giver.address, idOf("refused"))).to).to.equal(ethers.ZeroAddress);
       expect(await balanceOf(address)).to.equal(0n);
@@ -209,7 +227,7 @@ describe("ArcadeTips", () => {
 
       await actor.setMode(2);
       await actor.passTo(player.address, idOf("onward"));
-      await tips.connect(giver).tip(idOf("to the actor"), address, { value: AMOUNT });
+      await tips.connect(giver).tip(idOf("to the actor"), address, FAR, { value: AMOUNT });
 
       expect(await actor.receiveCount()).to.equal(1n);
       expect((await tips.tipOf(giver.address, idOf("to the actor"))).to).to.equal(address);
@@ -233,7 +251,7 @@ describe("ArcadeTips", () => {
   (measuring ? describe : describe.skip)("gas", () => {
     it("gives within bounds", async () => {
       const { tips, giver, player } = await loadFixture(deploy);
-      const receipt = await (await tips.connect(giver).tip(idOf("gas"), player.address, { value: AMOUNT })).wait();
+      const receipt = await (await tips.connect(giver).tip(idOf("gas"), player.address, FAR, { value: AMOUNT })).wait();
 
       console.log(`      tip ${receipt!.gasUsed}`);
       expect(receipt!.gasUsed).to.be.lessThan(100_000n);

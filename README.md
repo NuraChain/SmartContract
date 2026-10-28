@@ -622,12 +622,12 @@ call and records it under the giver and the id, which is how the server confirms
 
 ```solidity
 // the giver, with the id the server answered
-tips.tip{value: 5 ether}(id, player);   // all of it to the player, now
+tips.tip{value: 5 ether}(id, player, deadline);   // all of it to the player, now, before the deadline
 ```
 
 | Function | Who | What |
 | --- | --- | --- |
-| `tip(id, to)` | anybody | sends everything the call carries to `to`, recorded under the caller and `id`; refuses nobody, oneself, nothing and an id the caller already used |
+| `tip(id, to, deadline)` | anybody | sends everything the call carries to `to`, recorded under the caller and `id`; refuses nobody, oneself, nothing, a call past its deadline and an id the caller already used |
 | `tipOf(from, id)` | anybody | one gift: to whom, how much, when |
 | `pause()` / `unpause()` | `PAUSER_ROLE` | stops new gifts, nothing else |
 

@@ -41,7 +41,7 @@ contract TipsActor {
     }
 
     function give(bytes32 id, address to) external payable {
-        tips.tip{value: msg.value}(id, to);
+        tips.tip{value: msg.value}(id, to, type(uint64).max);
     }
 
     receive() external payable {
@@ -52,7 +52,7 @@ contract TipsActor {
         }
 
         if (mode == Mode.PassOn) {
-            tips.tip{value: msg.value}(onwardId, onwardTo);
+            tips.tip{value: msg.value}(onwardId, onwardTo, type(uint64).max);
         }
     }
 }

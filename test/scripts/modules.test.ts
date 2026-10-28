@@ -5,6 +5,7 @@ import airdropModule from "../../ignition/modules/airdrop.ts";
 import bazicheModule from "../../ignition/modules/baziche.ts";
 import bazicheShopModule from "../../ignition/modules/bazicheshop.ts";
 import bazicheTipsModule from "../../ignition/modules/bazichetips.ts";
+import bazicheMarketsModule from "../../ignition/modules/bazichemarkets.ts";
 import profileModule from "../../ignition/modules/profile.ts";
 import tokenModule from "../../ignition/modules/token.ts";
 import univ3Module from "../../ignition/modules/univ3.ts";
@@ -350,6 +351,36 @@ describe("ignition modules", () => {
       expect(await tips.defaultAdmin()).to.equal(admin.address);
       expect(await tips.hasRole(await tips.PAUSER_ROLE(), admin.address)).to.equal(true);
       expect(await tips.hasRole(await tips.PAUSER_ROLE(), deployer.address)).to.equal(false);
+    });
+  });
+
+  describe("bazichemarkets", () => {
+    it("deploys the markets alone, with the deployer as their owner and operator", async () => {
+      const [deployer] = await ethers.getSigners();
+      const deployed = await ignition.deploy(bazicheMarketsModule);
+      const { markets } = deployed;
+
+      expect(Object.keys(deployed)).to.deep.equal(["markets"]);
+      expect(await markets.defaultAdmin()).to.equal(deployer.address);
+      expect(await markets.operator()).to.equal(deployer.address);
+      expect(await markets.disputeWindow()).to.equal(900n);
+      expect(await markets.hasRole(await markets.PAUSER_ROLE(), deployer.address)).to.equal(true);
+      expect(await markets.hasRole(await markets.OPERATOR_ROLE(), deployer.address)).to.equal(true);
+    });
+
+    it("carries the owner, the operator and the dispute window through to the constructor", async () => {
+      const [deployer, admin, operator] = await ethers.getSigners();
+      const { markets } = await ignition.deploy(bazicheMarketsModule, {
+        parameters: { bazichemarkets: { admin: admin.address, operator: operator.address, disputeWindow: 0 } },
+      });
+
+      expect(await markets.defaultAdmin()).to.equal(admin.address);
+      expect(await markets.operator()).to.equal(operator.address);
+      expect(await markets.disputeWindow()).to.equal(0n);
+      expect(await markets.hasRole(await markets.PAUSER_ROLE(), admin.address)).to.equal(true);
+      expect(await markets.hasRole(await markets.OPERATOR_ROLE(), operator.address)).to.equal(true);
+      expect(await markets.hasRole(await markets.OPERATOR_ROLE(), deployer.address)).to.equal(false);
+      expect(await markets.hasRole(await markets.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(false);
     });
   });
 });

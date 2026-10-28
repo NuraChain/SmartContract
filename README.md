@@ -78,6 +78,7 @@ npx hardhat deploy --sc profile  --network nurachain   # only contracts/profile
 npx hardhat deploy --sc baziche  --network nurachain   # only contracts/baziche
 npx hardhat deploy --sc bazicheshop --network nurachain   # only contracts/baziche/ArcadeShop.sol
 npx hardhat deploy --sc bazichetips --network nurachain   # only contracts/baziche/ArcadeTips.sol
+npx hardhat deploy --sc bazichemarkets --network nurachain   # only contracts/baziche/ArcadeMarkets.sol
 ```
 
 `--sc wnura` deploys a **new, separate** WNURA. Nurachain already has the canonical one at
@@ -96,6 +97,7 @@ npm run deploy:nurachain:profile
 npm run deploy:nurachain:baziche
 npm run deploy:nurachain:bazicheshop
 npm run deploy:nurachain:bazichetips
+npm run deploy:nurachain:bazichemarkets
 
 # equivalent, passing the flag through npm — note the extra --
 npm run deploy:nurachain -- --sc token
@@ -209,6 +211,7 @@ npm run deploy:nurachain:profile
 npm run deploy:nurachain:baziche
 npm run deploy:nurachain:bazicheshop
 npm run deploy:nurachain:bazichetips
+npm run deploy:nurachain:bazichemarkets
 
 # 3. Register the profile registry's verifier extension and print its state
 npm run setup:nurachain:profile
@@ -608,6 +611,52 @@ upgradeable. Deploy with `npm run deploy:nurachain:bazichetips` and the `baziche
 (`admin`; see `ignition/modules/bazichetips.ts`): a group of its own. The reference, roles, flows
 and security analysis are in [`docs/contracts/ArcadeTips.md`](docs/contracts/ArcadeTips.md).
 
+## The arcade markets
+
+`contracts/baziche/ArcadeMarkets.sol` holds pari-mutuel markets on Arcade's games in native NURA:
+many people back the outcomes of one game, each with a stake of their own, and when it is over
+whoever backed the outcome that happened shares everything staked, by their stakes, less the fee
+the market names (at most 5%, nothing unless the owner sets one). Nobody is matched with anybody
+and nobody offers odds. The Arcade server decides who may bet: every position comes with a ticket
+its key signed for one bettor, one market, one outcome and one exact amount, and names its
+market's terms by their hash. The server settles a market from the game's result as it recorded
+it, after the market closes; the contract cannot see a game and trusts its operator for that, and
+a market nobody settles can be expired by anybody a week after its close, which refunds it.
+
+```solidity
+// a bettor, with the terms and the ticket the server answered
+markets.place{value: ticket.amount}(terms, ticket, signature);
+
+// the server's key, once the game is over and the market closed
+markets.settle(market, outcome);   // or cancel(market) for a game with no result
+
+// each bettor, for their own positions, whenever they like
+markets.claim(tickets);            // a winner's share, or a stake back
+```
+
+| Function | Who | What |
+| --- | --- | --- |
+| `place(terms, ticket, signature)` | the ticket's bettor | stakes exactly the ticket's amount on its outcome, once, before its deadline (never more than an hour out) and the market's close, within the position's, the bettor's and the pool's limits; the first ticket opens the market |
+| `settle(market, outcome)` | `OPERATOR_ROLE` | after the close: the backers of `outcome` share the pool less the fee; every stake back, no fee, when nobody backed it or too few people or outcomes were backed |
+| `cancel(market)` | `OPERATOR_ROLE` | every stake back, for a game with no result |
+| `expire(market)` | anybody | a week after the close of a market nobody resolved: every stake back |
+| `claim(tickets)` | each position's bettor | pays the caller's positions, one or many: `left * stake / backingLeft`, the last winner the exact remainder, once the market's dispute window has passed; a refund at once; never paused |
+| `overturn(market)` | `DEFAULT_ADMIN_ROLE` | in a settled market's dispute window: undoes the settlement, every stake and the fee back |
+| `withdrawFees(to, amount)` / `fund()` | `DEFAULT_ADMIN_ROLE` | fees out to the owner's choice, never a stake, a share or a refund; fees topped up so a settlement can be overturned after its fee went |
+| `setDisputeWindow(seconds)` | `DEFAULT_ADMIN_ROLE` | how long winners of markets settled from then on wait to claim, at most a day |
+| `setOperator(next)` | `DEFAULT_ADMIN_ROLE` | moves `OPERATOR_ROLE` to `next` in one call; the old key's tickets stop at once |
+| `beginDefaultAdminTransfer(next)` / `acceptDefaultAdminTransfer()` | the owner, then `next` | hands the contract and its pauser role to a new owner |
+| `pause()` / `unpause()` | `PAUSER_ROLE` | stops new positions, nothing else |
+
+What the operator's key can do is sign tickets, settle and cancel: it can name the wrong outcome,
+and it can never send a stake anywhere but to its own market's bettors. A wrong outcome is what
+the dispute window is for: winners claim only once it has passed, and in it the owner can overturn
+the settlement, which refunds everyone. A share nobody claims is never swept. It is not
+upgradeable. Deploy with `npm run deploy:nurachain:bazichemarkets` and the `bazichemarkets`
+parameters (`admin`, `operator`, `disputeWindow`; see `ignition/modules/bazichemarkets.ts`): a
+group of its own. The reference, roles, flows and security analysis are in
+[`docs/contracts/ArcadeMarkets.md`](docs/contracts/ArcadeMarkets.md).
+
 ## Tests
 
 ```bash
@@ -808,6 +857,7 @@ ignition/modules/
   baziche.ts                 deploys contracts/baziche (--sc baziche): achievements and vault
   bazicheshop.ts            deploys contracts/baziche/ArcadeShop.sol alone (--sc bazicheshop)
   bazichetips.ts            deploys contracts/baziche/ArcadeTips.sol alone (--sc bazichetips)
+  bazichemarkets.ts         deploys contracts/baziche/ArcadeMarkets.sol alone (--sc bazichemarkets)
 scripts/
   preflight.ts               pre-deploy check: chain id, funding, gas, contract sizes, paid tables
   write-init-code-hash.ts    regenerates the V3 pool init code hash
@@ -820,6 +870,7 @@ test/
   Airdrop.test.ts            44 tests: signature binding, replay, reentrancy, caps, admin
   ArcadeVault.test.ts        39 tests: stakes, signatures, payouts, refunds, reclaims, roles, gas
   ArcadeShop.test.ts         38 tests: quotes, signatures, inviters, claims, refunds, roles, reentrancy, gas
+  ArcadeMarkets.test.ts      49 tests: tickets, terms, limits, settling, refunds, disputes, claims, roles, reentrancy, gas
   univ3/Build.test.ts        EIP-170 sizes and the pool init code hash
   univ3/Factory.test.ts      18 tests: fee tiers, createPool, ownership
   univ3/Pool.test.ts         26 tests: initialize, mint, burn, swap, flash, fees
@@ -836,4 +887,4 @@ hardhat.config.ts            three solc versions, networks, and the `deploy --sc
 ```
 
 Each `contracts/<folder>` maps to `ignition/modules/<folder>.ts` and is deployed
-independently with `--sc <folder>`. `wnura`, `bazicheshop` and `bazichetips` are the three groups that are not folders.
+independently with `--sc <folder>`. `wnura`, `bazicheshop`, `bazichetips` and `bazichemarkets` are the four groups that are not folders.

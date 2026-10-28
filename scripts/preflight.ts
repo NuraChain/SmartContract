@@ -66,6 +66,10 @@ function probes(deployer: string) {
     bazichetips: [
       { name: "ArcadeTips", args: [deployer] },
     ],
+    // The markets take their owner, their operator and their dispute window, and only check and store them.
+    bazichemarkets: [
+      { name: "ArcadeMarkets", args: [deployer, deployer, 900] },
+    ],
   };
 }
 

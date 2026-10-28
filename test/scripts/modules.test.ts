@@ -4,6 +4,7 @@ import { network } from "hardhat";
 import airdropModule from "../../ignition/modules/airdrop.ts";
 import bazicheModule from "../../ignition/modules/baziche.ts";
 import bazicheShopModule from "../../ignition/modules/bazicheshop.ts";
+import bazicheTipsModule from "../../ignition/modules/bazichetips.ts";
 import profileModule from "../../ignition/modules/profile.ts";
 import tokenModule from "../../ignition/modules/token.ts";
 import univ3Module from "../../ignition/modules/univ3.ts";
@@ -362,6 +363,27 @@ describe("ignition modules", () => {
       expect(await shop.hasRole(await shop.SELLER_ROLE(), seller.address)).to.equal(true);
       expect(await shop.hasRole(await shop.SELLER_ROLE(), deployer.address)).to.equal(false);
       expect(await shop.hasRole(await shop.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(false);
+    });
+  });
+
+  describe("bazichetips", () => {
+    it("deploys the gifts' contract alone, with the deployer as its owner", async () => {
+      const [deployer] = await ethers.getSigners();
+      const deployed = await ignition.deploy(bazicheTipsModule);
+      const { tips } = deployed;
+
+      expect(Object.keys(deployed)).to.deep.equal(["tips"]);
+      expect(await tips.defaultAdmin()).to.equal(deployer.address);
+      expect(await tips.hasRole(await tips.PAUSER_ROLE(), deployer.address)).to.equal(true);
+    });
+
+    it("carries the owner through to the constructor", async () => {
+      const [deployer, admin] = await ethers.getSigners();
+      const { tips } = await ignition.deploy(bazicheTipsModule, { parameters: { bazichetips: { admin: admin.address } } });
+
+      expect(await tips.defaultAdmin()).to.equal(admin.address);
+      expect(await tips.hasRole(await tips.PAUSER_ROLE(), admin.address)).to.equal(true);
+      expect(await tips.hasRole(await tips.PAUSER_ROLE(), deployer.address)).to.equal(false);
     });
   });
 });

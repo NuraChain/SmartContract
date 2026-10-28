@@ -79,6 +79,7 @@ npx hardhat deploy --sc forecast --network nurachain   # only contracts/forecast
 npx hardhat deploy --sc profile  --network nurachain   # only contracts/profile
 npx hardhat deploy --sc baziche  --network nurachain   # only contracts/baziche
 npx hardhat deploy --sc bazicheshop --network nurachain   # only contracts/baziche/ArcadeShop.sol
+npx hardhat deploy --sc bazichetips --network nurachain   # only contracts/baziche/ArcadeTips.sol
 ```
 
 `--sc wnura` deploys a **new, separate** WNURA. Nurachain already has the canonical one at
@@ -97,6 +98,7 @@ npm run deploy:nurachain:forecast
 npm run deploy:nurachain:profile
 npm run deploy:nurachain:baziche
 npm run deploy:nurachain:bazicheshop
+npm run deploy:nurachain:bazichetips
 
 # equivalent, passing the flag through npm — note the extra --
 npm run deploy:nurachain -- --sc token
@@ -210,6 +212,7 @@ npm run deploy:nurachain:forecast
 npm run deploy:nurachain:profile
 npm run deploy:nurachain:baziche
 npm run deploy:nurachain:bazicheshop
+npm run deploy:nurachain:bazichetips
 
 # 3. Register the profile registry's verifier extension and print its state
 npm run setup:nurachain:profile
@@ -609,6 +612,30 @@ It is not upgradeable. Deploy with `npm run deploy:nurachain:bazicheshop` and th
 chain already holds are not deployed again. The per-function reference, roles, flows and
 security analysis are in [`docs/contracts/ArcadeShop.md`](docs/contracts/ArcadeShop.md).
 
+## The arcade gifts
+
+`contracts/baziche/ArcadeTips.sol` passes native NURA from somebody watching a game on Arcade to a
+player of it. The Arcade server decides whether a gift may be made, writes it with an id of its own
+and hands the giver's wallet the call; the contract sends the whole value to the player in that
+call and records it under the giver and the id, which is how the server confirms it
+(`tipOf(giver, id)`), never by a hash the page reports. It keeps nothing and takes no fee.
+
+```solidity
+// the giver, with the id the server answered
+tips.tip{value: 5 ether}(id, player);   // all of it to the player, now
+```
+
+| Function | Who | What |
+| --- | --- | --- |
+| `tip(id, to)` | anybody | sends everything the call carries to `to`, recorded under the caller and `id`; refuses nobody, oneself, nothing and an id the caller already used |
+| `tipOf(from, id)` | anybody | one gift: to whom, how much, when |
+| `pause()` / `unpause()` | `PAUSER_ROLE` | stops new gifts, nothing else |
+
+Keyed by the giver as well as the id, so nobody can spend a giver's id first. It is not
+upgradeable. Deploy with `npm run deploy:nurachain:bazichetips` and the `bazichetips` parameters
+(`admin`; see `ignition/modules/bazichetips.ts`): a group of its own. The reference, roles, flows
+and security analysis are in [`docs/contracts/ArcadeTips.md`](docs/contracts/ArcadeTips.md).
+
 ## Tests
 
 ```bash
@@ -809,6 +836,7 @@ ignition/modules/
   profile.ts                 deploys contracts/profile (--sc profile): impl, proxy, lens, verifier
   baziche.ts                 deploys contracts/baziche (--sc baziche): achievements and vault
   bazicheshop.ts            deploys contracts/baziche/ArcadeShop.sol alone (--sc bazicheshop)
+  bazichetips.ts            deploys contracts/baziche/ArcadeTips.sol alone (--sc bazichetips)
 scripts/
   preflight.ts               pre-deploy check: chain id, funding, gas, contract sizes, paid tables
   write-init-code-hash.ts    regenerates the V3 pool init code hash
@@ -837,4 +865,4 @@ hardhat.config.ts            three solc versions, networks, and the `deploy --sc
 ```
 
 Each `contracts/<folder>` maps to `ignition/modules/<folder>.ts` and is deployed
-independently with `--sc <folder>`. `wnura`, `univ3periphery` and `bazicheshop` are the three groups that are not folders.
+independently with `--sc <folder>`. `wnura`, `univ3periphery`, `bazicheshop` and `bazichetips` are the four groups that are not folders.

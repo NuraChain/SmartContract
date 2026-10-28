@@ -62,6 +62,10 @@ function probes(deployer: string) {
     bazicheshop: [
       { name: "ArcadeShop", args: [deployer, deployer, 1_000] },
     ],
+    // The gifts' contract takes its owner and nothing else.
+    bazichetips: [
+      { name: "ArcadeTips", args: [deployer] },
+    ],
   };
 }
 

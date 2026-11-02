@@ -28,6 +28,7 @@
     "deploy:nurachain:bazicheshop": "hardhat deploy --sc bazicheshop --network nurachain",
     "deploy:nurachain:bazichetips": "hardhat deploy --sc bazichetips --network nurachain",
     "deploy:nurachain:bazichemarkets": "hardhat deploy --sc bazichemarkets --network nurachain",
+    "deploy:nurachain:bazichelooks": "hardhat deploy --sc bazichelooks --network nurachain",
     "setup:nurachain:profile": "hardhat run scripts/profile-setup.ts --network nurachain",
     "upgrade:nurachain:profile": "hardhat run scripts/profile-upgrade.ts --network nurachain"
   },

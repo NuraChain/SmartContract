@@ -6,6 +6,7 @@ import bazicheModule from "../../ignition/modules/baziche.ts";
 import bazicheShopModule from "../../ignition/modules/bazicheshop.ts";
 import bazicheTipsModule from "../../ignition/modules/bazichetips.ts";
 import bazicheMarketsModule from "../../ignition/modules/bazichemarkets.ts";
+import bazicheLooksModule from "../../ignition/modules/bazichelooks.ts";
 import profileModule from "../../ignition/modules/profile.ts";
 import tokenModule from "../../ignition/modules/token.ts";
 import univ3Module from "../../ignition/modules/univ3.ts";
@@ -381,6 +382,29 @@ describe("ignition modules", () => {
       expect(await markets.hasRole(await markets.OPERATOR_ROLE(), operator.address)).to.equal(true);
       expect(await markets.hasRole(await markets.OPERATOR_ROLE(), deployer.address)).to.equal(false);
       expect(await markets.hasRole(await markets.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(false);
+    });
+  });
+
+  describe("bazichelooks", () => {
+    it("deploys the looks alone, with the deployer as their owner and no minter yet", async () => {
+      const [deployer] = await ethers.getSigners();
+      const deployed = await ignition.deploy(bazicheLooksModule);
+      const { looks } = deployed;
+
+      expect(Object.keys(deployed)).to.deep.equal(["looks"]);
+      expect(await looks.defaultAdmin()).to.equal(deployer.address);
+      expect(await looks.hasRole(await looks.MINTER_ROLE(), deployer.address)).to.equal(false);
+      expect(await looks.uri(0n)).to.equal("");
+    });
+
+    it("carries the owner and the template through to the constructor", async () => {
+      const [deployer, admin] = await ethers.getSigners();
+      const uri = "https://baziche.example/api/nft/looks/{id}.json";
+      const { looks } = await ignition.deploy(bazicheLooksModule, { parameters: { bazichelooks: { admin: admin.address, uri } } });
+
+      expect(await looks.defaultAdmin()).to.equal(admin.address);
+      expect(await looks.hasRole(await looks.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(false);
+      expect(await looks.uri(0n)).to.equal(uri);
     });
   });
 });

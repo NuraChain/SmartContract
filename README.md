@@ -79,6 +79,7 @@ npx hardhat deploy --sc baziche  --network nurachain   # only contracts/baziche
 npx hardhat deploy --sc bazicheshop --network nurachain   # only contracts/baziche/ArcadeShop.sol
 npx hardhat deploy --sc bazichetips --network nurachain   # only contracts/baziche/ArcadeTips.sol
 npx hardhat deploy --sc bazichemarkets --network nurachain   # only contracts/baziche/ArcadeMarkets.sol
+npx hardhat deploy --sc bazichelooks --network nurachain   # only contracts/baziche/ArcadeLooks.sol
 ```
 
 `--sc wnura` deploys a **new, separate** WNURA. Nurachain already has the canonical one at
@@ -98,6 +99,7 @@ npm run deploy:nurachain:baziche
 npm run deploy:nurachain:bazicheshop
 npm run deploy:nurachain:bazichetips
 npm run deploy:nurachain:bazichemarkets
+npm run deploy:nurachain:bazichelooks
 
 # equivalent, passing the flag through npm — note the extra --
 npm run deploy:nurachain -- --sc token
@@ -212,6 +214,7 @@ npm run deploy:nurachain:baziche
 npm run deploy:nurachain:bazicheshop
 npm run deploy:nurachain:bazichetips
 npm run deploy:nurachain:bazichemarkets
+npm run deploy:nurachain:bazichelooks
 
 # 3. Register the profile registry's verifier extension and print its state
 npm run setup:nurachain:profile
@@ -657,6 +660,39 @@ parameters (`admin`, `operator`, `disputeWindow`; see `ignition/modules/bazichem
 group of its own. The reference, roles, flows and security analysis are in
 [`docs/contracts/ArcadeMarkets.md`](docs/contracts/ArcadeMarkets.md).
 
+## The arcade looks
+
+`contracts/baziche/ArcadeLooks.sol` holds the looks Arcade's players own (dice, card backs, avatar
+decorations, profile themes and the rest) as **soulbound** ERC-1155 tokens: one id per look,
+`uint256(keccak256(bytes(itemId)))`, at most one of each per wallet. A look is paid for in
+`ArcadeShop` and owned where the Arcade server keeps it; once it is, the server's minter wallet
+mints its token into the owner's wallet, and burns it when the shop refunds the look or it is
+taken back. A gift is minted straight into the friend's wallet. Nobody, the holder included, can
+move one.
+
+```solidity
+// the Arcade server's minter wallet
+looks.mint(owner, id);              // once the look is theirs, while they hold none of it
+looks.mintBatch(owner, ids);        // a bundle, or what they owned before this contract was
+looks.burn(owner, id);              // a refund, or the look taken back
+```
+
+| Function | Who | What |
+| --- | --- | --- |
+| `mint(owner, id)` / `mintBatch(owner, ids)` | `MINTER_ROLE` | one of each look to `owner`, refusing a look they hold already or one named twice (`AlreadyHeld`); all or nothing |
+| `burn(owner, id)` | `MINTER_ROLE` | takes a look back; refuses one not held (`NotHeld`) |
+| `setURI(template)` | `DEFAULT_ADMIN_ROLE` | the `{id}` metadata template |
+| `holders(id)` | anybody | how many wallets hold a look now |
+| any transfer | nobody | refused, single or batched (`Soulbound`) |
+
+Where it parts from `ArcadeAchievements`: every token is soulbound, the minter can burn (a refund
+takes the look back), and a wallet may be given a look again once it holds none of it (a refunded
+look bought again). It is not upgradeable. Deploy with `npm run deploy:nurachain:bazichelooks` and
+the `bazichelooks` parameters (`admin`, `uri`; see `ignition/modules/bazichelooks.ts`): a group of
+its own. Then the admin grants `MINTER_ROLE` to the server's minter wallet, which is neither the
+deployer nor the key that pays out tables. The reference is in
+[`docs/contracts/ArcadeLooks.md`](docs/contracts/ArcadeLooks.md).
+
 ## Tests
 
 ```bash
@@ -858,6 +894,7 @@ ignition/modules/
   bazicheshop.ts            deploys contracts/baziche/ArcadeShop.sol alone (--sc bazicheshop)
   bazichetips.ts            deploys contracts/baziche/ArcadeTips.sol alone (--sc bazichetips)
   bazichemarkets.ts         deploys contracts/baziche/ArcadeMarkets.sol alone (--sc bazichemarkets)
+  bazichelooks.ts           deploys contracts/baziche/ArcadeLooks.sol alone (--sc bazichelooks)
 scripts/
   preflight.ts               pre-deploy check: chain id, funding, gas, contract sizes, paid tables
   write-init-code-hash.ts    regenerates the V3 pool init code hash
@@ -871,6 +908,7 @@ test/
   ArcadeVault.test.ts        39 tests: stakes, signatures, payouts, refunds, reclaims, roles, gas
   ArcadeShop.test.ts         38 tests: quotes, signatures, inviters, claims, refunds, roles, reentrancy, gas
   ArcadeMarkets.test.ts      49 tests: tickets, terms, limits, settling, refunds, disputes, claims, roles, reentrancy, gas
+  ArcadeLooks.test.ts        17 tests: mint, batches, repeats, burn, soulbound moves, template, ownership
   univ3/Build.test.ts        EIP-170 sizes and the pool init code hash
   univ3/Factory.test.ts      18 tests: fee tiers, createPool, ownership
   univ3/Pool.test.ts         26 tests: initialize, mint, burn, swap, flash, fees
@@ -887,4 +925,4 @@ hardhat.config.ts            three solc versions, networks, and the `deploy --sc
 ```
 
 Each `contracts/<folder>` maps to `ignition/modules/<folder>.ts` and is deployed
-independently with `--sc <folder>`. `wnura`, `bazicheshop`, `bazichetips` and `bazichemarkets` are the four groups that are not folders.
+independently with `--sc <folder>`. `wnura`, `bazicheshop`, `bazichetips`, `bazichemarkets` and `bazichelooks` are the five groups that are not folders.

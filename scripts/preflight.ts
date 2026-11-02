@@ -70,6 +70,10 @@ function probes(deployer: string) {
     bazichemarkets: [
       { name: "ArcadeMarkets", args: [deployer, deployer, 900] },
     ],
+    // The looks take their owner and their metadata template, and only store them.
+    bazichelooks: [
+      { name: "ArcadeLooks", args: [deployer, ""] },
+    ],
   };
 }
 

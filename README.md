@@ -1,4 +1,28 @@
-# Bridge Tokens — BridgeUSDT, BridgeBNB, BridgeETH & BridgeBTC
+# Nura Chain Smart Contracts
+
+This repository contains the Solidity smart contracts and deployment modules used across the **Nura Chain** ecosystem. It brings together ERC-20 bridge tokens, wrapped NURA, token distribution, Uniswap V3 infrastructure, on-chain forecasting, user profiles and the Baziche gaming contracts.
+
+The project uses **Hardhat 3**, **ethers.js** and **OpenZeppelin Contracts 5.x**. It includes deployment scripts, preflight checks, automated tests and security-focused fuzz and invariant suites.
+
+## Contract modules
+
+| Module | Purpose |
+| --- | --- |
+| Bridge tokens | ERC-20 contracts for bridged USDT, BNB, ETH and BTC |
+| WNURA | Wrapped representation of the NURA native asset |
+| Airdrop | Signature-based token distribution |
+| UniV3 | Uniswap V3-style factory, pools, router, positions and oracle |
+| Forecast | On-chain forecast and market-related contracts |
+| Profile | Upgradeable Nura profile registry, lens and extension interface |
+| Baziche | Arcade vault, shop, tips, markets and cosmetic/achievement contracts |
+
+Deployments are separated into Hardhat Ignition modules so individual contract groups can be built and deployed independently. Review the network configuration and run the preflight checks before sending a deployment transaction.
+
+- **Network:** [Nura Chain](https://nurachain.net)
+- **Explorer:** [explorer.nurachain.net](https://explorer.nurachain.net)
+- **Source organisation:** [github.com/NuraChain](https://github.com/NuraChain)
+
+## Bridge Tokens — BridgeUSDT, BridgeBNB, BridgeETH & BridgeBTC
 
 Four bridged (wrapped) ERC20 tokens built on OpenZeppelin Contracts 5.x, where the
 deployer is the admin and can mint and burn.
